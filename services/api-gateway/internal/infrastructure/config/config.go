@@ -33,6 +33,8 @@ type Config struct {
 	TrustProxy bool
 	// HSTS solo tiene sentido detrás de HTTPS (por ejemplo, en el balanceador).
 	EnableHSTS bool
+	// EnableDocs publica la documentación interactiva de la API en /docs.
+	EnableDocs bool
 }
 
 // Load lee y valida la configuración.
@@ -53,6 +55,7 @@ func Load() (Config, error) {
 		BodyLimit:          getEnv("BODY_LIMIT", "1M"),
 		TrustProxy:         getEnv("TRUST_PROXY", "false") == "true",
 		EnableHSTS:         getEnv("ENABLE_HSTS", "true") == "true",
+		EnableDocs:         getEnv("ENABLE_API_DOCS", "true") == "true",
 	}
 	if len(cfg.JWTSecret) < minJWTSecretLen {
 		errs = append(errs, fmt.Errorf("JWT_SECRET must be at least %d characters", minJWTSecretLen))

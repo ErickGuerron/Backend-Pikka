@@ -54,6 +54,7 @@ func run(log *slog.Logger) error {
 		BodyLimit:          cfg.BodyLimit,
 		TrustProxy:         cfg.TrustProxy,
 		EnableHSTS:         cfg.EnableHSTS,
+		EnableDocs:         cfg.EnableDocs,
 	}, jwt.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer), auth, auth.Ready)
 
 	e.Server.ReadHeaderTimeout = 5 * time.Second

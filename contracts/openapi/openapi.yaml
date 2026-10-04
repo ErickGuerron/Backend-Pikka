@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Last-Mile Logistics API
+  title: Pikka API
   version: 1.0.0
   description: |
     API pública REST/JSON expuesta por el API Gateway. Clientes: aplicación web
@@ -10,8 +10,8 @@ info:
     Fase 1 cubre autenticación y usuarios. Pedidos, zonas, rutas, repartidores y
     seguimiento se agregan en las fases siguientes.
 servers:
-  - url: http://localhost:8080
-    description: Entorno local (docker compose)
+  - url: /
+    description: Este API Gateway
 tags:
   - name: health
     description: Liveness y readiness del Gateway

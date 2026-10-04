@@ -244,3 +244,32 @@ func TestLoginRateLimit(t *testing.T) {
 	assert.Equal(t, http.StatusTooManyRequests, rec.Code)
 	assert.Equal(t, "RATE_LIMITED", decodeError(t, rec).Code)
 }
+
+func TestAPIDocs(t *testing.T) {
+	opts := httpapi.Options{
+		CORSAllowedOrigins: []string{"http://localhost:5173"},
+		RateLimitPerSecond: 1000, RateLimitBurst: 1000, LoginRatePerMinute: 6000,
+		RequestTimeout: time.Second, BodyLimit: "1K", EnableDocs: true,
+	}
+	h := httpapi.NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), opts, jwt.NewVerifier(secret, "lastmile-auth"), &fakeAuth{}, func(context.Context) bool { return true })
+
+	rec := do(h, http.MethodGet, "/docs", "", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), `data-url="/openapi.yaml"`)
+	assert.Contains(t, rec.Header().Get("Content-Security-Policy"), "https://cdn.jsdelivr.net")
+
+	rec = do(h, http.MethodGet, "/openapi.yaml", "", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "openapi: 3.0.3")
+	assert.Contains(t, rec.Header().Get("Content-Type"), "yaml")
+
+	// La CSP estricta sigue aplicando al resto de rutas.
+	rec = do(h, http.MethodGet, "/health", "", nil)
+	assert.Equal(t, "default-src 'none'; frame-ancestors 'none'", rec.Header().Get("Content-Security-Policy"))
+}
+
+func TestAPIDocsDisabled(t *testing.T) {
+	h := newRouter(&fakeAuth{}, true)
+	assert.Equal(t, http.StatusNotFound, do(h, http.MethodGet, "/docs", "", nil).Code)
+	assert.Equal(t, http.StatusNotFound, do(h, http.MethodGet, "/openapi.yaml", "", nil).Code)
+}

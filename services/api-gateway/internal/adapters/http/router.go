@@ -24,6 +24,8 @@ type Options struct {
 	BodyLimit          string
 	TrustProxy         bool
 	EnableHSTS         bool
+	// EnableDocs publica /docs (Scalar) y /openapi.yaml.
+	EnableDocs bool
 }
 
 // Readiness informa si una dependencia está lista.
@@ -84,6 +86,10 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 		}
 		return c.JSON(http.StatusOK, map[string]string{"status": "ready"})
 	})
+
+	if opts.EnableDocs {
+		registerDocs(e)
+	}
 
 	api := e.Group("/api/v1", rateLimiter(rate.Limit(opts.RateLimitPerSecond), opts.RateLimitBurst))
 	h := &authHandlers{auth: auth}
