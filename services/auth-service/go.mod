@@ -11,7 +11,7 @@ require (
 	github.com/labstack/echo/v4 v4.16.0
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/crypto v0.57.0
-	google.golang.org/grpc v1.84.0
+	google.golang.org/grpc v1.85.0-dev.0.20260825072537-93e31b48545e
 )
 
 require (

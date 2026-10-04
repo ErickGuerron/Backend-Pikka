@@ -86,3 +86,11 @@ Ver [`docs/adr`](docs/adr). En resumen:
 - Toda llamada gRPC sale con deadline (`GRPC_TIMEOUT`, 3 s por defecto).
 - Los errores de cualquier servicio llegan al cliente con un formato único
   `{"error":{"code","message","requestId"}}`.
+
+## Notas de dependencias
+
+- `google.golang.org/grpc` está fijado a un commit de `master`
+  (`v1.85.0-dev.0.20260825072537-93e31b48545e`) porque la corrección de
+  GO-2026-6443 (pánico del servidor por cabeceras `:authority`/`Host`
+  ausentes) aún no está en una versión publicada. Al salir `v1.85.0`, se
+  cambia a esa versión.
