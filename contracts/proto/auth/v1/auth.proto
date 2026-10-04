@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package auth.v1;
+
+option go_package = "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/auth/v1;authv1";
+
+// AuthService gestiona usuarios, credenciales y emisión de JWT.
+// Solo es consumido por el API Gateway y otros servicios internos; nunca por clientes.
+service AuthService {
+  // Login valida credenciales y emite un JWT de acceso.
+  rpc Login(LoginRequest) returns (LoginResponse);
+
+  // CreateUser registra un usuario nuevo. Requiere rol ADMIN en el llamador.
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse);
+
+  // GetUser devuelve los datos públicos de un usuario.
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+
+  // ValidateToken verifica un JWT y devuelve la identidad que contiene.
+  rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
+}
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_ADMIN = 1;
+  ROLE_OPERATOR = 2;
+  ROLE_DRIVER = 3;
+}
+
+message User {
+  string id = 1;
+  string email = 2;
+  string full_name = 3;
+  Role role = 4;
+  bool active = 5;
+  // RFC 3339, UTC.
+  string created_at = 6;
+}
+
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  string access_token = 1;
+  string token_type = 2;
+  int64 expires_in_seconds = 3;
+  User user = 4;
+}
+
+message CreateUserRequest {
+  string email = 1;
+  string password = 2;
+  string full_name = 3;
+  Role role = 4;
+}
+
+message CreateUserResponse {
+  User user = 1;
+}
+
+message GetUserRequest {
+  string id = 1;
+}
+
+message GetUserResponse {
+  User user = 1;
+}
+
+message ValidateTokenRequest {
+  string access_token = 1;
+}
+
+message ValidateTokenResponse {
+  string user_id = 1;
+  Role role = 2;
+}

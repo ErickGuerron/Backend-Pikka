@@ -1,0 +1,8 @@
+.env
+*.out
+coverage/
+bin/
+.idea/
+.vscode/
+.DS_Store
+node_modules/

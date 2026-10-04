@@ -1,0 +1,41 @@
+version: "2"
+run:
+  timeout: 5m
+  build-tags:
+    - integration
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - contextcheck
+    - errorlint
+    - gocritic
+    - gosec
+    - noctx
+    - revive
+    - sqlclosecheck
+    - unconvert
+    - unparam
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+    gosec:
+      excludes:
+        - G115 # conversiones de enteros revisadas manualmente
+  exclusions:
+    generated: strict
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - unparam
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/ErickGuerron/Backend-Pikka

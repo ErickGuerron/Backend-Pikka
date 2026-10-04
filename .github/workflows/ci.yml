@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [services/auth-service, services/api-gateway]
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: go vet
+        run: go vet ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.1.6
+          working-directory: ${{ matrix.module }}
+          args: --config ${{ github.workspace }}/.golangci.yml
+      - name: Unit tests
+        run: go test -race -coverprofile=coverage.out ./...
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ strategy.job-index }}
+          path: ${{ matrix.module }}/coverage.out
+
+  integration:
+    name: Integration (PostgreSQL + PostGIS)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: last_mile
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/auth-service/go.mod
+          cache-dependency-path: services/auth-service/go.sum
+      - name: Initialize schemas and service users
+        run: |
+          export POSTGRES_USER=postgres POSTGRES_DB=last_mile
+          export AUTH_DB_PASSWORD=auth ORDER_DB_PASSWORD=x ZONE_DB_PASSWORD=x ROUTING_DB_PASSWORD=x DRIVER_DB_PASSWORD=x TRACKING_DB_PASSWORD=x
+          bash infrastructure/postgres/init/01-schemas-and-users.sh
+      - name: Auth Service integration tests
+        working-directory: services/auth-service
+        env:
+          AUTH_TEST_DATABASE_URL: postgres://auth_service_user:auth@localhost:5432/last_mile?sslmode=disable&search_path=auth
+        run: go test -tags integration -count=1 ./...
+
+  contracts:
+    name: Contracts (proto + OpenAPI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: contracts/go.mod
+      - uses: bufbuild/buf-action@v1
+        with:
+          input: contracts
+          setup_only: true
+      - name: buf lint
+        run: buf lint contracts
+      - name: buf breaking
+        if: github.event_name == 'pull_request'
+        run: buf breaking contracts --against ".git#branch=origin/${{ github.base_ref }},subdir=contracts"
+      - name: Generated code is up to date
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.5
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+          cd contracts && buf generate
+          git diff --exit-code -- gen || (echo "Run 'make proto' and commit the result" && exit 1)
+      - name: OpenAPI lint
+        run: npx --yes @redocly/cli@1.34.0 lint --config contracts/openapi/redocly.yaml contracts/openapi/openapi.yaml
+
+  docker:
+    name: Docker images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build auth-service
+        run: docker build -f services/auth-service/Dockerfile -t lastmile/auth-service:ci .
+      - name: Build api-gateway
+        run: docker build -f services/api-gateway/Dockerfile -t lastmile/api-gateway:ci .
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  sonarqube:
+    name: SonarQube
+    runs-on: ubuntu-latest
+    needs: go
+    # Se activa cuando el repositorio tenga configurados SONAR_TOKEN y SONAR_HOST_URL.
+    if: ${{ vars.SONAR_ENABLED == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-*
+          path: coverage
+      - uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      - uses: SonarSource/sonarqube-quality-gate-action@v1
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}

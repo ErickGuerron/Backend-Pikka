@@ -1,0 +1,220 @@
+openapi: 3.0.3
+info:
+  title: Last-Mile Logistics API
+  version: 1.0.0
+  description: |
+    API pública REST/JSON expuesta por el API Gateway. Clientes: aplicación web
+    (React) y aplicación móvil de repartidores (React Native). Los microservicios
+    internos no son accesibles directamente.
+
+    Fase 1 cubre autenticación y usuarios. Pedidos, zonas, rutas, repartidores y
+    seguimiento se agregan en las fases siguientes.
+servers:
+  - url: http://localhost:8080
+    description: Entorno local (docker compose)
+tags:
+  - name: health
+    description: Liveness y readiness del Gateway
+  - name: auth
+    description: Inicio de sesión e identidad actual
+  - name: users
+    description: Administración de usuarios y roles
+paths:
+  /health:
+    get:
+      tags: [health]
+      operationId: getHealth
+      summary: El proceso está vivo
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+  /ready:
+    get:
+      tags: [health]
+      operationId: getReady
+      summary: El Gateway y sus dependencias pueden recibir tráfico
+      security: []
+      responses:
+        "200":
+          description: Listo
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+        "503":
+          description: Alguna dependencia no está lista
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Inicia sesión y obtiene un token de acceso
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Credenciales válidas
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /api/v1/auth/me:
+    get:
+      tags: [auth]
+      operationId: getCurrentUser
+      summary: Devuelve el usuario autenticado
+      responses:
+        "200":
+          description: Usuario actual
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/users:
+    post:
+      tags: [users]
+      operationId: createUser
+      summary: Crea un usuario (solo ADMIN)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateUserRequest" }
+      responses:
+        "201":
+          description: Usuario creado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/users/{id}:
+    get:
+      tags: [users]
+      operationId: getUser
+      summary: Obtiene un usuario (ADMIN, OPERATOR o el propio usuario)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Usuario
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Status:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, example: ok }
+    Role:
+      type: string
+      enum: [ADMIN, OPERATOR, DRIVER]
+    User:
+      type: object
+      required: [id, email, fullName, role, active, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        fullName: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+        active: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+    LoginResponse:
+      type: object
+      required: [accessToken, tokenType, expiresIn, user]
+      properties:
+        accessToken: { type: string }
+        tokenType: { type: string, example: Bearer }
+        expiresIn: { type: integer, description: Segundos hasta que expira el token, example: 3600 }
+        user: { $ref: "#/components/schemas/User" }
+    CreateUserRequest:
+      type: object
+      required: [email, password, fullName, role]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        password: { type: string, format: password, minLength: 8, maxLength: 72 }
+        fullName: { type: string, maxLength: 120 }
+        role: { $ref: "#/components/schemas/Role" }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              example: INVALID_ARGUMENT
+              description: |
+                INVALID_ARGUMENT, UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, CONFLICT,
+                FAILED_PRECONDITION, RATE_LIMITED, PAYLOAD_TOO_LARGE,
+                UNSUPPORTED_MEDIA_TYPE, UPSTREAM_TIMEOUT, UPSTREAM_UNAVAILABLE, INTERNAL
+            message: { type: string }
+            requestId: { type: string, description: Igual a la cabecera X-Request-Id }
+  responses:
+    BadRequest:
+      description: Entrada inválida
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Token ausente, inválido o expirado, o credenciales incorrectas
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Sin permiso sobre el recurso
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: No existe
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: Conflicto con el estado actual
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: Límite de peticiones excedido
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
