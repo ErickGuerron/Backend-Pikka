@@ -36,7 +36,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.1.6
+          version: v2.14.0
           working-directory: ${{ matrix.module }}
           args: --config ${{ github.workspace }}/.golangci.yml
       - name: Unit tests

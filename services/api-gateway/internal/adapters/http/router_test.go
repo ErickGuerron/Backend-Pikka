@@ -23,7 +23,8 @@ import (
 	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/infrastructure/jwt"
 )
 
-const secret = "0123456789abcdef0123456789abcdef"
+// Clave de prueba generada para no dejar literales con forma de secreto.
+var secret = strings.Repeat("k", 32)
 
 type fakeAuth struct {
 	lastMeta grpcclient.CallMeta

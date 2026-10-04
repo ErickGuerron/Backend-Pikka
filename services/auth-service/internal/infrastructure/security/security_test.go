@@ -1,6 +1,7 @@
 package security
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -12,7 +13,8 @@ import (
 	"github.com/ErickGuerron/Backend-Pikka/services/auth-service/internal/domain"
 )
 
-const secret = "0123456789abcdef0123456789abcdef"
+// Clave de prueba generada para no dejar literales con forma de secreto.
+var secret = strings.Repeat("k", 32)
 
 func TestJWTRoundTrip(t *testing.T) {
 	j := NewJWTIssuer(secret, "lastmile-auth", time.Hour)
@@ -39,7 +41,7 @@ func TestJWTRejects(t *testing.T) {
 	})
 
 	t.Run("otra clave", func(t *testing.T) {
-		other := NewJWTIssuer("ffffffffffffffffffffffffffffffff", "lastmile-auth", time.Hour)
+		other := NewJWTIssuer(strings.Repeat("x", 32), "lastmile-auth", time.Hour)
 		_, err := other.Verify(tok)
 		assert.ErrorIs(t, err, domain.ErrInvalidToken)
 	})

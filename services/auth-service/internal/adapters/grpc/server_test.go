@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -71,7 +72,7 @@ func newClient(t *testing.T) authv1.AuthServiceClient {
 	t.Helper()
 	repo := &memRepo{}
 	hasher := security.NewBcryptHasher(bcrypt.MinCost)
-	tokens := security.NewJWTIssuer("0123456789abcdef0123456789abcdef", "lastmile-auth", time.Hour)
+	tokens := security.NewJWTIssuer(strings.Repeat("k", 32), "lastmile-auth", time.Hour)
 	login, err := application.NewLogin(repo, hasher, tokens)
 	require.NoError(t, err)
 	_, err = application.NewBootstrapAdmin(repo, hasher).Execute(context.Background(), "admin@example.com", "admin-password")

@@ -1,6 +1,7 @@
 package jwt
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -9,7 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const secret = "0123456789abcdef0123456789abcdef"
+// Clave de prueba generada para no dejar literales con forma de secreto.
+var secret = strings.Repeat("k", 32)
 
 func sign(t *testing.T, c claims, key string) string {
 	t.Helper()
@@ -48,7 +50,7 @@ func TestVerify(t *testing.T) {
 		"rol inválido": sign(t, badRole, secret),
 		"sin sub":      sign(t, noSub, secret),
 		"otro emisor":  sign(t, otherIss, secret),
-		"otra clave":   sign(t, valid(), "ffffffffffffffffffffffffffffffff"),
+		"otra clave":   sign(t, valid(), strings.Repeat("x", 32)),
 		"basura":       "a.b.c",
 	} {
 		t.Run(name, func(t *testing.T) {

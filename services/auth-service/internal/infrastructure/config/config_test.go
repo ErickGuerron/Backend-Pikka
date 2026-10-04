@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -21,7 +22,7 @@ func TestLoadRequiresSecrets(t *testing.T) {
 
 func TestLoadValid(t *testing.T) {
 	t.Setenv("POSTGRES_PASSWORD", "p@ss/word")
-	t.Setenv("JWT_SECRET", "0123456789abcdef0123456789abcdef")
+	t.Setenv("JWT_SECRET", strings.Repeat("k", 32))
 	t.Setenv("JWT_TTL", "15m")
 	cfg, err := config.Load()
 	require.NoError(t, err)
@@ -32,7 +33,7 @@ func TestLoadValid(t *testing.T) {
 
 func TestLoadBootstrapPair(t *testing.T) {
 	t.Setenv("POSTGRES_PASSWORD", "x")
-	t.Setenv("JWT_SECRET", "0123456789abcdef0123456789abcdef")
+	t.Setenv("JWT_SECRET", strings.Repeat("k", 32))
 	t.Setenv("BOOTSTRAP_ADMIN_EMAIL", "admin@example.com")
 	t.Setenv("BOOTSTRAP_ADMIN_PASSWORD", "")
 	_, err := config.Load()

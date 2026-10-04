@@ -1,6 +1,6 @@
 # Construir desde la raíz del repositorio:
 #   docker build -f services/auth-service/Dockerfile .
-FROM golang:1.24-alpine AS build
+FROM golang:1.26-alpine AS build
 WORKDIR /src
 ENV CGO_ENABLED=0 GOWORK=off
 

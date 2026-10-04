@@ -21,7 +21,7 @@ de rutas, repartidores y seguimiento. La base técnica completa está en
 
 ## Arranque rápido
 
-Requisitos: Docker con Compose, Go 1.24 y `make`.
+Requisitos: Docker con Compose, Go 1.26 y `make`.
 
 ```bash
 cp .env.example .env      # cambia las contraseñas y JWT_SECRET
