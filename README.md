@@ -45,6 +45,21 @@ curl -s -X POST localhost:8080/api/v1/users \
   -d '{"email":"driver1@example.com","password":"password123","fullName":"Repartidor Uno","role":"DRIVER"}'
 ```
 
+### Windows
+
+El repositorio fuerza saltos de línea LF (`.gitattributes`). Si clonaste antes
+de ese cambio y el `auth-service` se reinicia sin parar, el script de
+inicialización de PostgreSQL quedó con CRLF y la base arrancó sin esquemas ni
+usuarios. Para arreglarlo, en PowerShell:
+
+```powershell
+git pull
+git rm --cached -r -q .
+git reset --hard
+docker compose down -v     # borra el volumen de PostgreSQL mal inicializado
+docker compose up -d --build
+```
+
 ## Comandos
 
 ```text

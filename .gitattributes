@@ -1,0 +1,8 @@
+# Siempre LF en el repositorio y en la copia de trabajo, también en Windows.
+# Los scripts que corren dentro de los contenedores Linux fallan con CRLF
+# ("/bin/bash^M: bad interpreter") y PostgreSQL arranca sin esquemas ni usuarios.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
