@@ -73,6 +73,26 @@ services:
       postgres:
         condition: service_healthy
 
+  zone-service:
+    <<: *go-service
+    build:
+      context: .
+      dockerfile: services/zone-service/Dockerfile
+    environment:
+      <<: *go-env
+      HTTP_PORT: "8080"
+      GRPC_PORT: "9090"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-last_mile}
+      POSTGRES_USER: zone_service_user
+      POSTGRES_PASSWORD: ${ZONE_DB_PASSWORD}
+      POSTGRES_SCHEMA: zones
+    # Tráfico interno: sin puertos publicados al host; solo el Gateway lo alcanza.
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   api-gateway:
     <<: *go-service
     build:

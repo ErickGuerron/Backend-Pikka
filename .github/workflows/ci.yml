@@ -121,6 +121,8 @@ jobs:
         run: docker build -f services/auth-service/Dockerfile -t lastmile/auth-service:ci .
       - name: Build api-gateway
         run: docker build -f services/api-gateway/Dockerfile -t lastmile/api-gateway:ci .
+      - name: Build zone-service
+        run: docker build -f services/zone-service/Dockerfile -t lastmile/zone-service:ci .
 
   secrets:
     name: Secret scan
