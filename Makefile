@@ -1,4 +1,4 @@
-GO_MODULES := services/auth-service services/api-gateway
+GO_MODULES := services/auth-service services/api-gateway services/zone-service
 LINT := golangci-lint
 
 # Carga las variables de .env (igual que docker compose) para que las recetas

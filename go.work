@@ -4,4 +4,5 @@ use (
 	./contracts
 	./services/api-gateway
 	./services/auth-service
+	./services/zone-service
 )
