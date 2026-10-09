@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package zones.v1;
+
+option go_package = "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/zones/v1;zonesv1";
+
+// ZoneService gestiona las zonas geográficas de reparto y clasifica coordenadas.
+// Solo es consumido por el API Gateway y otros servicios internos (Routing).
+service ZoneService {
+  // CreateZone registra una zona definida por un anillo cerrado de coordenadas.
+  rpc CreateZone(CreateZoneRequest) returns (CreateZoneResponse);
+
+  // GetZone devuelve una zona por su identificador.
+  rpc GetZone(GetZoneRequest) returns (GetZoneResponse);
+
+  // ClassifyPoint devuelve la zona que contiene una coordenada.
+  // Si varias zonas la contienen, devuelve la de menor área.
+  // Responde NOT_FOUND si ninguna zona la contiene.
+  rpc ClassifyPoint(ClassifyPointRequest) returns (ClassifyPointResponse);
+}
+
+message Coordinate {
+  double latitude = 1;
+  double longitude = 2;
+}
+
+message Zone {
+  string id = 1;
+  string code = 2;
+  string name = 3;
+  // Anillo cerrado: el primer punto coincide con el último.
+  repeated Coordinate ring = 4;
+  // RFC 3339, UTC.
+  string created_at = 5;
+}
+
+message CreateZoneRequest {
+  string code = 1;
+  string name = 2;
+  repeated Coordinate ring = 3;
+}
+
+message CreateZoneResponse {
+  Zone zone = 1;
+}
+
+message GetZoneRequest {
+  string id = 1;
+}
+
+message GetZoneResponse {
+  Zone zone = 1;
+}
+
+message ClassifyPointRequest {
+  Coordinate point = 1;
+}
+
+message ClassifyPointResponse {
+  Zone zone = 1;
+}
