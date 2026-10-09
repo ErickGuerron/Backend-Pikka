@@ -6,3 +6,6 @@ bin/
 .vscode/
 .DS_Store
 node_modules/
+# Reportes generados por OWASP ZAP (make security-scan); se conserva la carpeta.
+reports/security/*
+!reports/security/.gitkeep

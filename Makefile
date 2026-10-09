@@ -1,7 +1,19 @@
 GO_MODULES := services/auth-service services/api-gateway
 LINT := golangci-lint
 
-.PHONY: help up down logs test test-integration lint fmt proto openapi-lint
+# Carga las variables de .env (igual que docker compose) para que las recetas
+# usen las mismas contraseñas que el contenedor. Sin .env no falla.
+-include .env
+export
+
+# En Windows, make usa cmd.exe por defecto, que no entiende los bucles ni la
+# sintaxis POSIX de estas recetas. Usamos el sh de Git for Windows. La ruta es
+# la forma corta 8.3 porque GNU make no admite espacios en SHELL.
+ifeq ($(OS),Windows_NT)
+SHELL := C:/PROGRA~1/Git/bin/sh.exe
+endif
+
+.PHONY: help up down logs test test-integration lint fmt proto openapi-lint perf-smoke security-scan
 
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
@@ -33,3 +45,9 @@ proto: ## Regenera el código Go de los contratos gRPC (requiere buf, protoc-gen
 
 openapi-lint: ## Valida el contrato OpenAPI
 	npx --yes @redocly/cli@1.34.0 lint --config contracts/openapi/redocly.yaml contracts/openapi/openapi.yaml
+
+perf-smoke: ## Smoke de rendimiento con k6 (requiere `make up`)
+	docker compose --profile perf run --rm k6
+
+security-scan: ## Escaneo activo OWASP ZAP sobre el contrato OpenAPI (requiere `make up`)
+	docker compose --profile security run --rm zap

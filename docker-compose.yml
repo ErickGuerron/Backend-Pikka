@@ -92,5 +92,50 @@ services:
     depends_on:
       - auth-service
 
+  # --- Pruebas de rendimiento y seguridad -----------------------------------
+  # Estos servicios NO se levantan con `make up`. Se ejecutan bajo demanda:
+  #   make perf-smoke       -> k6 (perfil "perf")
+  #   make security-scan    -> OWASP ZAP API scan (perfil "security")
+  # Se conectan al Gateway por la red interna de compose (api-gateway:8080).
+
+  k6:
+    image: grafana/k6:1.2.2
+    profiles: ["perf"]
+    environment:
+      BASE_URL: ${PERF_BASE_URL:-http://api-gateway:8080}
+      K6_NO_COLOR: "true"
+    volumes:
+      - ./test-data/performance:/scripts:ro
+    command: ["run", "/scripts/smoke.js"]
+    depends_on:
+      - api-gateway
+
+  # OWASP ZAP en modo terminal (headless). Escanea la API a partir del contrato
+  # OpenAPI publicado por el Gateway. Es un escaneo ACTIVO: envía payloads de
+  # ataque, así que sólo debe ejecutarse contra el entorno local o de pruebas,
+  # nunca contra producción.
+  # Códigos de salida: 0 sin alertas, 1 sólo advertencias, 2 hay alertas FAIL.
+  zap:
+    image: ghcr.io/zaproxy/zaproxy:stable
+    profiles: ["security"]
+    command:
+      - zap-api-scan.py
+      - -t
+      - http://api-gateway:8080/openapi.yaml
+      - -f
+      - openapi
+      - -m
+      - "5"
+      - -r
+      - zap-report.html
+      - -w
+      - zap-report.md
+      - -J
+      - zap-report.json
+    volumes:
+      - ./reports/security:/zap/wrk
+    depends_on:
+      - api-gateway
+
 volumes:
   postgres-data:
