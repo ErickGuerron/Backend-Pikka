@@ -5,6 +5,8 @@ Base: `docs/architecture/BASE_TECNICA.md`, secciones 46 (fases) y 31–35 (prueb
 
 Las fechas de inicio se definen al arrancar el Sprint 1. Cada sprint dura 2 semanas.
 
+Este documento cubre el backend. Las tareas de frontend (web y app móvil) están en `Frontend-Pikka/docs/planning/division-de-tareas.md`. El plan completo y consolidado para entregar en Word está en `Proyecto-Uber-Eats/Plan-de-trabajo-Pikka.md`.
+
 ## Cómo se trabaja
 
 - **Contrato primero:** el `.proto` y el OpenAPI de un servicio se mergean antes que su implementación. `buf breaking` debe pasar.
