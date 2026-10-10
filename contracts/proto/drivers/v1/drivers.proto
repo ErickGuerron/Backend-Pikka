@@ -12,9 +12,7 @@ service DriverService {
   //
   // Códigos de estado gRPC que el servidor debe devolver:
   //
-  //   | Código           | Causa                                                  |
-  //   |------------------|--------------------------------------------------------|
-  //   | INVALID_ARGUMENT | limit es negativo.                                     |
+  //   - INVALID_ARGUMENT: limit es negativo.
   //
   // Un limit mayor que el máximo no es un error: se limita al máximo (100).
   rpc FindAvailableDrivers(FindAvailableDriversRequest) returns (FindAvailableDriversResponse);
@@ -36,13 +34,10 @@ service DriverService {
   //
   // Códigos de estado gRPC que el servidor debe devolver:
   //
-  //   | Código              | Causa                                                  |
-  //   |---------------------|--------------------------------------------------------|
-  //   | INVALID_ARGUMENT    | driver_id o route_id en blanco.                        |
-  //   | NOT_FOUND           | El repartidor no existe.                               |
-  //   | FAILED_PRECONDITION | El repartidor está inactivo, está OFFLINE (el dominio  |
-  //   |                     | devuelve ErrDriverOffline) o ya está reservado para    |
-  //   |                     | otra ruta.                                             |
+  //   - INVALID_ARGUMENT: driver_id o route_id en blanco.
+  //   - NOT_FOUND: el repartidor no existe.
+  //   - FAILED_PRECONDITION: el repartidor está inactivo, está OFFLINE (el
+  //     dominio devuelve ErrDriverOffline) o ya está reservado para otra ruta.
   //
   // En FAILED_PRECONDITION el mensaje del error distingue cuál de las tres causas
   // ocurrió.
