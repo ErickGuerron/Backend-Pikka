@@ -1,0 +1,101 @@
+syntax = "proto3";
+
+package drivers.v1;
+
+option go_package = "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/drivers/v1;driversv1";
+
+// DriverService gestiona la disponibilidad y la reserva de repartidores.
+// Solo es consumido por otros servicios internos (por ejemplo, el servicio de rutas); nunca por clientes.
+service DriverService {
+  // FindAvailableDrivers devuelve solo los repartidores activos cuyo estado es
+  // DRIVER_STATUS_AVAILABLE, como DriverSummary (solo identificadores).
+  //
+  // Códigos de estado gRPC que el servidor debe devolver:
+  //
+  //   - INVALID_ARGUMENT: limit es negativo.
+  //
+  // Un limit mayor que el máximo no es un error: se limita al máximo (100).
+  rpc FindAvailableDrivers(FindAvailableDriversRequest) returns (FindAvailableDriversResponse);
+
+  // ReserveDriver reserva un repartidor para una ruta. Un repartidor solo puede
+  // atender una ruta a la vez. Si tiene éxito, el Driver devuelto queda en estado
+  // DRIVER_STATUS_ASSIGNED.
+  //
+  // driver_id y route_id son obligatorios y no pueden estar en blanco.
+  //
+  // Idempotencia: repetir la llamada con el mismo driver_id y route_id mientras el
+  // repartidor conserva esa ruta (estado ASSIGNED u ON_ROUTE) tiene éxito sin efectos
+  // adicionales y devuelve el Driver actual. Esto se cumple incluso si el repartidor
+  // fue desactivado después de la reserva. Límite: una vez que la ruta fue liberada o
+  // completada, una llamada duplicada y tardía volvería a reservar al repartidor, así
+  // que el llamador (Routing Service) no debe reintentar una ruta ya finalizada.
+  //
+  // Reservar un repartidor que ya está reservado para otra ruta falla.
+  //
+  // Códigos de estado gRPC que el servidor debe devolver:
+  //
+  //   - INVALID_ARGUMENT: driver_id o route_id en blanco.
+  //   - NOT_FOUND: el repartidor no existe.
+  //   - FAILED_PRECONDITION: el repartidor está inactivo, está OFFLINE (el
+  //     dominio devuelve ErrDriverOffline) o ya está reservado para otra ruta.
+  //
+  // En FAILED_PRECONDITION el mensaje del error distingue cuál de las tres causas
+  // ocurrió.
+  rpc ReserveDriver(ReserveDriverRequest) returns (ReserveDriverResponse);
+}
+
+enum DriverStatus {
+  DRIVER_STATUS_UNSPECIFIED = 0;
+  DRIVER_STATUS_AVAILABLE = 1;
+  DRIVER_STATUS_ASSIGNED = 2;
+  DRIVER_STATUS_ON_ROUTE = 3;
+  DRIVER_STATUS_OFFLINE = 4;
+}
+
+message Driver {
+  string id = 1;
+  // Identificador del usuario en Auth Service con rol DRIVER.
+  string user_id = 2;
+  string full_name = 3;
+  string phone = 4;
+  bool active = 5;
+  DriverStatus status = 6;
+  // RFC 3339, UTC.
+  string created_at = 7;
+}
+
+// DriverSummary es la vista mínima de un repartidor disponible. El Routing Service
+// solo necesita los identificadores para elegir y reservar un repartidor, por lo que
+// no se exponen el nombre ni el teléfono (minimización de datos).
+message DriverSummary {
+  string id = 1;
+  // Identificador del usuario en Auth Service con rol DRIVER.
+  string user_id = 2;
+}
+
+message FindAvailableDriversRequest {
+  // Cantidad máxima de repartidores a devolver. Cero usa el valor por defecto del
+  // servicio (50). El máximo es 100: un valor mayor se limita a 100 y no es un error.
+  // Un valor negativo falla con INVALID_ARGUMENT.
+  int32 limit = 1;
+}
+
+message FindAvailableDriversResponse {
+  repeated DriverSummary drivers = 1;
+}
+
+message ReserveDriverRequest {
+  // Obligatorio; no puede estar en blanco.
+  string driver_id = 1;
+  // Ruta para la que se reserva; obligatorio. Junto con driver_id identifica la
+  // reserva a efectos de idempotencia.
+  string route_id = 2;
+}
+
+message ReserveDriverResponse {
+  // Repartidor ya reservado (estado ASSIGNED). A diferencia de FindAvailableDrivers,
+  // incluye el nombre y el teléfono a propósito: al entregar, el repartidor debe poder
+  // contactar al cliente y el cliente al repartidor. Solo se expone a quien reserva,
+  // nunca a clientes finales.
+  Driver driver = 1;
+}
