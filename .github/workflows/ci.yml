@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [services/auth-service, services/api-gateway, services/zone-service]
+        module: [services/auth-service, services/api-gateway, services/zone-service, services/driver-service]
     defaults:
       run:
         working-directory: ${{ matrix.module }}
