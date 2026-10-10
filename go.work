@@ -5,4 +5,5 @@ use (
 	./services/api-gateway
 	./services/auth-service
 	./services/zone-service
+	./services/driver-service
 )
