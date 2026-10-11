@@ -62,7 +62,10 @@ func run(log *slog.Logger) error {
 		TrustProxy:         cfg.TrustProxy,
 		EnableHSTS:         cfg.EnableHSTS,
 		EnableDocs:         cfg.EnableDocs,
-	}, jwt.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer), auth, zones, auth.Ready)
+	}, jwt.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer), auth, zones, func(ctx context.Context) bool {
+		// El gateway solo está listo si puede llegar a sus dependencias gRPC.
+		return auth.Ready(ctx) && zones.Ready(ctx)
+	})
 
 	e.Server.ReadHeaderTimeout = 5 * time.Second
 	e.Server.ReadTimeout = 15 * time.Second
