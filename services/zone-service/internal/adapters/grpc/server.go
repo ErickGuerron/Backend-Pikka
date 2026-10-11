@@ -30,7 +30,8 @@ func (s *Server) CreateZone(ctx context.Context, req *zonesv1.CreateZoneRequest)
 		return nil, err
 	}
 	ring := fromProtoRing(req.GetRing())
-	zone, err := s.zones.CreateZone(ctx, req.GetCode(), req.GetName(), ring)
+	holes := fromProtoHoles(req.GetHoles())
+	zone, err := s.zones.CreateZoneWithHoles(ctx, req.GetCode(), req.GetName(), ring, holes)
 	if err != nil {
 		return nil, toStatus(err)
 	}
@@ -98,10 +99,31 @@ func fromProtoRing(points []*zonesv1.Coordinate) []domain.Coordinate {
 	return ring
 }
 
+// fromProtoHoles convierte los huecos del request. Un hueco sin puntos se rechaza en el dominio.
+func fromProtoHoles(holes []*zonesv1.Ring) [][]domain.Coordinate {
+	out := make([][]domain.Coordinate, 0, len(holes))
+	for _, h := range holes {
+		out = append(out, fromProtoRing(h.GetPoints()))
+	}
+	return out
+}
+
+func toProtoRing(points []domain.Coordinate) *zonesv1.Ring {
+	ring := make([]*zonesv1.Coordinate, 0, len(points))
+	for _, p := range points {
+		ring = append(ring, &zonesv1.Coordinate{Latitude: p.Latitude, Longitude: p.Longitude})
+	}
+	return &zonesv1.Ring{Points: ring}
+}
+
 func toProtoZone(z domain.Zone) *zonesv1.Zone {
 	ring := make([]*zonesv1.Coordinate, 0, len(z.Ring))
 	for _, p := range z.Ring {
 		ring = append(ring, &zonesv1.Coordinate{Latitude: p.Latitude, Longitude: p.Longitude})
+	}
+	holes := make([]*zonesv1.Ring, 0, len(z.Holes))
+	for _, h := range z.Holes {
+		holes = append(holes, toProtoRing(h))
 	}
 	return &zonesv1.Zone{
 		Id:        z.ID,
@@ -109,5 +131,6 @@ func toProtoZone(z domain.Zone) *zonesv1.Zone {
 		Name:      z.Name,
 		Ring:      ring,
 		CreatedAt: z.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		Holes:     holes,
 	}
 }

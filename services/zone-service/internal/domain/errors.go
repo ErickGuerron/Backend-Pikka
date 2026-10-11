@@ -10,6 +10,8 @@ var (
 	ErrInvalidRing       = errors.New("zone needs at least 4 vertices (plus the closing point)")
 	ErrRingNotClosed     = errors.New("zone ring must be closed: first and last points must match")
 	ErrNotConvex         = errors.New("zone must be a convex polygon: no crossing sides and no inward corners")
+	ErrHoleOutside       = errors.New("each hole must lie strictly inside the outer ring, without touching it")
+	ErrHolesOverlap      = errors.New("holes must not overlap or touch each other")
 	ErrZoneNotFound      = errors.New("zone not found")
 	ErrZoneCodeTaken     = errors.New("zone code already exists")
 )

@@ -29,17 +29,19 @@ type coordinateDTO struct {
 }
 
 type zoneDTO struct {
-	ID        string          `json:"id"`
-	Code      string          `json:"code"`
-	Name      string          `json:"name"`
-	Ring      []coordinateDTO `json:"ring"`
-	CreatedAt string          `json:"createdAt"`
+	ID        string            `json:"id"`
+	Code      string            `json:"code"`
+	Name      string            `json:"name"`
+	Ring      []coordinateDTO   `json:"ring"`
+	Holes     [][]coordinateDTO `json:"holes"`
+	CreatedAt string            `json:"createdAt"`
 }
 
 type createZoneRequest struct {
-	Code string          `json:"code"`
-	Name string          `json:"name"`
-	Ring []coordinateDTO `json:"ring"`
+	Code  string            `json:"code"`
+	Name  string            `json:"name"`
+	Ring  []coordinateDTO   `json:"ring"`
+	Holes [][]coordinateDTO `json:"holes"`
 }
 
 func (h *zonesHandlers) create(c echo.Context) error {
@@ -48,9 +50,10 @@ func (h *zonesHandlers) create(c echo.Context) error {
 		return err
 	}
 	res, err := h.zones.CreateZone(c.Request().Context(), callMeta(c), &zonesv1.CreateZoneRequest{
-		Code: req.Code,
-		Name: req.Name,
-		Ring: toProtoRing(req.Ring),
+		Code:  req.Code,
+		Name:  req.Name,
+		Ring:  toProtoRing(req.Ring),
+		Holes: toProtoHoles(req.Holes),
 	})
 	if err != nil {
 		return err
@@ -92,16 +95,34 @@ func toProtoRing(points []coordinateDTO) []*zonesv1.Coordinate {
 	return ring
 }
 
+// toProtoHoles convierte los huecos del JSON. Un hueco vacío llega como anillo sin puntos y el dominio lo rechaza.
+func toProtoHoles(holes [][]coordinateDTO) []*zonesv1.Ring {
+	out := make([]*zonesv1.Ring, 0, len(holes))
+	for _, h := range holes {
+		out = append(out, &zonesv1.Ring{Points: toProtoRing(h)})
+	}
+	return out
+}
+
 func toZoneDTO(z *zonesv1.Zone) zoneDTO {
 	ring := make([]coordinateDTO, 0, len(z.GetRing()))
 	for _, p := range z.GetRing() {
 		ring = append(ring, coordinateDTO{Latitude: p.GetLatitude(), Longitude: p.GetLongitude()})
+	}
+	holes := make([][]coordinateDTO, 0, len(z.GetHoles()))
+	for _, h := range z.GetHoles() {
+		hole := make([]coordinateDTO, 0, len(h.GetPoints()))
+		for _, p := range h.GetPoints() {
+			hole = append(hole, coordinateDTO{Latitude: p.GetLatitude(), Longitude: p.GetLongitude()})
+		}
+		holes = append(holes, hole)
 	}
 	return zoneDTO{
 		ID:        z.GetId(),
 		Code:      z.GetCode(),
 		Name:      z.GetName(),
 		Ring:      ring,
+		Holes:     holes,
 		CreatedAt: z.GetCreatedAt(),
 	}
 }

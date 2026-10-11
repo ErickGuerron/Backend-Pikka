@@ -44,7 +44,7 @@ func (r *ZoneRepository) Save(ctx context.Context, zone domain.Zone) (domain.Zon
 		`INSERT INTO zones (code, name, area)
 		 VALUES ($1, $2, ST_GeogFromText($3))
 		 RETURNING id::text, created_at`,
-		zone.Code, zone.Name, wktPolygon(zone.Ring),
+		zone.Code, zone.Name, wktPolygon(zone.Ring, zone.Holes),
 	).Scan(&id, &createdAt)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -71,11 +71,12 @@ func (r *ZoneRepository) FindByID(ctx context.Context, id string) (domain.Zone, 
 		return domain.Zone{}, fmt.Errorf("select zone: %w", err)
 	}
 
-	ring, err := r.loadRing(ctx, id)
+	outer, holes, err := r.loadRings(ctx, id)
 	if err != nil {
 		return domain.Zone{}, err
 	}
-	zone.Ring = ring
+	zone.Ring = outer
+	zone.Holes = holes
 	return zone, nil
 }
 
@@ -101,40 +102,62 @@ func (r *ZoneRepository) FindContaining(ctx context.Context, point domain.Coordi
 	return r.FindByID(ctx, id)
 }
 
-// loadRing lee los vértices del polígono en el orden en que se guardaron.
-func (r *ZoneRepository) loadRing(ctx context.Context, id string) ([]domain.Coordinate, error) {
+// loadRings lee el anillo exterior y los huecos en el orden en que se guardaron.
+// En ST_DumpPoints, path[1] es el índice del anillo: 1 es el exterior y 2 en adelante, los huecos.
+func (r *ZoneRepository) loadRings(ctx context.Context, id string) ([]domain.Coordinate, [][]domain.Coordinate, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT ST_Y(d.geom), ST_X(d.geom)
+		`SELECT d.path[1], ST_Y(d.geom), ST_X(d.geom)
 		   FROM zones z
 		   CROSS JOIN LATERAL ST_DumpPoints(z.area::geometry) AS d
 		  WHERE z.id = $1
 		  ORDER BY d.path`, id)
 	if err != nil {
-		return nil, fmt.Errorf("select ring: %w", err)
+		return nil, nil, fmt.Errorf("select rings: %w", err)
 	}
 	defer rows.Close()
 
-	var ring []domain.Coordinate
+	var outer []domain.Coordinate
+	var holes [][]domain.Coordinate
 	for rows.Next() {
+		var ringIndex int32
 		var lat, lng float64
-		if err := rows.Scan(&lat, &lng); err != nil {
-			return nil, fmt.Errorf("scan ring point: %w", err)
+		if err := rows.Scan(&ringIndex, &lat, &lng); err != nil {
+			return nil, nil, fmt.Errorf("scan ring point: %w", err)
 		}
-		ring = append(ring, domain.Coordinate{Latitude: lat, Longitude: lng})
+		point := domain.Coordinate{Latitude: lat, Longitude: lng}
+		if ringIndex == 1 {
+			outer = append(outer, point)
+			continue
+		}
+		holeIndex := int(ringIndex) - 2
+		if holeIndex >= len(holes) {
+			holes = append(holes, nil)
+		}
+		holes[holeIndex] = append(holes[holeIndex], point)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("read ring: %w", err)
+		return nil, nil, fmt.Errorf("read rings: %w", err)
 	}
-	return ring, nil
+	return outer, holes, nil
 }
 
-// wktPolygon construye un POLYGON WKT con SRID. WKT usa el orden longitud latitud.
-func wktPolygon(ring []domain.Coordinate) string {
+// wktPolygon construye un POLYGON WKT con SRID: primero el exterior y luego los huecos.
+// WKT usa el orden longitud latitud.
+func wktPolygon(ring []domain.Coordinate, holes [][]domain.Coordinate) string {
+	rings := make([]string, 0, 1+len(holes))
+	rings = append(rings, wktRing(ring))
+	for _, hole := range holes {
+		rings = append(rings, wktRing(hole))
+	}
+	return "SRID=" + strconv.Itoa(sridWGS84) + ";POLYGON(" + strings.Join(rings, ", ") + ")"
+}
+
+func wktRing(ring []domain.Coordinate) string {
 	pts := make([]string, 0, len(ring))
 	for _, p := range ring {
 		pts = append(pts, formatFloat(p.Longitude)+" "+formatFloat(p.Latitude))
 	}
-	return "SRID=" + strconv.Itoa(sridWGS84) + ";POLYGON((" + strings.Join(pts, ", ") + "))"
+	return "(" + strings.Join(pts, ", ") + ")"
 }
 
 // formatFloat evita la notación exponencial, que PostGIS acepta pero es menos legible en logs.

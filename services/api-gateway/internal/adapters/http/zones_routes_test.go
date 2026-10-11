@@ -20,19 +20,20 @@ import (
 )
 
 type fakeZones struct {
-	lastMeta grpcclient.CallMeta
-	lastRing int
-	lastPt   *zonesv1.Coordinate
-	called   bool
-	err      error
+	lastMeta  grpcclient.CallMeta
+	lastRing  int
+	lastHoles []*zonesv1.Ring
+	lastPt    *zonesv1.Coordinate
+	called    bool
+	err       error
 }
 
 func (f *fakeZones) CreateZone(_ context.Context, m grpcclient.CallMeta, req *zonesv1.CreateZoneRequest) (*zonesv1.CreateZoneResponse, error) {
-	f.lastMeta, f.called, f.lastRing = m, true, len(req.GetRing())
+	f.lastMeta, f.called, f.lastRing, f.lastHoles = m, true, len(req.GetRing()), req.GetHoles()
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &zonesv1.CreateZoneResponse{Zone: &zonesv1.Zone{Id: "z-1", Code: req.GetCode(), Name: req.GetName(), Ring: req.GetRing()}}, nil
+	return &zonesv1.CreateZoneResponse{Zone: &zonesv1.Zone{Id: "z-1", Code: req.GetCode(), Name: req.GetName(), Ring: req.GetRing(), Holes: req.GetHoles()}}, nil
 }
 
 func (f *fakeZones) GetZone(_ context.Context, m grpcclient.CallMeta, req *zonesv1.GetZoneRequest) (*zonesv1.GetZoneResponse, error) {
@@ -118,4 +119,16 @@ func TestZones_GetByID(t *testing.T) {
 	rec := do(newZonesRouter(zones), http.MethodGet, "/api/v1/zones/z-9", "", bearer(t, "ADMIN"))
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.Contains(t, rec.Body.String(), `"id":"z-9"`)
+}
+
+const donutZoneJSON = `{"code":"DONA","name":"Dona","ring":[{"latitude":0,"longitude":0},{"latitude":0,"longitude":4},{"latitude":4,"longitude":4},{"latitude":4,"longitude":0},{"latitude":0,"longitude":0}],"holes":[[{"latitude":1,"longitude":1},{"latitude":1,"longitude":3},{"latitude":3,"longitude":3},{"latitude":3,"longitude":1},{"latitude":1,"longitude":1}]]}`
+
+func TestZones_CreateForwardsHolesAndReturnsThem(t *testing.T) {
+	zones := &fakeZones{}
+	rec := do(newZonesRouter(zones), http.MethodPost, "/api/v1/zones", donutZoneJSON, bearer(t, "ADMIN"))
+
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	require.Len(t, zones.lastHoles, 1)
+	assert.Len(t, zones.lastHoles[0].GetPoints(), 5)
+	assert.Contains(t, rec.Body.String(), `"holes":[[`)
 }

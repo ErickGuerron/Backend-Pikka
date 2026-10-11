@@ -24,6 +24,11 @@ message Coordinate {
   double longitude = 2;
 }
 
+// Ring es un anillo cerrado de coordenadas: el primer punto coincide con el último.
+message Ring {
+  repeated Coordinate points = 1;
+}
+
 message Zone {
   string id = 1;
   string code = 2;
@@ -32,12 +37,16 @@ message Zone {
   repeated Coordinate ring = 4;
   // RFC 3339, UTC.
   string created_at = 5;
+  // Huecos de la zona (dona). Cada uno es un anillo cerrado dentro del exterior. Vacío si no hay huecos.
+  repeated Ring holes = 6;
 }
 
 message CreateZoneRequest {
   string code = 1;
   string name = 2;
   repeated Coordinate ring = 3;
+  // Huecos opcionales (dona). Cada uno debe quedar dentro del anillo exterior y no tocarlo.
+  repeated Ring holes = 4;
 }
 
 message CreateZoneResponse {

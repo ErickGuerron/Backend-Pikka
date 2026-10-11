@@ -21,9 +21,14 @@ func NewZoneService(zones ports.ZoneRepository) *ZoneService {
 	return &ZoneService{zones: zones}
 }
 
-// CreateZone valida y registra una zona nueva.
+// CreateZone valida y registra una zona nueva sin huecos.
 func (s *ZoneService) CreateZone(ctx context.Context, code, name string, ring []domain.Coordinate) (domain.Zone, error) {
-	zone, err := domain.NewZone(code, name, ring)
+	return s.CreateZoneWithHoles(ctx, code, name, ring, nil)
+}
+
+// CreateZoneWithHoles valida y registra una zona nueva con huecos opcionales (dona).
+func (s *ZoneService) CreateZoneWithHoles(ctx context.Context, code, name string, ring []domain.Coordinate, holes [][]domain.Coordinate) (domain.Zone, error) {
+	zone, err := domain.NewZoneWithHoles(code, name, ring, holes)
 	if err != nil {
 		return domain.Zone{}, err
 	}

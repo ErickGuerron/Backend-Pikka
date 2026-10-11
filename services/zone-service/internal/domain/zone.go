@@ -32,18 +32,24 @@ func NewCoordinate(latitude, longitude float64) (Coordinate, error) {
 	return Coordinate{Latitude: latitude, Longitude: longitude}, nil
 }
 
-// Zone es una región geográfica de reparto definida por un anillo cerrado.
+// Zone es una región geográfica de reparto: un anillo exterior cerrado y, opcionalmente,
+// huecos (dona). Cada hueco es un anillo cerrado estrictamente dentro del exterior.
 type Zone struct {
 	ID        string
 	Code      string
 	Name      string
 	Ring      []Coordinate
+	Holes     [][]Coordinate
 	CreatedAt time.Time
 }
 
-// NewZone valida los datos de una zona nueva. El ID y la fecha de creación los
-// asigna la persistencia.
+// NewZone valida una zona sin huecos. El ID y la fecha de creación los asigna la persistencia.
 func NewZone(code, name string, ring []Coordinate) (Zone, error) {
+	return NewZoneWithHoles(code, name, ring, nil)
+}
+
+// NewZoneWithHoles valida una zona con huecos opcionales.
+func NewZoneWithHoles(code, name string, ring []Coordinate, holes [][]Coordinate) (Zone, error) {
 	code = strings.TrimSpace(code)
 	name = strings.TrimSpace(name)
 
@@ -56,8 +62,29 @@ func NewZone(code, name string, ring []Coordinate) (Zone, error) {
 	if err := validateRing(ring); err != nil {
 		return Zone{}, err
 	}
+	for _, hole := range holes {
+		if err := validateRing(hole); err != nil {
+			return Zone{}, err
+		}
+	}
+	if err := validateHoles(ring, holes); err != nil {
+		return Zone{}, err
+	}
 
-	return Zone{Code: code, Name: name, Ring: append([]Coordinate(nil), ring...)}, nil
+	return Zone{
+		Code:  code,
+		Name:  name,
+		Ring:  append([]Coordinate(nil), ring...),
+		Holes: copyRings(holes),
+	}, nil
+}
+
+func copyRings(rings [][]Coordinate) [][]Coordinate {
+	out := make([][]Coordinate, 0, len(rings))
+	for _, r := range rings {
+		out = append(out, append([]Coordinate(nil), r...))
+	}
+	return out
 }
 
 func validateRing(ring []Coordinate) error {

@@ -114,6 +114,49 @@ func TestZoneRepository_Save_RejectsDuplicateCode(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrZoneCodeTaken)
 }
 
+// Una dona: el hueco se guarda, se lee de vuelta y un punto dentro del hueco no pertenece a la zona.
+func TestZoneRepository_DonutRoundTripsAndExcludesHole(t *testing.T) {
+	repo, pool := setupRepo(t)
+	ctx := context.Background()
+
+	square := func(minLat, minLng, size float64) []domain.Coordinate {
+		return []domain.Coordinate{
+			coord(t, minLat, minLng),
+			coord(t, minLat, minLng+size),
+			coord(t, minLat+size, minLng+size),
+			coord(t, minLat+size, minLng),
+			coord(t, minLat, minLng),
+		}
+	}
+	// Zona aislada (lejos de las demás pruebas): exterior de 2x2 con un hueco de 1x1 centrado.
+	outer := square(40.0, -3.0, 2.0)
+	hole := square(40.5, -2.5, 1.0)
+	code := "IT-" + uuid.NewString()[:8]
+	zone, err := domain.NewZoneWithHoles(code, "Dona de prueba", outer, [][]domain.Coordinate{hole})
+	require.NoError(t, err)
+
+	saved, err := repo.Save(ctx, zone)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM zones WHERE id = $1`, saved.ID)
+	})
+
+	found, err := repo.FindByID(ctx, saved.ID)
+	require.NoError(t, err)
+	require.Len(t, found.Holes, 1)
+	assert.Len(t, found.Holes[0], 5)
+	assert.Len(t, found.Ring, 5)
+
+	// Centro del hueco: fuera de la zona.
+	_, err = repo.FindContaining(ctx, coord(t, 41.0, -2.0))
+	assert.ErrorIs(t, err, domain.ErrZoneNotFound)
+
+	// Entre el exterior y el hueco: dentro de la zona.
+	got, err := repo.FindContaining(ctx, coord(t, 40.2, -2.9))
+	require.NoError(t, err)
+	assert.Equal(t, saved.ID, got.ID)
+}
+
 func TestZoneRepository_SpatialIndexExists(t *testing.T) {
 	_, pool := setupRepo(t)
 

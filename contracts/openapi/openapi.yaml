@@ -385,6 +385,13 @@ components:
           minItems: 5
           items: { $ref: "#/components/schemas/Coordinate" }
           description: Anillo cerrado; el primer punto coincide con el último. Son 4 vértices como mínimo, formando un polígono convexo y simple (trapecio, cuadrado o similar).
+        holes:
+          type: array
+          description: Huecos de la zona (dona). Cada hueco es un anillo cerrado estrictamente dentro del exterior y sin tocarlo ni superponerse con otros. Vacío si no hay huecos.
+          items:
+            type: array
+            minItems: 5
+            items: { $ref: "#/components/schemas/Coordinate" }
         createdAt: { type: string, format: date-time }
     CreateZoneRequest:
       type: object
@@ -397,6 +404,13 @@ components:
           minItems: 5
           items: { $ref: "#/components/schemas/Coordinate" }
           description: Anillo cerrado con al menos 4 vértices. Debe ser un polígono convexo y simple; el servicio responde INVALID_ARGUMENT si no lo es.
+        holes:
+          type: array
+          description: Huecos opcionales (dona). Cada uno debe quedar estrictamente dentro del anillo exterior y no superponerse con otro hueco; si no, INVALID_ARGUMENT.
+          items:
+            type: array
+            minItems: 5
+            items: { $ref: "#/components/schemas/Coordinate" }
     Error:
       type: object
       required: [error]
