@@ -11,6 +11,13 @@ import (
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/domain"
 )
 
+// CustomerListFilter parametriza CustomerRepository.List. Status nil no filtra.
+type CustomerListFilter struct {
+	Status *domain.CustomerStatus
+	Limit  int
+	Offset int
+}
+
 // CustomerRepository es el contrato de persistencia de Customer.
 // Las implementaciones viven en internal/adapters/persistence.
 type CustomerRepository interface {
@@ -24,6 +31,11 @@ type CustomerRepository interface {
 
 	// GetByID busca por PK. Devuelve ErrCustomerNotFound si no existe.
 	GetByID(ctx context.Context, id uuid.UUID) (domain.Customer, error)
+
+	// List devuelve una pagina de clientes y el total que cumple el filtro.
+	// El orden es estable (created_at, id). Limit ya viene acotado por el
+	// caso de uso.
+	List(ctx context.Context, f CustomerListFilter) ([]domain.Customer, int, error)
 
 	// UpdateStatus cambia el CustomerStatus de un cliente existente.
 	// Devuelve ErrInvalidStatus si el status no es válido y
