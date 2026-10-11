@@ -4,11 +4,12 @@ info:
   version: 1.0.0
   description: |
     API pública REST/JSON expuesta por el API Gateway. Clientes: aplicación web
-    (React) y aplicación móvil de repartidores (React Native). Los microservicios
-    internos no son accesibles directamente.
+    (React) y aplicación móvil (React Native, clientes y repartidores). Los
+    microservicios internos no son accesibles directamente.
 
     Fase 1 cubre autenticación y usuarios. Pedidos, zonas, rutas, repartidores y
-    seguimiento se agregan en las fases siguientes.
+    seguimiento se agregan en las fases siguientes. El MVP del cliente
+    (ADR 0006, ADR 0007, ADR 0008) agrega el signup público de CUSTOMER.
 servers:
   - url: /
     description: Este API Gateway
@@ -86,6 +87,39 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/User" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/auth/signup:
+    post:
+      tags: [auth]
+      operationId: signupCustomer
+      summary: Registra un cliente y devuelve un token de acceso (rol CUSTOMER)
+      description: |
+        Endpoint público para que un cliente se registre de forma autónoma desde
+        la app móvil. No requiere JWT. Protegido por rate limit por IP
+        (SIGNUP_RATE_PER_MINUTE, default 10/min).
+
+        El token emitido sirve para `GET /api/v1/auth/me` y devuelve
+        `role: "CUSTOMER"`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, fullName]
+              properties:
+                email: { type: string, format: email, maxLength: 254 }
+                password: { type: string, minLength: 8, maxLength: 128 }
+                fullName: { type: string, minLength: 1, maxLength: 120 }
+      responses:
+        "201":
+          description: Cliente registrado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /api/v1/users:
     post:
       tags: [users]
