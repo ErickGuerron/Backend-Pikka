@@ -8,6 +8,10 @@ El workspace y este módulo recomiendan el toolchain Go 1.26.9 para incluir los
 parches de seguridad de la biblioteca estándar. Go puede descargarlo de forma
 automática; no requiere reemplazar la instalación global.
 
+El job Go de este módulo usa `GOWORK=off` en CI. Así comprueba que las
+dependencias están declaradas en su propio `go.mod`, sin heredar versiones de
+otros servicios a través del workspace.
+
 El contrato `orders.v1` está en `contracts/proto/orders/v1/orders.proto` y su
 correspondencia REST en `docs/contracts/orders-v1.md`. El transporte gRPC y su
 consumo desde el Gateway pertenecen al Sprint 2. Esta base todavía no levanta

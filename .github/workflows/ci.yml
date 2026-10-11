@@ -20,6 +20,9 @@ jobs:
       fail-fast: false
       matrix:
         module: [services/auth-service, services/api-gateway, services/zone-service, services/order-service]
+    env:
+      # Order Service must declare every dependency without inheriting go.work.
+      GOWORK: ${{ matrix.module == 'services/order-service' && 'off' || 'auto' }}
     defaults:
       run:
         working-directory: ${{ matrix.module }}

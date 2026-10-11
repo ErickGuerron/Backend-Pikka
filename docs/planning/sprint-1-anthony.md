@@ -1,14 +1,14 @@
 # Sprint 1 de Anthony
 
 Las dos tareas asignadas a Anthony están implementadas en ramas de funcionalidad.
-La revisión por otro integrante, la ejecución de CI en GitHub y la integración
+Las PR están en borrador; la revisión por otro integrante y la integración
 en `develop` quedan como pasos de cierre del equipo. Esta evidencia corresponde
 a la implementación y validación local del 11 de octubre de 2026.
 
 | Tarea | Rama | Entrega |
 |---|---|---|
-| S1-BE-01 | `feature/s1-be-01-anthony-orders-contract` | Protobuf orders.v1, Go generado, OpenAPI y documentación del contrato |
-| S1-BE-02 | `feature/s1-be-02-anthony-order-domain` | Dominio, fechas, estados, migraciones, pruebas e inclusión en CI |
+| S1-BE-01 | `feature/s1-be-01-anthony-orders-contract` | [PR 17](https://github.com/ErickGuerron/Backend-Pikka/pull/17): Protobuf orders.v1, Go generado, OpenAPI y documentación del contrato |
+| S1-BE-02 | `feature/s1-be-02-anthony-order-domain` | [PR 18](https://github.com/ErickGuerron/Backend-Pikka/pull/18): dominio, fechas, estados, migraciones, pruebas e inclusión en CI |
 
 ## Gitflow
 
@@ -42,9 +42,9 @@ estados con el OpenAPI conservado.
 | Pruebas PostgreSQL 16 y PostGIS 3.4 | Aprobadas; migración aplicada dos veces y down/up reversible |
 | `go vet` de Order Service | Aprobado |
 | golangci-lint 2.14.0 de Order Service, incluido build tag integration | Aprobado, 0 incidencias |
-| Pruebas `-race` y `go vet` de todos los módulos | Aprobadas en Linux |
+| Pruebas `-race` y `go vet` de todos los módulos | Aprobadas en Linux con Go 1.26.9 |
 | Order Service como módulo independiente (`GOWORK=off`) | Pruebas unitarias y de integración aprobadas |
-| `govulncheck` de Order Service con Go 1.26.9 | Sin vulnerabilidades detectadas |
+| `govulncheck` de Order Service con Go 1.26.9, con y sin workspace | Sin vulnerabilidades detectadas |
 
 Las pruebas de dominio incluyen fechas imposibles, año bisiesto, fecha futura,
 entrega del mismo día con desfase UTC, ventanas invertidas o que cruzan medianoche,
@@ -62,5 +62,16 @@ El primer análisis de vulnerabilidades con el Go 1.26.5 instalado detectó aler
 de la biblioteca estándar. Se agregó `toolchain go1.26.9` al workspace y al nuevo
 módulo para seleccionar el parche corregido. Referencia:
 [GO-2026-6607](https://pkg.go.dev/vuln/GO-2026-6607).
+
+Se añadieron commits de corrección para rechazar NUL en direcciones antes de
+persistir y limitar las fechas SQL a los años 0001–9999 mediante una segunda
+migración reversible. CI valida además Order Service con `GOWORK=off`, para
+detectar dependencias ausentes en el módulo independiente.
+
+La prueba independiente detectó además dos alertas de `golang.org/x/text` 0.38,
+ocultas por la versión más reciente resuelta en el workspace. Se fijó 0.42 y
+se volvió a ejecutar el análisis de seguridad en modo independiente. Referencia:
+[GO-2026-6629](https://pkg.go.dev/vuln/GO-2026-6629).
+
 Los escaneos OWASP y k6 del cierre global del sprint son actividades distintas
 de estas dos tareas y no se presentan como ejecutados en esta entrega.
