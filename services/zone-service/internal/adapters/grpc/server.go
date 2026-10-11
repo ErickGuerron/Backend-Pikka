@@ -26,6 +26,9 @@ func NewServer(zones *application.ZoneService) *Server {
 
 // CreateZone registra una zona nueva.
 func (s *Server) CreateZone(ctx context.Context, req *zonesv1.CreateZoneRequest) (*zonesv1.CreateZoneResponse, error) {
+	if err := requireRole(ctx, roleAdmin); err != nil {
+		return nil, err
+	}
 	ring := fromProtoRing(req.GetRing())
 	zone, err := s.zones.CreateZone(ctx, req.GetCode(), req.GetName(), ring)
 	if err != nil {
@@ -36,6 +39,9 @@ func (s *Server) CreateZone(ctx context.Context, req *zonesv1.CreateZoneRequest)
 
 // GetZone devuelve una zona por su identificador.
 func (s *Server) GetZone(ctx context.Context, req *zonesv1.GetZoneRequest) (*zonesv1.GetZoneResponse, error) {
+	if err := requireRole(ctx, roleAdmin, roleOperator); err != nil {
+		return nil, err
+	}
 	zone, err := s.zones.GetZone(ctx, req.GetId())
 	if err != nil {
 		return nil, toStatus(err)
@@ -45,7 +51,14 @@ func (s *Server) GetZone(ctx context.Context, req *zonesv1.GetZoneRequest) (*zon
 
 // ClassifyPoint devuelve la zona que contiene la coordenada.
 func (s *Server) ClassifyPoint(ctx context.Context, req *zonesv1.ClassifyPointRequest) (*zonesv1.ClassifyPointResponse, error) {
+	if err := requireRole(ctx, roleAdmin, roleOperator); err != nil {
+		return nil, err
+	}
 	point := req.GetPoint()
+	if point == nil {
+		// Sin este chequeo, un punto ausente se leería como (0,0) y clasificaría mal.
+		return nil, status.Error(codes.InvalidArgument, "point is required")
+	}
 	zone, err := s.zones.ClassifyPoint(ctx, point.GetLatitude(), point.GetLongitude())
 	if err != nil {
 		return nil, toStatus(err)
