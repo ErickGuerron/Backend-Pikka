@@ -48,6 +48,9 @@ Las migraciones embebidas crean `orders.orders` con `DATE` para la entrega,
 versión positiva. PostgreSQL valida coordenadas, estados, ventanas y coherencia
 entre `PENDING_REVIEW` y sus motivos. Hay índices por fecha y estado, y por
 instante de registro. La migración inversa elimina la tabla y sus índices.
+Una segunda migración limita los años de entrega a 0001–9999, para impedir que
+PostgreSQL acepte fechas anteriores a nuestra era o años de cinco dígitos que el
+contrato `YYYY-MM-DD` no representa. Incluye su propia migración inversa.
 
 `internal/infrastructure/postgres.Migrate` aplica migraciones pendientes con
 `golang-migrate` y acepta una segunda ejecución sin cambios. El DSN debe usar

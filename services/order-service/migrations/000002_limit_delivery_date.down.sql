@@ -1,0 +1,1 @@
+ALTER TABLE orders DROP CONSTRAINT orders_delivery_date_contract_range;

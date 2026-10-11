@@ -87,6 +87,8 @@ func TestOrderMigrations(t *testing.T) {
 			{"NaN", 1, math.NaN()},
 			{"infinite coordinate", 2, math.Inf(1)},
 			{"infinite date", 3, "infinity"},
+			{"BC date outside contract", 3, "0001-01-01 BC"},
+			{"five digit year outside contract", 3, "10000-01-01"},
 			{"equal window", 5, "09:00"},
 			{"reversed window", 5, "08:00"},
 			{"24 hour end", 5, "24:00"},
@@ -104,6 +106,18 @@ func TestOrderMigrations(t *testing.T) {
 				_, err := tx.Exec(ctx, insertSQL, args...)
 				assertCheckViolation(t, err)
 			})
+		}
+	})
+
+	t.Run("calendar boundaries preserve contract format", func(t *testing.T) {
+		tx := testTx(t, ctx, pool)
+		for _, date := range []string{"0001-01-01", "9999-12-31"} {
+			var stored string
+			err := tx.QueryRow(ctx, insertSQL+` RETURNING delivery_date::text`,
+				"Avenida Amazonas 123", 0, 0, date, "00:00", "23:59", "PENDING", []string{}, 1).Scan(&stored)
+			if err != nil || stored != date {
+				t.Fatalf("date %s: stored=%s err=%v", date, stored, err)
+			}
 		}
 	})
 
@@ -150,7 +164,10 @@ func TestOrderMigrations(t *testing.T) {
 	t.Run("down and up scripts are reversible", func(t *testing.T) {
 		// DDL is transactional: rollback restores all preexisting rows and tables.
 		tx := testTx(t, ctx, pool)
-		for _, file := range []string{"000001_create_orders.down.sql", "000001_create_orders.up.sql"} {
+		for _, file := range []string{
+			"000002_limit_delivery_date.down.sql", "000001_create_orders.down.sql",
+			"000001_create_orders.up.sql", "000002_limit_delivery_date.up.sql",
+		} {
 			sql, err := migrations.FS.ReadFile(file)
 			if err != nil {
 				t.Fatal(err)
