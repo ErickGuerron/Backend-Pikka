@@ -9,7 +9,8 @@ import (
 )
 
 const (
-	minRingPoints = 4 // triángulo cerrado: 3 vértices + el primero repetido al final
+	minVertices   = 4               // trapecio o cuadrado como mínimo; un triángulo no es una zona válida
+	minRingPoints = minVertices + 1 // los vértices más el primero repetido al final
 	maxCodeLength = 32
 	maxNameLength = 120
 )
@@ -70,6 +71,9 @@ func validateRing(ring []Coordinate) error {
 		if _, err := NewCoordinate(p.Latitude, p.Longitude); err != nil {
 			return err
 		}
+	}
+	if !isConvexPolygon(ring[:len(ring)-1]) {
+		return ErrNotConvex
 	}
 	return nil
 }

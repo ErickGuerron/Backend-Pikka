@@ -382,9 +382,9 @@ components:
         name: { type: string }
         ring:
           type: array
-          minItems: 4
+          minItems: 5
           items: { $ref: "#/components/schemas/Coordinate" }
-          description: Anillo cerrado; el primer punto coincide con el último
+          description: Anillo cerrado; el primer punto coincide con el último. Son 4 vértices como mínimo, formando un polígono convexo y simple (trapecio, cuadrado o similar).
         createdAt: { type: string, format: date-time }
     CreateZoneRequest:
       type: object
@@ -394,8 +394,9 @@ components:
         name: { type: string, maxLength: 120 }
         ring:
           type: array
-          minItems: 4
+          minItems: 5
           items: { $ref: "#/components/schemas/Coordinate" }
+          description: Anillo cerrado con al menos 4 vértices. Debe ser un polígono convexo y simple; el servicio responde INVALID_ARGUMENT si no lo es.
     Error:
       type: object
       required: [error]

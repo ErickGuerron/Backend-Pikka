@@ -72,7 +72,8 @@ func toStatus(err error) error {
 		errors.Is(err, domain.ErrInvalidName),
 		errors.Is(err, domain.ErrInvalidCoordinate),
 		errors.Is(err, domain.ErrInvalidRing),
-		errors.Is(err, domain.ErrRingNotClosed):
+		errors.Is(err, domain.ErrRingNotClosed),
+		errors.Is(err, domain.ErrNotConvex):
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, domain.ErrZoneNotFound):
 		return status.Error(codes.NotFound, err.Error())
