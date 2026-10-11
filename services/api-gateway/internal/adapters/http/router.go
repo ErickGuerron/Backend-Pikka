@@ -27,6 +27,10 @@ type Options struct {
 	EnableHSTS          bool
 	// EnableDocs publica /docs (Scalar) y /openapi.yaml.
 	EnableDocs bool
+	// Customers, si no es nil, recibe CreateCustomer tras un signup exitoso.
+	Customers CustomerClient
+	// CustomerQueries, si no es nil, habilita GET /customers y GET /customers/:id (ADMIN).
+	CustomerQueries CustomerQueryClient
 }
 
 // Readiness informa si una dependencia está lista.
@@ -93,7 +97,7 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 	}
 
 	api := e.Group("/api/v1", rateLimiter(rate.Limit(opts.RateLimitPerSecond), opts.RateLimitBurst))
-	h := &authHandlers{auth: auth}
+	h := &authHandlers{auth: auth, customers: opts.Customers}
 
 	loginLimit := rateLimiter(rate.Limit(opts.LoginRatePerMinute/60), max(1, int(opts.LoginRatePerMinute/2)))
 	api.POST("/auth/login", h.login, loginLimit)
@@ -115,6 +119,11 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 	// para cualquier rol distinto de ADMIN (ADR 0008 §3).
 	adminOnly := authed.Group("", AdminOnly())
 	adminOnly.GET("/users", h.listUsers)
+	if opts.CustomerQueries != nil {
+		ch := &customerHandlers{customers: opts.CustomerQueries}
+		adminOnly.GET("/customers", ch.list)
+		adminOnly.GET("/customers/:id", ch.get)
+	}
 
 	z := &zonesHandlers{zones: zones}
 	authed.POST("/zones", z.create)
