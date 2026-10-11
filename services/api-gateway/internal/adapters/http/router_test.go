@@ -75,7 +75,7 @@ func newRouter(auth httpapi.AuthClient, ready bool) http.Handler {
 		RequestTimeout: time.Second, BodyLimit: "1K", EnableHSTS: true,
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return httpapi.NewRouter(log, opts, jwt.NewVerifier(secret, "lastmile-auth"), auth, func(context.Context) bool { return ready })
+	return httpapi.NewRouter(log, opts, jwt.NewVerifier(secret, "lastmile-auth"), auth, nil, func(context.Context) bool { return ready })
 }
 
 func do(h http.Handler, method, path, body string, headers map[string]string) *httptest.ResponseRecorder {
@@ -237,7 +237,7 @@ func TestLoginRateLimit(t *testing.T) {
 		RateLimitPerSecond: 1000, RateLimitBurst: 1000, LoginRatePerMinute: 2,
 		RequestTimeout: time.Second, BodyLimit: "1K",
 	}
-	h := httpapi.NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), opts, jwt.NewVerifier(secret, "lastmile-auth"), &fakeAuth{}, func(context.Context) bool { return true })
+	h := httpapi.NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), opts, jwt.NewVerifier(secret, "lastmile-auth"), &fakeAuth{}, nil, func(context.Context) bool { return true })
 	body := `{"email":"a@example.com","password":"password123"}`
 	assert.Equal(t, http.StatusOK, do(h, http.MethodPost, "/api/v1/auth/login", body, nil).Code)
 	rec := do(h, http.MethodPost, "/api/v1/auth/login", body, nil)
@@ -251,7 +251,7 @@ func TestAPIDocs(t *testing.T) {
 		RateLimitPerSecond: 1000, RateLimitBurst: 1000, LoginRatePerMinute: 6000,
 		RequestTimeout: time.Second, BodyLimit: "1K", EnableDocs: true,
 	}
-	h := httpapi.NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), opts, jwt.NewVerifier(secret, "lastmile-auth"), &fakeAuth{}, func(context.Context) bool { return true })
+	h := httpapi.NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), opts, jwt.NewVerifier(secret, "lastmile-auth"), &fakeAuth{}, nil, func(context.Context) bool { return true })
 
 	rec := do(h, http.MethodGet, "/docs", "", nil)
 	require.Equal(t, http.StatusOK, rec.Code)

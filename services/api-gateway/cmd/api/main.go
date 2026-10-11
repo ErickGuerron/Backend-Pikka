@@ -45,6 +45,13 @@ func run(log *slog.Logger) error {
 	defer func() { _ = authConn.Close() }()
 	auth := grpcclient.NewAuth(authConn, cfg.GRPCTimeout)
 
+	zoneConn, err := grpcclient.Dial(cfg.ZoneServiceAddr)
+	if err != nil {
+		return fmt.Errorf("dial zone service: %w", err)
+	}
+	defer func() { _ = zoneConn.Close() }()
+	zones := grpcclient.NewZones(zoneConn, cfg.GRPCTimeout)
+
 	e := httpapi.NewRouter(log, httpapi.Options{
 		CORSAllowedOrigins: cfg.CORSAllowedOrigins,
 		RateLimitPerSecond: cfg.RateLimitPerSecond,
@@ -55,7 +62,10 @@ func run(log *slog.Logger) error {
 		TrustProxy:         cfg.TrustProxy,
 		EnableHSTS:         cfg.EnableHSTS,
 		EnableDocs:         cfg.EnableDocs,
-	}, jwt.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer), auth, auth.Ready)
+	}, jwt.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer), auth, zones, func(ctx context.Context) bool {
+		// El gateway solo está listo si puede llegar a sus dependencias gRPC.
+		return auth.Ready(ctx) && zones.Ready(ctx)
+	})
 
 	e.Server.ReadHeaderTimeout = 5 * time.Second
 	e.Server.ReadTimeout = 15 * time.Second

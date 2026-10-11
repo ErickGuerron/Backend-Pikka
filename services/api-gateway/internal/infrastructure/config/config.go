@@ -18,6 +18,7 @@ type Config struct {
 	HTTPPort int
 
 	AuthServiceAddr string
+	ZoneServiceAddr string
 	GRPCTimeout     time.Duration
 
 	JWTSecret string
@@ -44,6 +45,7 @@ func Load() (Config, error) {
 		AppEnv:             getEnv("APP_ENV", "development"),
 		HTTPPort:           getInt("HTTP_PORT", 8080, &errs),
 		AuthServiceAddr:    getEnv("AUTH_SERVICE_ADDR", "localhost:9090"),
+		ZoneServiceAddr:    getEnv("ZONE_SERVICE_ADDR", "localhost:9090"),
 		GRPCTimeout:        getDuration("GRPC_TIMEOUT", 3*time.Second, &errs),
 		JWTSecret:          os.Getenv("JWT_SECRET"),
 		JWTIssuer:          getEnv("JWT_ISSUER", "lastmile-auth"),

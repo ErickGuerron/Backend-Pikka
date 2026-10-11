@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	zonesv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/zones/v1"
@@ -59,7 +60,7 @@ func validRing() []*zonesv1.Coordinate {
 func TestCreateZone_ReturnsZoneWithID(t *testing.T) {
 	srv := newServer()
 
-	res, err := srv.CreateZone(context.Background(), &zonesv1.CreateZoneRequest{
+	res, err := srv.CreateZone(asRole("ADMIN"), &zonesv1.CreateZoneRequest{
 		Code: "NORTE", Name: "Zona Norte", Ring: validRing(),
 	})
 
@@ -71,7 +72,7 @@ func TestCreateZone_ReturnsZoneWithID(t *testing.T) {
 func TestCreateZone_InvalidRingIsInvalidArgument(t *testing.T) {
 	srv := newServer()
 
-	_, err := srv.CreateZone(context.Background(), &zonesv1.CreateZoneRequest{
+	_, err := srv.CreateZone(asRole("ADMIN"), &zonesv1.CreateZoneRequest{
 		Code: "NORTE", Name: "Zona Norte", Ring: validRing()[:4], // anillo abierto y corto
 	})
 
@@ -81,10 +82,10 @@ func TestCreateZone_InvalidRingIsInvalidArgument(t *testing.T) {
 func TestCreateZone_DuplicateCodeIsAlreadyExists(t *testing.T) {
 	srv := newServer()
 	req := &zonesv1.CreateZoneRequest{Code: "NORTE", Name: "Zona Norte", Ring: validRing()}
-	_, err := srv.CreateZone(context.Background(), req)
+	_, err := srv.CreateZone(asRole("ADMIN"), req)
 	require.NoError(t, err)
 
-	_, err = srv.CreateZone(context.Background(), req)
+	_, err = srv.CreateZone(asRole("ADMIN"), req)
 
 	assert.Equal(t, codes.AlreadyExists, status.Code(err))
 }
@@ -92,7 +93,7 @@ func TestCreateZone_DuplicateCodeIsAlreadyExists(t *testing.T) {
 func TestGetZone_MissingIsNotFound(t *testing.T) {
 	srv := newServer()
 
-	_, err := srv.GetZone(context.Background(), &zonesv1.GetZoneRequest{Id: "11111111-1111-1111-1111-111111111111"})
+	_, err := srv.GetZone(asRole("ADMIN"), &zonesv1.GetZoneRequest{Id: "11111111-1111-1111-1111-111111111111"})
 
 	assert.Equal(t, codes.NotFound, status.Code(err))
 }
@@ -100,7 +101,7 @@ func TestGetZone_MissingIsNotFound(t *testing.T) {
 func TestClassifyPoint_OutOfRangeIsInvalidArgument(t *testing.T) {
 	srv := newServer()
 
-	_, err := srv.ClassifyPoint(context.Background(), &zonesv1.ClassifyPointRequest{
+	_, err := srv.ClassifyPoint(asRole("ADMIN"), &zonesv1.ClassifyPointRequest{
 		Point: &zonesv1.Coordinate{Latitude: 200, Longitude: 0},
 	})
 
@@ -110,9 +111,45 @@ func TestClassifyPoint_OutOfRangeIsInvalidArgument(t *testing.T) {
 func TestClassifyPoint_NoZoneIsNotFound(t *testing.T) {
 	srv := newServer()
 
-	_, err := srv.ClassifyPoint(context.Background(), &zonesv1.ClassifyPointRequest{
+	_, err := srv.ClassifyPoint(asRole("ADMIN"), &zonesv1.ClassifyPointRequest{
 		Point: &zonesv1.Coordinate{Latitude: -0.15, Longitude: -78.45},
 	})
 
+	assert.Equal(t, codes.NotFound, status.Code(err))
+}
+
+// asRole simula la identidad que el API Gateway propaga tras validar el JWT.
+func asRole(role string) context.Context {
+	return metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-user-role", role))
+}
+
+func TestClassifyPoint_MissingPointIsInvalidArgument(t *testing.T) {
+	_, err := newServer().ClassifyPoint(asRole("ADMIN"), &zonesv1.ClassifyPointRequest{})
+
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+func TestOperationsRequireIdentity(t *testing.T) {
+	srv := newServer()
+	_, err := srv.GetZone(context.Background(), &zonesv1.GetZoneRequest{Id: "11111111-1111-1111-1111-111111111111"})
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+}
+
+func TestCreateZone_OnlyAdmin(t *testing.T) {
+	for _, role := range []string{"OPERATOR", "DRIVER"} {
+		_, err := newServer().CreateZone(asRole(role), &zonesv1.CreateZoneRequest{Code: "X", Name: "X", Ring: validRing()})
+		assert.Equal(t, codes.PermissionDenied, status.Code(err), role)
+	}
+}
+
+func TestReadZone_AdminAndOperatorOnly(t *testing.T) {
+	srv := newServer()
+	for _, role := range []string{"DRIVER"} {
+		_, err := srv.GetZone(asRole(role), &zonesv1.GetZoneRequest{Id: "11111111-1111-1111-1111-111111111111"})
+		assert.Equal(t, codes.PermissionDenied, status.Code(err), role)
+		_, err = srv.ClassifyPoint(asRole(role), &zonesv1.ClassifyPointRequest{Point: &zonesv1.Coordinate{Latitude: -0.15, Longitude: -78.45}})
+		assert.Equal(t, codes.PermissionDenied, status.Code(err), role)
+	}
+	_, err := srv.ClassifyPoint(asRole("OPERATOR"), &zonesv1.ClassifyPointRequest{Point: &zonesv1.Coordinate{Latitude: -0.15, Longitude: -78.45}})
 	assert.Equal(t, codes.NotFound, status.Code(err))
 }

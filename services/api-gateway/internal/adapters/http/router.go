@@ -34,7 +34,7 @@ type Readiness func(ctx context.Context) bool
 var safeRequestID = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
 
 // NewRouter arma el Echo con middlewares, rutas y manejo de errores.
-func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth AuthClient, ready Readiness) *echo.Echo {
+func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth AuthClient, zones ZonesClient, ready Readiness) *echo.Echo {
 	e := echo.New()
 	e.HideBanner = true
 	e.HidePort = true
@@ -101,6 +101,11 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 	authed.GET("/auth/me", h.me)
 	authed.POST("/users", h.createUser)
 	authed.GET("/users/:id", h.getUser)
+
+	z := &zonesHandlers{zones: zones}
+	authed.POST("/zones", z.create)
+	authed.GET("/zones/classify", z.classify)
+	authed.GET("/zones/:id", z.get)
 
 	return e
 }

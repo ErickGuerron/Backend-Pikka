@@ -19,6 +19,10 @@ tags:
     description: Inicio de sesión e identidad actual
   - name: users
     description: Administración de usuarios y roles
+  - name: orders
+    description: Registro y consulta de pedidos
+  - name: zones
+    description: Zonas de reparto y clasificación de coordenadas
 paths:
   /health:
     get:
@@ -121,6 +125,147 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/orders:
+    get:
+      tags: [orders]
+      operationId: listOrders
+      summary: Lista pedidos (ADMIN u OPERATOR)
+      description: DRIVER no tiene acceso. El filtrado por alcance se define con el rol CUSTOMER.
+      responses:
+        "200":
+          description: Pedidos
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Order" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [orders]
+      operationId: createOrder
+      summary: Registra un pedido (ADMIN u OPERATOR)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateOrderRequest" }
+      responses:
+        "201":
+          description: Pedido registrado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/orders/exceptions:
+    get:
+      tags: [orders]
+      operationId: listOrderExceptions
+      summary: Cola de excepciones de pedidos pendientes de revisión (ADMIN u OPERATOR)
+      description: Pedidos cuya validación automática no se cumplió (ADR 0007, sección 3). El operador los confirma, corrige o rechaza.
+      responses:
+        "200":
+          description: Pedidos en revisión
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Order" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/orders/{id}/review:
+    post:
+      tags: [orders]
+      operationId: reviewOrder
+      summary: Confirma, corrige o rechaza un pedido en revisión (ADMIN u OPERATOR)
+      description: Solo aplica a pedidos en estado PENDING_REVIEW. Toda decisión queda registrada con motivo.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderReviewRequest" }
+      responses:
+        "200":
+          description: Pedido actualizado según la decisión
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/zones:
+    post:
+      tags: [zones]
+      operationId: createZone
+      summary: Registra una zona (solo ADMIN)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateZoneRequest" }
+      responses:
+        "201":
+          description: Zona creada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Zone" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/zones/classify:
+    get:
+      tags: [zones]
+      operationId: classifyPoint
+      summary: Devuelve la zona que contiene una coordenada (ADMIN u OPERATOR)
+      description: Si varias zonas la contienen, devuelve la de menor área.
+      parameters:
+        - name: latitude
+          in: query
+          required: true
+          schema: { type: number, minimum: -90, maximum: 90 }
+        - name: longitude
+          in: query
+          required: true
+          schema: { type: number, minimum: -180, maximum: 180 }
+      responses:
+        "200":
+          description: Zona que contiene el punto
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Zone" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/zones/{id}:
+    get:
+      tags: [zones]
+      operationId: getZone
+      summary: Obtiene una zona (ADMIN u OPERATOR)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Zona
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Zone" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 security:
   - bearerAuth: []
 components:
@@ -170,6 +315,88 @@ components:
         password: { type: string, format: password, minLength: 8, maxLength: 72 }
         fullName: { type: string, maxLength: 120 }
         role: { $ref: "#/components/schemas/Role" }
+    OrderStatus:
+      type: string
+      enum: [PENDING, PENDING_REVIEW, ROUTE_ASSIGNED, PICKED_UP, IN_TRANSIT, DELIVERED, NOT_DELIVERED, CANCELLED]
+    ReviewReason:
+      type: string
+      description: Regla de la validación automática que no se cumplió (ADR 0007, sección 3).
+      enum: [ZONE_NOT_COVERED, INVALID_WINDOW, CAPACITY_EXCEEDED, CUSTOMER_BLOCKED]
+    OrderReviewAction:
+      type: string
+      enum: [CONFIRM, CORRECT, REJECT]
+    Order:
+      type: object
+      required: [id, address, latitude, longitude, deliveryDate, windowStart, windowEnd, status, reviewReasons, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        address: { type: string }
+        latitude: { type: number, minimum: -90, maximum: 90, description: Latitud WGS 84 del punto de entrega }
+        longitude: { type: number, minimum: -180, maximum: 180, description: Longitud WGS 84 del punto de entrega }
+        deliveryDate: { type: string, format: date, description: Fecha de entrega YYYY-MM-DD }
+        windowStart: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$", description: Hora de inicio HH:mm }
+        windowEnd: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$", description: Hora de fin HH:mm }
+        status: { $ref: "#/components/schemas/OrderStatus" }
+        reviewReasons:
+          type: array
+          description: Motivos por los que el pedido quedó en revisión. Vacío si no aplica.
+          items: { $ref: "#/components/schemas/ReviewReason" }
+        createdAt: { type: string, format: date-time }
+    CreateOrderRequest:
+      type: object
+      required: [address, latitude, longitude, deliveryDate, windowStart, windowEnd]
+      properties:
+        address: { type: string, minLength: 5, maxLength: 300 }
+        latitude: { type: number, minimum: -90, maximum: 90, description: Latitud WGS 84 elegida en el mapa }
+        longitude: { type: number, minimum: -180, maximum: 180, description: Longitud WGS 84 elegida en el mapa }
+        deliveryDate: { type: string, format: date }
+        windowStart: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$" }
+        windowEnd: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$", description: Debe ser posterior a windowStart }
+    OrderCorrection:
+      type: object
+      description: Campos que el operador puede corregir. Los omitidos conservan su valor.
+      properties:
+        address: { type: string, minLength: 5, maxLength: 300 }
+        deliveryDate: { type: string, format: date }
+        windowStart: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$" }
+        windowEnd: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$" }
+    OrderReviewRequest:
+      type: object
+      required: [action, reason]
+      properties:
+        action: { $ref: "#/components/schemas/OrderReviewAction" }
+        reason: { type: string, minLength: 5, maxLength: 300, description: Motivo registrado en la auditoría }
+        correction: { $ref: "#/components/schemas/OrderCorrection" }
+    Coordinate:
+      type: object
+      required: [latitude, longitude]
+      properties:
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+    Zone:
+      type: object
+      required: [id, code, name, ring, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        ring:
+          type: array
+          minItems: 5
+          items: { $ref: "#/components/schemas/Coordinate" }
+          description: Anillo cerrado; el primer punto coincide con el último. Son 4 vértices como mínimo, formando un polígono convexo y simple (trapecio, cuadrado o similar).
+        createdAt: { type: string, format: date-time }
+    CreateZoneRequest:
+      type: object
+      required: [code, name, ring]
+      properties:
+        code: { type: string, maxLength: 32 }
+        name: { type: string, maxLength: 120 }
+        ring:
+          type: array
+          minItems: 5
+          items: { $ref: "#/components/schemas/Coordinate" }
+          description: Anillo cerrado con al menos 4 vértices. Debe ser un polígono convexo y simple; el servicio responde INVALID_ARGUMENT si no lo es.
     Error:
       type: object
       required: [error]
