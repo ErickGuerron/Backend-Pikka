@@ -29,6 +29,27 @@ Ambos corren en contenedores con perfil de compose (`perf` y `security`), así q
 
 **Regla de hallazgos ZAP:** todo FAIL nuevo bloquea el cierre del sprint. Los WARN se registran en el backlog con responsable.
 
+## Ajustes de alcance del MVP (ADR 0005 a 0007)
+
+Estas tareas no estaban en el plan original. Vienen de las decisiones de cliente con cuenta en la app móvil, validación automática de pedidos, registro de entrega, penalizaciones y cobro simulado. Los responsables son una propuesta y se confirman en la reunión de sprint.
+
+| Sprint | Tarea | Servicio | Responsable propuesto |
+|---|---|---|---|
+| 2 | Rol `CUSTOMER`, registro autónomo de clientes y login | Auth | Mabe |
+| 2 | Pedido ligado a `customer_id` (migración) y clientes con estado `ACTIVO` o `BLOQUEADO` | Order | Anthony |
+| 2 | Validación automática: zona (`ClassifyPoint`), fecha, ventana, capacidad y cliente no bloqueado | Order | Anthony |
+| 3 | Cola de excepciones del operador: confirmar, corregir o rechazar con motivo | Order | Anthony |
+| 3 | Cancelación del cliente y del operador solo en `PENDING` o `ROUTE_ASSIGNED` | Order | Anthony |
+| 4 | Registro de entrega por el repartidor: `DELIVERED` o `NOT_DELIVERED` con motivo cerrado, hora, GPS y foto opcional | Driver, Tracking | Mabe |
+| 4 | Verificación de llegada por GPS y ventana, antes de aplicar cualquier penalización | Driver | Mabe |
+| 4 | Motor de penalizaciones: recargo de 15 % en el siguiente pedido, saldo, notificación y ledger de cobros simulados | Order | Erick |
+| 5 | Interfaz `PaymentGateway` con adaptador simulado. Sin datos de tarjeta, sin llamadas externas | Order | Erick |
+| 5 | Bloqueo por saldo impago a las 2 semanas, pago simulado desde la app y desbloqueo al pagar. La disputa pausa el reloj | Order | Erick |
+| 5 | Disputas del cliente dentro de plazo, con cola en la web del operador | Order | Anthony |
+| 5 | Pruebas BOLA: el cliente solo ve sus pedidos y el repartidor solo su ruta activa. ZAP con sesión de cliente y de repartidor | Gateway, todos | Mabe, Erick |
+
+Decisión cerrada (ADR 0006, sección 5): el saldo se cobra con el próximo pedido. Si pasan 2 semanas sin pagar, la cuenta se bloquea hasta que pague el saldo completo.
+
 ## Sprint 1 — Contratos y base de Fase 2
 
 **Objetivo:** contratos de pedidos, zonas y repartidores; primeros servicios; línea base de seguridad.
@@ -38,7 +59,7 @@ Ambos corren en contenedores con perfil de compose (`perf` y `security`), así q
 | Anthony | Contrato `orders.v1` (proto) y endpoints `/orders` en OpenAPI | Contrato mergeado |
 | Anthony | Order Service: dominio, `created_at` vs `delivery_date`, estados, migraciones | Pruebas unitarias de dominio |
 | Erick | Contrato `zones.v1` y Zone Service: zonas con PostGIS, migraciones con índice GiST | Migraciones aplicadas |
-| Erick | Clasificación de coordenadas (`ST_Contains`) como caso de uso | Prueba de integración PostGIS |
+| Erick | Clasificación de coordenadas (`ST_Covers`, incluye el borde) como caso de uso | Prueba de integración PostGIS |
 | Mabe | Contrato `drivers.v1` y Driver Service: dominio y estados (`AVAILABLE`, `ASSIGNED`, `ON_ROUTE`, `OFFLINE`) | Pruebas unitarias |
 | Mabe | **OWASP:** primera corrida de `make security-scan` y registro de hallazgos en el backlog | Reporte inicial archivado |
 | Xabier | Web: listado y alta de pedidos sobre el contrato (mocks en Playwright) | Pantallas con pruebas Vitest |
