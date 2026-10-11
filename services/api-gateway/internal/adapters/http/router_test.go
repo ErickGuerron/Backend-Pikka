@@ -59,6 +59,18 @@ func (f *fakeAuth) GetUser(_ context.Context, m grpcclient.CallMeta, req *authv1
 	return &authv1.GetUserResponse{User: &authv1.User{Id: req.GetId(), Role: authv1.Role_ROLE_DRIVER}}, nil
 }
 
+func (f *fakeAuth) SignupCustomer(_ context.Context, m grpcclient.CallMeta, req *authv1.SignupCustomerRequest) (*authv1.SignupCustomerResponse, error) {
+	f.lastMeta = m
+	if f.err != nil {
+		return nil, f.err
+	}
+	if len(req.GetPassword()) < 8 {
+		return nil, status.Error(codes.InvalidArgument, "password must be between 8 and 72 bytes")
+	}
+	return &authv1.SignupCustomerResponse{AccessToken: "tok-customer", TokenType: "Bearer", ExpiresInSeconds: 3600,
+		User: &authv1.User{Id: "u-customer", Email: req.GetEmail(), FullName: req.GetFullName(), Role: authv1.Role_ROLE_CUSTOMER, Active: true, CreatedAt: "2026-01-02T03:04:05Z"}}, nil
+}
+
 func token(t *testing.T, sub, role string) string {
 	t.Helper()
 	s, err := gojwt.NewWithClaims(gojwt.SigningMethodHS256, gojwt.MapClaims{

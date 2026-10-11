@@ -66,6 +66,14 @@ func (a *Auth) Login(ctx context.Context, m CallMeta, req *authv1.LoginRequest) 
 	return a.client.Login(ctx, req)
 }
 
+// SignupCustomer registra un cliente nuevo desde el Gateway. Es el único método
+// que se invoca sin identidad propagada (ruta pública).
+func (a *Auth) SignupCustomer(ctx context.Context, m CallMeta, req *authv1.SignupCustomerRequest) (*authv1.SignupCustomerResponse, error) {
+	ctx, cancel := a.outgoing(ctx, m)
+	defer cancel()
+	return a.client.SignupCustomer(ctx, req)
+}
+
 // CreateUser solicita el alta de un usuario.
 func (a *Auth) CreateUser(ctx context.Context, m CallMeta, req *authv1.CreateUserRequest) (*authv1.CreateUserResponse, error) {
 	ctx, cancel := a.outgoing(ctx, m)
