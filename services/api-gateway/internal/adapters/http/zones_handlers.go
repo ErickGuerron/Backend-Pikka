@@ -16,6 +16,38 @@ type ZonesClient interface {
 	CreateZone(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.CreateZoneRequest) (*zonesv1.CreateZoneResponse, error)
 	GetZone(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.GetZoneRequest) (*zonesv1.GetZoneResponse, error)
 	ClassifyPoint(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.ClassifyPointRequest) (*zonesv1.ClassifyPointResponse, error)
+	ListZones(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.ListZonesRequest) (*zonesv1.ListZonesResponse, error)
+	UpdateZone(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.UpdateZoneRequest) (*zonesv1.UpdateZoneResponse, error)
+}
+
+func (h *zonesHandlers) list(c echo.Context) error {
+	res, err := h.zones.ListZones(c.Request().Context(), callMeta(c), &zonesv1.ListZonesRequest{})
+	if err != nil {
+		return err
+	}
+	out := make([]zoneDTO, 0, len(res.GetZones()))
+	for _, z := range res.GetZones() {
+		out = append(out, toZoneDTO(z))
+	}
+	return c.JSON(http.StatusOK, out)
+}
+
+func (h *zonesHandlers) update(c echo.Context) error {
+	var req createZoneRequest
+	if err := bindJSON(c, &req); err != nil {
+		return err
+	}
+	res, err := h.zones.UpdateZone(c.Request().Context(), callMeta(c), &zonesv1.UpdateZoneRequest{
+		Id:    c.Param("id"),
+		Code:  req.Code,
+		Name:  req.Name,
+		Ring:  toProtoRing(req.Ring),
+		Holes: toProtoHoles(req.Holes),
+	})
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, toZoneDTO(res.GetZone()))
 }
 
 // Como en auth, los handlers solo traducen REST <-> gRPC. Las reglas y el rol se validan en Zone Service.

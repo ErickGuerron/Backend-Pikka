@@ -38,6 +38,34 @@ func (s *Server) CreateZone(ctx context.Context, req *zonesv1.CreateZoneRequest)
 	return &zonesv1.CreateZoneResponse{Zone: toProtoZone(zone)}, nil
 }
 
+// ListZones devuelve todas las zonas registradas.
+func (s *Server) ListZones(ctx context.Context, _ *zonesv1.ListZonesRequest) (*zonesv1.ListZonesResponse, error) {
+	if err := requireRole(ctx, roleAdmin, roleOperator); err != nil {
+		return nil, err
+	}
+	zones, err := s.zones.ListZones(ctx)
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	out := make([]*zonesv1.Zone, 0, len(zones))
+	for _, z := range zones {
+		out = append(out, toProtoZone(z))
+	}
+	return &zonesv1.ListZonesResponse{Zones: out}, nil
+}
+
+// UpdateZone reemplaza los datos y la geometría de una zona existente.
+func (s *Server) UpdateZone(ctx context.Context, req *zonesv1.UpdateZoneRequest) (*zonesv1.UpdateZoneResponse, error) {
+	if err := requireRole(ctx, roleAdmin); err != nil {
+		return nil, err
+	}
+	zone, err := s.zones.UpdateZone(ctx, req.GetId(), req.GetCode(), req.GetName(), fromProtoRing(req.GetRing()), fromProtoHoles(req.GetHoles()))
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	return &zonesv1.UpdateZoneResponse{Zone: toProtoZone(zone)}, nil
+}
+
 // GetZone devuelve una zona por su identificador.
 func (s *Server) GetZone(ctx context.Context, req *zonesv1.GetZoneRequest) (*zonesv1.GetZoneResponse, error) {
 	if err := requireRole(ctx, roleAdmin, roleOperator); err != nil {

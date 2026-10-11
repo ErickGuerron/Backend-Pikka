@@ -14,8 +14,15 @@ type ZoneRepository interface {
 	// Devuelve domain.ErrZoneCodeTaken si el código ya existe.
 	Save(ctx context.Context, zone domain.Zone) (domain.Zone, error)
 
+	// Update reemplaza código, nombre y geometría de una zona existente (zone.ID debe estar puesto).
+	// Devuelve domain.ErrZoneNotFound si no existe y domain.ErrZoneCodeTaken si el código ya lo usa otra.
+	Update(ctx context.Context, zone domain.Zone) (domain.Zone, error)
+
 	// FindByID devuelve la zona o domain.ErrZoneNotFound.
 	FindByID(ctx context.Context, id string) (domain.Zone, error)
+
+	// ListAll devuelve todas las zonas, ordenadas por código.
+	ListAll(ctx context.Context) ([]domain.Zone, error)
 
 	// FindContaining devuelve la zona que contiene el punto (la de menor área si
 	// hay solapamiento) o domain.ErrZoneNotFound.

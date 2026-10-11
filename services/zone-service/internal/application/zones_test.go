@@ -39,6 +39,22 @@ func (r *fakeRepo) FindByID(_ context.Context, id string) (domain.Zone, error) {
 	return z, nil
 }
 
+func (r *fakeRepo) Update(_ context.Context, z domain.Zone) (domain.Zone, error) {
+	if _, ok := r.zones[z.ID]; !ok {
+		return domain.Zone{}, domain.ErrZoneNotFound
+	}
+	r.zones[z.ID] = z
+	return z, nil
+}
+
+func (r *fakeRepo) ListAll(_ context.Context) ([]domain.Zone, error) {
+	out := make([]domain.Zone, 0, len(r.zones))
+	for _, z := range r.zones {
+		out = append(out, z)
+	}
+	return out, nil
+}
+
 func (r *fakeRepo) FindContaining(_ context.Context, _ domain.Coordinate) (domain.Zone, error) {
 	for _, z := range r.zones {
 		return z, nil // el fake no calcula geometría; la prueba real está en persistence

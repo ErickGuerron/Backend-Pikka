@@ -17,6 +17,30 @@ service ZoneService {
   // Si varias zonas la contienen, devuelve la de menor área.
   // Responde NOT_FOUND si ninguna zona la contiene.
   rpc ClassifyPoint(ClassifyPointRequest) returns (ClassifyPointResponse);
+
+  // ListZones devuelve todas las zonas registradas.
+  rpc ListZones(ListZonesRequest) returns (ListZonesResponse);
+
+  // UpdateZone reemplaza la geometría y los datos de una zona existente.
+  rpc UpdateZone(UpdateZoneRequest) returns (UpdateZoneResponse);
+}
+
+message ListZonesRequest {}
+
+message ListZonesResponse {
+  repeated Zone zones = 1;
+}
+
+message UpdateZoneRequest {
+  string id = 1;
+  string code = 2;
+  string name = 3;
+  repeated Coordinate ring = 4;
+  repeated Ring holes = 5;
+}
+
+message UpdateZoneResponse {
+  Zone zone = 1;
 }
 
 message Coordinate {

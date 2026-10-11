@@ -157,6 +157,65 @@ func TestZoneRepository_DonutRoundTripsAndExcludesHole(t *testing.T) {
 	assert.Equal(t, saved.ID, got.ID)
 }
 
+func TestZoneRepository_ListAllIncludesHoles(t *testing.T) {
+	repo, pool := setupRepo(t)
+	ctx := context.Background()
+	outer := []domain.Coordinate{coord(t, 41, -3), coord(t, 41, -1), coord(t, 43, -1), coord(t, 43, -3), coord(t, 41, -3)}
+	hole := []domain.Coordinate{coord(t, 41.5, -2.5), coord(t, 41.5, -1.5), coord(t, 42.5, -1.5), coord(t, 42.5, -2.5), coord(t, 41.5, -2.5)}
+	zone, err := domain.NewZoneWithHoles("IT-"+uuid.NewString()[:8], "Dona listado", outer, [][]domain.Coordinate{hole})
+	require.NoError(t, err)
+	saved, err := repo.Save(ctx, zone)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM zones WHERE id = $1`, saved.ID) })
+
+	zones, err := repo.ListAll(ctx)
+	require.NoError(t, err)
+	var found *domain.Zone
+	for i := range zones {
+		if zones[i].ID == saved.ID {
+			found = &zones[i]
+		}
+	}
+	require.NotNil(t, found, "la zona guardada debe aparecer en el listado")
+	assert.Len(t, found.Ring, 5)
+	require.Len(t, found.Holes, 1)
+	assert.Len(t, found.Holes[0], 5)
+}
+
+func TestZoneRepository_UpdateReplacesGeometryAndKeepsID(t *testing.T) {
+	repo, pool := setupRepo(t)
+	ctx := context.Background()
+	saved := squareZone(t, repo, pool, -0.20, -78.50, 0.10)
+
+	bigger := domain.Zone{
+		ID:   saved.ID,
+		Code: saved.Code,
+		Name: "Zona ampliada",
+		Ring: []domain.Coordinate{coord(t, -0.30, -78.60), coord(t, -0.30, -78.40), coord(t, -0.10, -78.40), coord(t, -0.10, -78.60), coord(t, -0.30, -78.60)},
+	}
+	updated, err := repo.Update(ctx, bigger)
+	require.NoError(t, err)
+	assert.Equal(t, saved.ID, updated.ID)
+
+	found, err := repo.FindByID(ctx, saved.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Zona ampliada", found.Name)
+	assert.Equal(t, bigger.Ring[0], found.Ring[0])
+}
+
+func TestZoneRepository_UpdateErrors(t *testing.T) {
+	repo, pool := setupRepo(t)
+	ctx := context.Background()
+	first := squareZone(t, repo, pool, -0.20, -78.50, 0.10)
+	second := squareZone(t, repo, pool, -0.40, -78.70, 0.10)
+
+	_, err := repo.Update(ctx, domain.Zone{ID: "11111111-1111-1111-1111-111111111111", Code: "X", Name: "X", Ring: first.Ring})
+	assert.ErrorIs(t, err, domain.ErrZoneNotFound)
+
+	_, err = repo.Update(ctx, domain.Zone{ID: second.ID, Code: first.Code, Name: "Choca", Ring: second.Ring})
+	assert.ErrorIs(t, err, domain.ErrZoneCodeTaken)
+}
+
 func TestZoneRepository_SpatialIndexExists(t *testing.T) {
 	_, pool := setupRepo(t)
 

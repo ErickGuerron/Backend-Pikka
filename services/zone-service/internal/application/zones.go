@@ -39,12 +39,39 @@ func (s *ZoneService) CreateZoneWithHoles(ctx context.Context, code, name string
 	return saved, nil
 }
 
+// UpdateZone reemplaza los datos y la geometría de una zona existente. La zona nueva se
+// valida con las mismas reglas que una creación; el identificador no cambia.
+func (s *ZoneService) UpdateZone(ctx context.Context, id, code, name string, ring []domain.Coordinate, holes [][]domain.Coordinate) (domain.Zone, error) {
+	if _, err := uuid.Parse(id); err != nil {
+		return domain.Zone{}, domain.ErrZoneNotFound
+	}
+	zone, err := domain.NewZoneWithHoles(code, name, ring, holes)
+	if err != nil {
+		return domain.Zone{}, err
+	}
+	zone.ID = id
+	updated, err := s.zones.Update(ctx, zone)
+	if err != nil {
+		return domain.Zone{}, fmt.Errorf("update zone: %w", err)
+	}
+	return updated, nil
+}
+
 // GetZone devuelve una zona por su identificador.
 func (s *ZoneService) GetZone(ctx context.Context, id string) (domain.Zone, error) {
 	if _, err := uuid.Parse(id); err != nil {
 		return domain.Zone{}, domain.ErrZoneNotFound
 	}
 	return s.zones.FindByID(ctx, id)
+}
+
+// ListZones devuelve todas las zonas registradas.
+func (s *ZoneService) ListZones(ctx context.Context) ([]domain.Zone, error) {
+	zones, err := s.zones.ListAll(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list zones: %w", err)
+	}
+	return zones, nil
 }
 
 // ClassifyPoint devuelve la zona que contiene la coordenada.

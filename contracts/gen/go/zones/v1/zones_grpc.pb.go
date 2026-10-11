@@ -22,6 +22,8 @@ const (
 	ZoneService_CreateZone_FullMethodName    = "/zones.v1.ZoneService/CreateZone"
 	ZoneService_GetZone_FullMethodName       = "/zones.v1.ZoneService/GetZone"
 	ZoneService_ClassifyPoint_FullMethodName = "/zones.v1.ZoneService/ClassifyPoint"
+	ZoneService_ListZones_FullMethodName     = "/zones.v1.ZoneService/ListZones"
+	ZoneService_UpdateZone_FullMethodName    = "/zones.v1.ZoneService/UpdateZone"
 )
 
 // ZoneServiceClient is the client API for ZoneService service.
@@ -39,6 +41,10 @@ type ZoneServiceClient interface {
 	// Si varias zonas la contienen, devuelve la de menor área.
 	// Responde NOT_FOUND si ninguna zona la contiene.
 	ClassifyPoint(ctx context.Context, in *ClassifyPointRequest, opts ...grpc.CallOption) (*ClassifyPointResponse, error)
+	// ListZones devuelve todas las zonas registradas.
+	ListZones(ctx context.Context, in *ListZonesRequest, opts ...grpc.CallOption) (*ListZonesResponse, error)
+	// UpdateZone reemplaza la geometría y los datos de una zona existente.
+	UpdateZone(ctx context.Context, in *UpdateZoneRequest, opts ...grpc.CallOption) (*UpdateZoneResponse, error)
 }
 
 type zoneServiceClient struct {
@@ -79,6 +85,26 @@ func (c *zoneServiceClient) ClassifyPoint(ctx context.Context, in *ClassifyPoint
 	return out, nil
 }
 
+func (c *zoneServiceClient) ListZones(ctx context.Context, in *ListZonesRequest, opts ...grpc.CallOption) (*ListZonesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListZonesResponse)
+	err := c.cc.Invoke(ctx, ZoneService_ListZones_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *zoneServiceClient) UpdateZone(ctx context.Context, in *UpdateZoneRequest, opts ...grpc.CallOption) (*UpdateZoneResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateZoneResponse)
+	err := c.cc.Invoke(ctx, ZoneService_UpdateZone_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ZoneServiceServer is the server API for ZoneService service.
 // All implementations must embed UnimplementedZoneServiceServer
 // for forward compatibility.
@@ -94,6 +120,10 @@ type ZoneServiceServer interface {
 	// Si varias zonas la contienen, devuelve la de menor área.
 	// Responde NOT_FOUND si ninguna zona la contiene.
 	ClassifyPoint(context.Context, *ClassifyPointRequest) (*ClassifyPointResponse, error)
+	// ListZones devuelve todas las zonas registradas.
+	ListZones(context.Context, *ListZonesRequest) (*ListZonesResponse, error)
+	// UpdateZone reemplaza la geometría y los datos de una zona existente.
+	UpdateZone(context.Context, *UpdateZoneRequest) (*UpdateZoneResponse, error)
 	mustEmbedUnimplementedZoneServiceServer()
 }
 
@@ -112,6 +142,12 @@ func (UnimplementedZoneServiceServer) GetZone(context.Context, *GetZoneRequest) 
 }
 func (UnimplementedZoneServiceServer) ClassifyPoint(context.Context, *ClassifyPointRequest) (*ClassifyPointResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ClassifyPoint not implemented")
+}
+func (UnimplementedZoneServiceServer) ListZones(context.Context, *ListZonesRequest) (*ListZonesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListZones not implemented")
+}
+func (UnimplementedZoneServiceServer) UpdateZone(context.Context, *UpdateZoneRequest) (*UpdateZoneResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateZone not implemented")
 }
 func (UnimplementedZoneServiceServer) mustEmbedUnimplementedZoneServiceServer() {}
 func (UnimplementedZoneServiceServer) testEmbeddedByValue()                     {}
@@ -188,6 +224,42 @@ func _ZoneService_ClassifyPoint_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ZoneService_ListZones_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListZonesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ZoneServiceServer).ListZones(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ZoneService_ListZones_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ZoneServiceServer).ListZones(ctx, req.(*ListZonesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ZoneService_UpdateZone_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateZoneRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ZoneServiceServer).UpdateZone(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ZoneService_UpdateZone_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ZoneServiceServer).UpdateZone(ctx, req.(*UpdateZoneRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ZoneService_ServiceDesc is the grpc.ServiceDesc for ZoneService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -206,6 +278,14 @@ var ZoneService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ClassifyPoint",
 			Handler:    _ZoneService_ClassifyPoint_Handler,
+		},
+		{
+			MethodName: "ListZones",
+			Handler:    _ZoneService_ListZones_Handler,
+		},
+		{
+			MethodName: "UpdateZone",
+			Handler:    _ZoneService_UpdateZone_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

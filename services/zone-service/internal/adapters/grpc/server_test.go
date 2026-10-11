@@ -43,8 +43,54 @@ func (r *memRepo) FindContaining(_ context.Context, _ domain.Coordinate) (domain
 	return domain.Zone{}, domain.ErrZoneNotFound
 }
 
+func (r *memRepo) Update(_ context.Context, z domain.Zone) (domain.Zone, error) {
+	if _, ok := r.zones[z.ID]; !ok {
+		return domain.Zone{}, domain.ErrZoneNotFound
+	}
+	r.zones[z.ID] = z
+	return z, nil
+}
+
+func (r *memRepo) ListAll(_ context.Context) ([]domain.Zone, error) {
+	out := make([]domain.Zone, 0, len(r.zones))
+	for _, z := range r.zones {
+		out = append(out, z)
+	}
+	return out, nil
+}
+
 func newServer() *grpcadapter.Server {
 	return grpcadapter.NewServer(application.NewZoneService(&memRepo{zones: map[string]domain.Zone{}}))
+}
+
+func TestListZones_AdminAndOperatorOnly(t *testing.T) {
+	srv := newServer()
+	_, err := srv.ListZones(asRole("DRIVER"), &zonesv1.ListZonesRequest{})
+	assert.Equal(t, codes.PermissionDenied, status.Code(err))
+
+	res, err := srv.ListZones(asRole("OPERATOR"), &zonesv1.ListZonesRequest{})
+	require.NoError(t, err)
+	assert.Empty(t, res.GetZones())
+}
+
+func TestUpdateZone_OnlyAdminAndKeepsID(t *testing.T) {
+	srv := newServer()
+	created, err := srv.CreateZone(asRole("ADMIN"), &zonesv1.CreateZoneRequest{Code: "NORTE", Name: "Zona Norte", Ring: validRing()})
+	require.NoError(t, err)
+	id := created.GetZone().GetId()
+
+	_, err = srv.UpdateZone(asRole("OPERATOR"), &zonesv1.UpdateZoneRequest{Id: id, Code: "NORTE", Name: "X", Ring: validRing()})
+	assert.Equal(t, codes.PermissionDenied, status.Code(err))
+
+	res, err := srv.UpdateZone(asRole("ADMIN"), &zonesv1.UpdateZoneRequest{Id: id, Code: "NORTE", Name: "Zona Norte 2", Ring: validRing()})
+	require.NoError(t, err)
+	assert.Equal(t, id, res.GetZone().GetId())
+	assert.Equal(t, "Zona Norte 2", res.GetZone().GetName())
+}
+
+func TestUpdateZone_MissingIsNotFound(t *testing.T) {
+	_, err := newServer().UpdateZone(asRole("ADMIN"), &zonesv1.UpdateZoneRequest{Id: "11111111-1111-1111-1111-111111111111", Code: "X", Name: "X", Ring: validRing()})
+	assert.Equal(t, codes.NotFound, status.Code(err))
 }
 
 func validRing() []*zonesv1.Coordinate {

@@ -132,3 +132,40 @@ func TestZones_CreateForwardsHolesAndReturnsThem(t *testing.T) {
 	assert.Len(t, zones.lastHoles[0].GetPoints(), 5)
 	assert.Contains(t, rec.Body.String(), `"holes":[[`)
 }
+
+func (f *fakeZones) ListZones(_ context.Context, m grpcclient.CallMeta, _ *zonesv1.ListZonesRequest) (*zonesv1.ListZonesResponse, error) {
+	f.lastMeta, f.called = m, true
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &zonesv1.ListZonesResponse{Zones: []*zonesv1.Zone{{Id: "z-1", Code: "CENTRO", Name: "Centro"}}}, nil
+}
+
+func (f *fakeZones) UpdateZone(_ context.Context, m grpcclient.CallMeta, req *zonesv1.UpdateZoneRequest) (*zonesv1.UpdateZoneResponse, error) {
+	f.lastMeta, f.called, f.lastRing, f.lastHoles = m, true, len(req.GetRing()), req.GetHoles()
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &zonesv1.UpdateZoneResponse{Zone: &zonesv1.Zone{Id: req.GetId(), Code: req.GetCode(), Name: req.GetName(), Ring: req.GetRing(), Holes: req.GetHoles()}}, nil
+}
+
+func TestZones_ListReturnsArray(t *testing.T) {
+	rec := do(newZonesRouter(&fakeZones{}), http.MethodGet, "/api/v1/zones", "", bearer(t, "OPERATOR"))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"code":"CENTRO"`)
+}
+
+func TestZones_UpdateUsesPathIDAndForwardsHoles(t *testing.T) {
+	zones := &fakeZones{}
+	rec := do(newZonesRouter(zones), http.MethodPut, "/api/v1/zones/z-9", donutZoneJSON, bearer(t, "ADMIN"))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"id":"z-9"`)
+	require.Len(t, zones.lastHoles, 1)
+}
+
+func TestZones_ListAndUpdateRequireAuthentication(t *testing.T) {
+	h := newZonesRouter(&fakeZones{})
+	assert.Equal(t, http.StatusUnauthorized, do(h, http.MethodGet, "/api/v1/zones", "", nil).Code)
+	assert.Equal(t, http.StatusUnauthorized, do(h, http.MethodPut, "/api/v1/zones/z-9", donutZoneJSON, nil).Code)
+}
