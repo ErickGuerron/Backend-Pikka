@@ -14,6 +14,8 @@ import (
 	"time"
 
 	httpx "github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/adapters/http"
+	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/adapters/persistence"
+	customercase "github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/application/customer"
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/infrastructure/config"
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/infrastructure/postgres"
 )
@@ -44,6 +46,22 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer pool.Close()
+
+	// BE-T4b: wiring del dominio Customer. Por ahora los casos de uso se
+	// construyen pero no se exponen en endpoints (eso entra en BE-T5 con
+	// los handlers gRPC). Mantenerlos vivos acá evita el warning de
+	// variables no usadas y deja el grafo de dependencias listo.
+	customerRepo := persistence.NewCustomerRepository(pool)
+	createCustomer := customercase.NewCreateCustomer(customerRepo)
+	getByUserID := customercase.NewGetByUserID(customerRepo)
+	updateCustomerStatus := customercase.NewUpdateStatus(customerRepo)
+	canCreateOrders := customercase.NewCanCreateOrders(customerRepo)
+	log.Info("customer use cases wired",
+		"create", createCustomer != nil,
+		"getByUserID", getByUserID != nil,
+		"updateStatus", updateCustomerStatus != nil,
+		"canCreateOrders", canCreateOrders != nil,
+	)
 
 	httpServer := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
