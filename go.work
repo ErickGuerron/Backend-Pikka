@@ -1,8 +1,11 @@
 go 1.26.0
 
+toolchain go1.26.9
+
 use (
 	./contracts
 	./services/api-gateway
 	./services/auth-service
+	./services/order-service
 	./services/zone-service
 )

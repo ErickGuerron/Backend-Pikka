@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [services/auth-service, services/api-gateway, services/zone-service]
+        module: [services/auth-service, services/api-gateway, services/zone-service, services/order-service]
     defaults:
       run:
         working-directory: ${{ matrix.module }}
@@ -82,6 +82,12 @@ jobs:
         env:
           AUTH_TEST_DATABASE_URL: postgres://auth_service_user:auth@localhost:5432/last_mile?sslmode=disable&search_path=auth
         run: go test -tags integration -count=1 ./...
+
+      - name: Order Service migration integration tests
+        working-directory: services/order-service
+        env:
+          ORDER_TEST_DATABASE_URL: postgres://order_service_user:x@localhost:5432/last_mile?sslmode=disable&search_path=orders,public
+        run: go test -race -tags integration -count=1 ./...
 
   contracts:
     name: Contracts (proto + OpenAPI)
