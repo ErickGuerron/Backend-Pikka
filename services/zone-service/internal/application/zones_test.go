@@ -55,6 +55,31 @@ func (r *fakeRepo) ListAll(_ context.Context) ([]domain.Zone, error) {
 	return out, nil
 }
 
+func (r *fakeRepo) SetStatus(_ context.Context, id, status, reason string) (domain.Zone, error) {
+	z, ok := r.zones[id]
+	if !ok {
+		return domain.Zone{}, domain.ErrZoneNotFound
+	}
+	z.Status, z.StatusReason = status, reason
+	r.zones[id] = z
+	return z, nil
+}
+
+func (r *fakeRepo) Delete(_ context.Context, id, _ string) error {
+	z, ok := r.zones[id]
+	if !ok {
+		return domain.ErrZoneNotFound
+	}
+	if z.Status != domain.StatusInactive {
+		return domain.ErrZoneNotInactive
+	}
+	delete(r.zones, id)
+	return nil
+}
+
+func (r *fakeRepo) NextCode(_ context.Context, _ string) (int, error) {
+	return 1, nil
+}
 func (r *fakeRepo) FindContaining(_ context.Context, _ domain.Coordinate) (domain.Zone, error) {
 	for _, z := range r.zones {
 		return z, nil // el fake no calcula geometría; la prueba real está en persistence
@@ -84,13 +109,23 @@ func TestCreateZone_PersistsValidZone(t *testing.T) {
 	assert.Equal(t, "NORTE", zone.Code)
 }
 
-func TestCreateZone_RejectsInvalidZoneBeforePersisting(t *testing.T) {
+func TestCreateZone_GeneratesCodeWhenEmpty(t *testing.T) {
+	svc := application.NewZoneService(newFakeRepo())
+
+	zone, err := svc.CreateZone(context.Background(), "", "Zona Norte", ring(t))
+
+	require.NoError(t, err)
+	assert.Equal(t, "NORTE-001", zone.Code)
+	assert.Equal(t, domain.StatusActive, zone.Status)
+}
+
+func TestCreateZone_RejectsInvalidNameBeforePersisting(t *testing.T) {
 	repo := newFakeRepo()
 	svc := application.NewZoneService(repo)
 
-	_, err := svc.CreateZone(context.Background(), "", "Zona", ring(t))
+	_, err := svc.CreateZone(context.Background(), "", "   ", ring(t))
 
-	assert.ErrorIs(t, err, domain.ErrInvalidCode)
+	assert.ErrorIs(t, err, domain.ErrInvalidName)
 	assert.Empty(t, repo.zones)
 }
 

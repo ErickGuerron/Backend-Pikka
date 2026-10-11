@@ -106,6 +106,8 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 	authed.POST("/zones", z.create)
 	authed.GET("/zones", z.list)
 	authed.PUT("/zones/:id", z.update)
+	authed.PATCH("/zones/:id/status", z.setStatus)
+	authed.DELETE("/zones/:id", z.remove)
 	authed.GET("/zones/classify", z.classify)
 	authed.GET("/zones/:id", z.get)
 

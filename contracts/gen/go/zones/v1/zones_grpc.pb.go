@@ -24,6 +24,8 @@ const (
 	ZoneService_ClassifyPoint_FullMethodName = "/zones.v1.ZoneService/ClassifyPoint"
 	ZoneService_ListZones_FullMethodName     = "/zones.v1.ZoneService/ListZones"
 	ZoneService_UpdateZone_FullMethodName    = "/zones.v1.ZoneService/UpdateZone"
+	ZoneService_SetZoneStatus_FullMethodName = "/zones.v1.ZoneService/SetZoneStatus"
+	ZoneService_DeleteZone_FullMethodName    = "/zones.v1.ZoneService/DeleteZone"
 )
 
 // ZoneServiceClient is the client API for ZoneService service.
@@ -45,6 +47,10 @@ type ZoneServiceClient interface {
 	ListZones(ctx context.Context, in *ListZonesRequest, opts ...grpc.CallOption) (*ListZonesResponse, error)
 	// UpdateZone reemplaza la geometría y los datos de una zona existente.
 	UpdateZone(ctx context.Context, in *UpdateZoneRequest, opts ...grpc.CallOption) (*UpdateZoneResponse, error)
+	// SetZoneStatus activa o desactiva una zona. El motivo es obligatorio y queda en la bitácora.
+	SetZoneStatus(ctx context.Context, in *SetZoneStatusRequest, opts ...grpc.CallOption) (*SetZoneStatusResponse, error)
+	// DeleteZone borra físicamente una zona. Solo se permite si está INACTIVE.
+	DeleteZone(ctx context.Context, in *DeleteZoneRequest, opts ...grpc.CallOption) (*DeleteZoneResponse, error)
 }
 
 type zoneServiceClient struct {
@@ -105,6 +111,26 @@ func (c *zoneServiceClient) UpdateZone(ctx context.Context, in *UpdateZoneReques
 	return out, nil
 }
 
+func (c *zoneServiceClient) SetZoneStatus(ctx context.Context, in *SetZoneStatusRequest, opts ...grpc.CallOption) (*SetZoneStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetZoneStatusResponse)
+	err := c.cc.Invoke(ctx, ZoneService_SetZoneStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *zoneServiceClient) DeleteZone(ctx context.Context, in *DeleteZoneRequest, opts ...grpc.CallOption) (*DeleteZoneResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteZoneResponse)
+	err := c.cc.Invoke(ctx, ZoneService_DeleteZone_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ZoneServiceServer is the server API for ZoneService service.
 // All implementations must embed UnimplementedZoneServiceServer
 // for forward compatibility.
@@ -124,6 +150,10 @@ type ZoneServiceServer interface {
 	ListZones(context.Context, *ListZonesRequest) (*ListZonesResponse, error)
 	// UpdateZone reemplaza la geometría y los datos de una zona existente.
 	UpdateZone(context.Context, *UpdateZoneRequest) (*UpdateZoneResponse, error)
+	// SetZoneStatus activa o desactiva una zona. El motivo es obligatorio y queda en la bitácora.
+	SetZoneStatus(context.Context, *SetZoneStatusRequest) (*SetZoneStatusResponse, error)
+	// DeleteZone borra físicamente una zona. Solo se permite si está INACTIVE.
+	DeleteZone(context.Context, *DeleteZoneRequest) (*DeleteZoneResponse, error)
 	mustEmbedUnimplementedZoneServiceServer()
 }
 
@@ -148,6 +178,12 @@ func (UnimplementedZoneServiceServer) ListZones(context.Context, *ListZonesReque
 }
 func (UnimplementedZoneServiceServer) UpdateZone(context.Context, *UpdateZoneRequest) (*UpdateZoneResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateZone not implemented")
+}
+func (UnimplementedZoneServiceServer) SetZoneStatus(context.Context, *SetZoneStatusRequest) (*SetZoneStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetZoneStatus not implemented")
+}
+func (UnimplementedZoneServiceServer) DeleteZone(context.Context, *DeleteZoneRequest) (*DeleteZoneResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteZone not implemented")
 }
 func (UnimplementedZoneServiceServer) mustEmbedUnimplementedZoneServiceServer() {}
 func (UnimplementedZoneServiceServer) testEmbeddedByValue()                     {}
@@ -260,6 +296,42 @@ func _ZoneService_UpdateZone_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ZoneService_SetZoneStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetZoneStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ZoneServiceServer).SetZoneStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ZoneService_SetZoneStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ZoneServiceServer).SetZoneStatus(ctx, req.(*SetZoneStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ZoneService_DeleteZone_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteZoneRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ZoneServiceServer).DeleteZone(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ZoneService_DeleteZone_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ZoneServiceServer).DeleteZone(ctx, req.(*DeleteZoneRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ZoneService_ServiceDesc is the grpc.ServiceDesc for ZoneService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -286,6 +358,14 @@ var ZoneService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateZone",
 			Handler:    _ZoneService_UpdateZone_Handler,
+		},
+		{
+			MethodName: "SetZoneStatus",
+			Handler:    _ZoneService_SetZoneStatus_Handler,
+		},
+		{
+			MethodName: "DeleteZone",
+			Handler:    _ZoneService_DeleteZone_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

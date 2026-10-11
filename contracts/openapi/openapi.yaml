@@ -305,6 +305,62 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [zones]
+      operationId: deleteZone
+      summary: Borra físicamente una zona inactiva (solo ADMIN). Requiere motivo y queda en la bitácora.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 5, maxLength: 300 }
+      responses:
+        "204": { description: Zona borrada }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /api/v1/zones/{id}/status:
+    patch:
+      tags: [zones]
+      operationId: setZoneStatus
+      summary: Activa o desactiva una zona (solo ADMIN). El motivo es obligatorio y queda en la bitácora.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status, reason]
+              properties:
+                status: { type: string, enum: [ACTIVE, INACTIVE] }
+                reason: { type: string, minLength: 5, maxLength: 300 }
+      responses:
+        "200":
+          description: Zona actualizada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Zone" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
 security:
   - bearerAuth: []
 components:
@@ -431,12 +487,19 @@ components:
             type: array
             minItems: 5
             items: { $ref: "#/components/schemas/Coordinate" }
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
+          description: Una zona inactiva no clasifica puntos ni valida pedidos, pero se conserva para el historial.
+        statusReason:
+          type: string
+          description: Motivo del último cambio de estado. Vacío si nunca se ha desactivado.
         createdAt: { type: string, format: date-time }
     CreateZoneRequest:
       type: object
-      required: [code, name, ring]
+      required: [name, ring]
       properties:
-        code: { type: string, maxLength: 32 }
+        code: { type: string, maxLength: 32, description: Opcional. Si se omite, el servidor genera el código a partir del nombre (NORTE-001). }
         name: { type: string, maxLength: 120 }
         ring:
           type: array
@@ -490,6 +553,11 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     Conflict:
       description: Conflicto con el estado actual
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    UnprocessableEntity:
+      description: La operación no se puede hacer en el estado actual de la zona
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

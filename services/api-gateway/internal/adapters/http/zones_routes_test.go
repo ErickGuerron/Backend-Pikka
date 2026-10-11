@@ -169,3 +169,38 @@ func TestZones_ListAndUpdateRequireAuthentication(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, do(h, http.MethodGet, "/api/v1/zones", "", nil).Code)
 	assert.Equal(t, http.StatusUnauthorized, do(h, http.MethodPut, "/api/v1/zones/z-9", donutZoneJSON, nil).Code)
 }
+
+func (f *fakeZones) SetZoneStatus(_ context.Context, m grpcclient.CallMeta, req *zonesv1.SetZoneStatusRequest) (*zonesv1.SetZoneStatusResponse, error) {
+	f.lastMeta, f.called = m, true
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &zonesv1.SetZoneStatusResponse{Zone: &zonesv1.Zone{Id: req.GetId(), Code: "NORTE-001", Status: req.GetStatus(), StatusReason: req.GetReason()}}, nil
+}
+
+func (f *fakeZones) DeleteZone(_ context.Context, m grpcclient.CallMeta, _ *zonesv1.DeleteZoneRequest) (*zonesv1.DeleteZoneResponse, error) {
+	f.lastMeta, f.called = m, true
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &zonesv1.DeleteZoneResponse{}, nil
+}
+
+func TestZones_SetStatusReturnsStatusAndReason(t *testing.T) {
+	rec := do(newZonesRouter(&fakeZones{}), http.MethodPatch, "/api/v1/zones/z-9/status", `{"status":"INACTIVE","reason":"Obras en la avenida"}`, bearer(t, "ADMIN"))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"status":"INACTIVE"`)
+	assert.Contains(t, rec.Body.String(), `"statusReason":"Obras en la avenida"`)
+}
+
+func TestZones_DeleteReturnsNoContent(t *testing.T) {
+	rec := do(newZonesRouter(&fakeZones{}), http.MethodDelete, "/api/v1/zones/z-9", `{"reason":"Zona creada por error"}`, bearer(t, "ADMIN"))
+	assert.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+}
+
+func TestZones_StatusAndDeleteRequireAuthentication(t *testing.T) {
+	h := newZonesRouter(&fakeZones{})
+	assert.Equal(t, http.StatusUnauthorized, do(h, http.MethodPatch, "/api/v1/zones/z-9/status", `{"status":"INACTIVE","reason":"x"}`, nil).Code)
+	assert.Equal(t, http.StatusUnauthorized, do(h, http.MethodDelete, "/api/v1/zones/z-9", `{"reason":"x"}`, nil).Code)
+}

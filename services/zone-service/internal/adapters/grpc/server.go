@@ -29,6 +29,10 @@ func (s *Server) CreateZone(ctx context.Context, req *zonesv1.CreateZoneRequest)
 	if err := requireRole(ctx, roleAdmin); err != nil {
 		return nil, err
 	}
+	ctx, err := withActor(ctx)
+	if err != nil {
+		return nil, err
+	}
 	ring := fromProtoRing(req.GetRing())
 	holes := fromProtoHoles(req.GetHoles())
 	zone, err := s.zones.CreateZoneWithHoles(ctx, req.GetCode(), req.GetName(), ring, holes)
@@ -59,11 +63,46 @@ func (s *Server) UpdateZone(ctx context.Context, req *zonesv1.UpdateZoneRequest)
 	if err := requireRole(ctx, roleAdmin); err != nil {
 		return nil, err
 	}
-	zone, err := s.zones.UpdateZone(ctx, req.GetId(), req.GetCode(), req.GetName(), fromProtoRing(req.GetRing()), fromProtoHoles(req.GetHoles()))
+	ctx, err := withActor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	zone, err := s.zones.UpdateZone(ctx, req.GetId(), req.GetName(), fromProtoRing(req.GetRing()), fromProtoHoles(req.GetHoles()))
 	if err != nil {
 		return nil, toStatus(err)
 	}
 	return &zonesv1.UpdateZoneResponse{Zone: toProtoZone(zone)}, nil
+}
+
+// SetZoneStatus activa o desactiva una zona. El motivo es obligatorio y queda en la bitácora.
+func (s *Server) SetZoneStatus(ctx context.Context, req *zonesv1.SetZoneStatusRequest) (*zonesv1.SetZoneStatusResponse, error) {
+	if err := requireRole(ctx, roleAdmin); err != nil {
+		return nil, err
+	}
+	ctx, err := withActor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	zone, err := s.zones.SetZoneStatus(ctx, req.GetId(), req.GetStatus(), req.GetReason())
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	return &zonesv1.SetZoneStatusResponse{Zone: toProtoZone(zone)}, nil
+}
+
+// DeleteZone borra físicamente una zona inactiva.
+func (s *Server) DeleteZone(ctx context.Context, req *zonesv1.DeleteZoneRequest) (*zonesv1.DeleteZoneResponse, error) {
+	if err := requireRole(ctx, roleAdmin); err != nil {
+		return nil, err
+	}
+	ctx, err := withActor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.zones.DeleteZone(ctx, req.GetId(), req.GetReason()); err != nil {
+		return nil, toStatus(err)
+	}
+	return &zonesv1.DeleteZoneResponse{}, nil
 }
 
 // GetZone devuelve una zona por su identificador.
@@ -102,12 +141,21 @@ func toStatus(err error) error {
 		errors.Is(err, domain.ErrInvalidCoordinate),
 		errors.Is(err, domain.ErrInvalidRing),
 		errors.Is(err, domain.ErrRingNotClosed),
-		errors.Is(err, domain.ErrNotConvex):
+		errors.Is(err, domain.ErrNotConvex),
+		errors.Is(err, domain.ErrHoleOutside),
+		errors.Is(err, domain.ErrHolesOverlap),
+		errors.Is(err, domain.ErrReasonRequired),
+		errors.Is(err, domain.ErrInvalidStatus):
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, domain.ErrZoneNotFound):
 		return status.Error(codes.NotFound, err.Error())
 	case errors.Is(err, domain.ErrZoneCodeTaken):
 		return status.Error(codes.AlreadyExists, err.Error())
+	case errors.Is(err, domain.ErrStatusUnchanged),
+		errors.Is(err, domain.ErrZoneNotInactive),
+		errors.Is(err, domain.ErrZoneInactive):
+		// El recurso existe pero su estado no permite la operación.
+		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, context.DeadlineExceeded):
 		return status.Error(codes.DeadlineExceeded, "deadline exceeded")
 	case errors.Is(err, context.Canceled):
@@ -154,11 +202,13 @@ func toProtoZone(z domain.Zone) *zonesv1.Zone {
 		holes = append(holes, toProtoRing(h))
 	}
 	return &zonesv1.Zone{
-		Id:        z.ID,
-		Code:      z.Code,
-		Name:      z.Name,
-		Ring:      ring,
-		CreatedAt: z.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
-		Holes:     holes,
+		Id:           z.ID,
+		Code:         z.Code,
+		Name:         z.Name,
+		Ring:         ring,
+		Status:       z.Status,
+		StatusReason: z.StatusReason,
+		CreatedAt:    z.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		Holes:        holes,
 	}
 }

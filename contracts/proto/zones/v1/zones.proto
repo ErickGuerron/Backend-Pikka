@@ -23,6 +23,12 @@ service ZoneService {
 
   // UpdateZone reemplaza la geometría y los datos de una zona existente.
   rpc UpdateZone(UpdateZoneRequest) returns (UpdateZoneResponse);
+
+  // SetZoneStatus activa o desactiva una zona. El motivo es obligatorio y queda en la bitácora.
+  rpc SetZoneStatus(SetZoneStatusRequest) returns (SetZoneStatusResponse);
+
+  // DeleteZone borra físicamente una zona. Solo se permite si está INACTIVE.
+  rpc DeleteZone(DeleteZoneRequest) returns (DeleteZoneResponse);
 }
 
 message ListZonesRequest {}
@@ -63,6 +69,10 @@ message Zone {
   string created_at = 5;
   // Huecos de la zona (dona). Cada uno es un anillo cerrado dentro del exterior. Vacío si no hay huecos.
   repeated Ring holes = 6;
+  // ACTIVE o INACTIVE. Una zona inactiva no se usa para clasificar puntos y se conserva para el historial.
+  string status = 7;
+  // Motivo del último cambio de estado. Vacío si nunca se ha desactivado.
+  string status_reason = 8;
 }
 
 message CreateZoneRequest {
@@ -92,3 +102,20 @@ message ClassifyPointRequest {
 message ClassifyPointResponse {
   Zone zone = 1;
 }
+
+message SetZoneStatusRequest {
+  string id = 1;
+  string status = 2;
+  string reason = 3;
+}
+
+message SetZoneStatusResponse {
+  Zone zone = 1;
+}
+
+message DeleteZoneRequest {
+  string id = 1;
+  string reason = 2;
+}
+
+message DeleteZoneResponse {}

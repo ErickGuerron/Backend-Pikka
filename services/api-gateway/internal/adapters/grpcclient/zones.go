@@ -65,6 +65,20 @@ func (z *Zones) UpdateZone(ctx context.Context, m CallMeta, req *zonesv1.UpdateZ
 	return z.client.UpdateZone(ctx, req)
 }
 
+// SetZoneStatus activa o desactiva una zona.
+func (z *Zones) SetZoneStatus(ctx context.Context, m CallMeta, req *zonesv1.SetZoneStatusRequest) (*zonesv1.SetZoneStatusResponse, error) {
+	ctx, cancel := z.outgoing(ctx, m)
+	defer cancel()
+	return z.client.SetZoneStatus(ctx, req)
+}
+
+// DeleteZone borra físicamente una zona inactiva.
+func (z *Zones) DeleteZone(ctx context.Context, m CallMeta, req *zonesv1.DeleteZoneRequest) (*zonesv1.DeleteZoneResponse, error) {
+	ctx, cancel := z.outgoing(ctx, m)
+	defer cancel()
+	return z.client.DeleteZone(ctx, req)
+}
+
 // ClassifyPoint devuelve la zona que contiene una coordenada.
 func (z *Zones) ClassifyPoint(ctx context.Context, m CallMeta, req *zonesv1.ClassifyPointRequest) (*zonesv1.ClassifyPointResponse, error) {
 	ctx, cancel := z.outgoing(ctx, m)

@@ -9,10 +9,18 @@ import (
 )
 
 const (
-	minVertices   = 4               // trapecio o cuadrado como mínimo; un triángulo no es una zona válida
-	minRingPoints = minVertices + 1 // los vértices más el primero repetido al final
-	maxCodeLength = 32
-	maxNameLength = 120
+	minVertices     = 4               // trapecio o cuadrado como mínimo; un triángulo no es una zona válida
+	minRingPoints   = minVertices + 1 // los vértices más el primero repetido al final
+	maxCodeLength   = 32
+	maxNameLength   = 120
+	minReasonLength = 5
+	maxReasonLength = 300
+)
+
+// Estados de una zona. Una zona inactiva no clasifica puntos ni valida pedidos, pero se conserva.
+const (
+	StatusActive   = "ACTIVE"
+	StatusInactive = "INACTIVE"
 )
 
 // Coordinate es un punto geográfico en grados decimales (WGS 84).
@@ -32,15 +40,17 @@ func NewCoordinate(latitude, longitude float64) (Coordinate, error) {
 	return Coordinate{Latitude: latitude, Longitude: longitude}, nil
 }
 
-// Zone es una región geográfica de reparto: un anillo exterior cerrado y, opcionalmente,
-// huecos (dona). Cada hueco es un anillo cerrado estrictamente dentro del exterior.
+// Zone es una región geográfica de reparto: un anillo exterior cerrado y, opcionalmente, huecos
+// (dona). Cada hueco es un anillo cerrado estrictamente dentro del exterior.
 type Zone struct {
-	ID        string
-	Code      string
-	Name      string
-	Ring      []Coordinate
-	Holes     [][]Coordinate
-	CreatedAt time.Time
+	ID           string
+	Code         string
+	Name         string
+	Ring         []Coordinate
+	Holes        [][]Coordinate
+	Status       string
+	StatusReason string
+	CreatedAt    time.Time
 }
 
 // NewZone valida una zona sin huecos. El ID y la fecha de creación los asigna la persistencia.
@@ -48,35 +58,64 @@ func NewZone(code, name string, ring []Coordinate) (Zone, error) {
 	return NewZoneWithHoles(code, name, ring, nil)
 }
 
-// NewZoneWithHoles valida una zona con huecos opcionales.
+// NewZoneWithHoles valida una zona con huecos opcionales. Una zona nueva nace activa.
 func NewZoneWithHoles(code, name string, ring []Coordinate, holes [][]Coordinate) (Zone, error) {
 	code = strings.TrimSpace(code)
-	name = strings.TrimSpace(name)
-
 	if code == "" || len(code) > maxCodeLength {
 		return Zone{}, ErrInvalidCode
 	}
-	if name == "" || len(name) > maxNameLength {
-		return Zone{}, ErrInvalidName
-	}
-	if err := validateRing(ring); err != nil {
+	trimmedName, err := ValidateName(name)
+	if err != nil {
 		return Zone{}, err
 	}
-	for _, hole := range holes {
-		if err := validateRing(hole); err != nil {
-			return Zone{}, err
-		}
-	}
-	if err := validateHoles(ring, holes); err != nil {
+	if err := ValidateGeometry(ring, holes); err != nil {
 		return Zone{}, err
 	}
 
 	return Zone{
-		Code:  code,
-		Name:  name,
-		Ring:  append([]Coordinate(nil), ring...),
-		Holes: copyRings(holes),
+		Code:   code,
+		Name:   trimmedName,
+		Ring:   append([]Coordinate(nil), ring...),
+		Holes:  copyRings(holes),
+		Status: StatusActive,
 	}, nil
+}
+
+// ValidateName devuelve el nombre sin espacios sobrantes, o ErrInvalidName si no es válido.
+func ValidateName(name string) (string, error) {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" || len(trimmed) > maxNameLength {
+		return "", ErrInvalidName
+	}
+	return trimmed, nil
+}
+
+// ValidateGeometry valida el anillo exterior y los huecos: cerrados, convexos, con al menos cuatro
+// vértices, y cada hueco dentro del exterior sin tocar otro.
+func ValidateGeometry(ring []Coordinate, holes [][]Coordinate) error {
+	if err := validateRing(ring); err != nil {
+		return err
+	}
+	for _, hole := range holes {
+		if err := validateRing(hole); err != nil {
+			return err
+		}
+	}
+	return validateHoles(ring, holes)
+}
+
+// ValidateReason devuelve el motivo sin espacios sobrantes. Todo cambio de estado o borrado lo exige.
+func ValidateReason(reason string) (string, error) {
+	trimmed := strings.TrimSpace(reason)
+	if len(trimmed) < minReasonLength || len(trimmed) > maxReasonLength {
+		return "", ErrReasonRequired
+	}
+	return trimmed, nil
+}
+
+// ValidStatus indica si el estado es uno de los que admite una zona.
+func ValidStatus(status string) bool {
+	return status == StatusActive || status == StatusInactive
 }
 
 func copyRings(rings [][]Coordinate) [][]Coordinate {

@@ -18,6 +18,8 @@ type ZonesClient interface {
 	ClassifyPoint(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.ClassifyPointRequest) (*zonesv1.ClassifyPointResponse, error)
 	ListZones(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.ListZonesRequest) (*zonesv1.ListZonesResponse, error)
 	UpdateZone(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.UpdateZoneRequest) (*zonesv1.UpdateZoneResponse, error)
+	SetZoneStatus(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.SetZoneStatusRequest) (*zonesv1.SetZoneStatusResponse, error)
+	DeleteZone(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.DeleteZoneRequest) (*zonesv1.DeleteZoneResponse, error)
 }
 
 func (h *zonesHandlers) list(c echo.Context) error {
@@ -61,12 +63,14 @@ type coordinateDTO struct {
 }
 
 type zoneDTO struct {
-	ID        string            `json:"id"`
-	Code      string            `json:"code"`
-	Name      string            `json:"name"`
-	Ring      []coordinateDTO   `json:"ring"`
-	Holes     [][]coordinateDTO `json:"holes"`
-	CreatedAt string            `json:"createdAt"`
+	ID           string            `json:"id"`
+	Code         string            `json:"code"`
+	Name         string            `json:"name"`
+	Ring         []coordinateDTO   `json:"ring"`
+	Holes        [][]coordinateDTO `json:"holes"`
+	Status       string            `json:"status"`
+	StatusReason string            `json:"statusReason"`
+	CreatedAt    string            `json:"createdAt"`
 }
 
 type createZoneRequest struct {
@@ -150,11 +154,54 @@ func toZoneDTO(z *zonesv1.Zone) zoneDTO {
 		holes = append(holes, hole)
 	}
 	return zoneDTO{
-		ID:        z.GetId(),
-		Code:      z.GetCode(),
-		Name:      z.GetName(),
-		Ring:      ring,
-		Holes:     holes,
-		CreatedAt: z.GetCreatedAt(),
+		ID:           z.GetId(),
+		Code:         z.GetCode(),
+		Name:         z.GetName(),
+		Ring:         ring,
+		Holes:        holes,
+		Status:       z.GetStatus(),
+		StatusReason: z.GetStatusReason(),
+		CreatedAt:    z.GetCreatedAt(),
 	}
+}
+
+type statusRequest struct {
+	Status string `json:"status"`
+	Reason string `json:"reason"`
+}
+
+type deleteRequest struct {
+	Reason string `json:"reason"`
+}
+
+// setStatus activa o desactiva una zona. El motivo es obligatorio y queda en la bitácora del servicio.
+func (h *zonesHandlers) setStatus(c echo.Context) error {
+	var req statusRequest
+	if err := bindJSON(c, &req); err != nil {
+		return err
+	}
+	res, err := h.zones.SetZoneStatus(c.Request().Context(), callMeta(c), &zonesv1.SetZoneStatusRequest{
+		Id:     c.Param("id"),
+		Status: req.Status,
+		Reason: req.Reason,
+	})
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, toZoneDTO(res.GetZone()))
+}
+
+// remove borra físicamente una zona inactiva.
+func (h *zonesHandlers) remove(c echo.Context) error {
+	var req deleteRequest
+	if err := bindJSON(c, &req); err != nil {
+		return err
+	}
+	if _, err := h.zones.DeleteZone(c.Request().Context(), callMeta(c), &zonesv1.DeleteZoneRequest{
+		Id:     c.Param("id"),
+		Reason: req.Reason,
+	}); err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
 }

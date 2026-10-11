@@ -59,6 +59,32 @@ func (r *memRepo) ListAll(_ context.Context) ([]domain.Zone, error) {
 	return out, nil
 }
 
+func (r *memRepo) SetStatus(_ context.Context, id, status, reason string) (domain.Zone, error) {
+	z, ok := r.zones[id]
+	if !ok {
+		return domain.Zone{}, domain.ErrZoneNotFound
+	}
+	z.Status, z.StatusReason = status, reason
+	r.zones[id] = z
+	return z, nil
+}
+
+func (r *memRepo) Delete(_ context.Context, id, _ string) error {
+	z, ok := r.zones[id]
+	if !ok {
+		return domain.ErrZoneNotFound
+	}
+	if z.Status != domain.StatusInactive {
+		return domain.ErrZoneNotInactive
+	}
+	delete(r.zones, id)
+	return nil
+}
+
+func (r *memRepo) NextCode(_ context.Context, _ string) (int, error) {
+	return 1, nil
+}
+
 func newServer() *grpcadapter.Server {
 	return grpcadapter.NewServer(application.NewZoneService(&memRepo{zones: map[string]domain.Zone{}}))
 }
@@ -166,7 +192,7 @@ func TestClassifyPoint_NoZoneIsNotFound(t *testing.T) {
 
 // asRole simula la identidad que el API Gateway propaga tras validar el JWT.
 func asRole(role string) context.Context {
-	return metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-user-role", role))
+	return metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-user-role", role, "x-user-id", "user-test"))
 }
 
 func TestClassifyPoint_MissingPointIsInvalidArgument(t *testing.T) {
@@ -198,4 +224,32 @@ func TestReadZone_AdminAndOperatorOnly(t *testing.T) {
 	}
 	_, err := srv.ClassifyPoint(asRole("OPERATOR"), &zonesv1.ClassifyPointRequest{Point: &zonesv1.Coordinate{Latitude: -0.15, Longitude: -78.45}})
 	assert.Equal(t, codes.NotFound, status.Code(err))
+}
+
+func TestSetZoneStatus_RequiresActorAndReason(t *testing.T) {
+	srv := newServer()
+	created, err := srv.CreateZone(asRole("ADMIN"), &zonesv1.CreateZoneRequest{Code: "NORTE", Name: "Zona Norte", Ring: validRing()})
+	require.NoError(t, err)
+	id := created.GetZone().GetId()
+
+	noActor := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-user-role", "ADMIN"))
+	_, err = srv.SetZoneStatus(noActor, &zonesv1.SetZoneStatusRequest{Id: id, Status: "INACTIVE", Reason: "Obras en la avenida"})
+	assert.Equal(t, codes.Unauthenticated, status.Code(err), "sin usuario no hay bitácora")
+
+	_, err = srv.SetZoneStatus(asRole("ADMIN"), &zonesv1.SetZoneStatusRequest{Id: id, Status: "INACTIVE", Reason: "x"})
+	assert.Equal(t, codes.InvalidArgument, status.Code(err), "el motivo es obligatorio")
+
+	res, err := srv.SetZoneStatus(asRole("ADMIN"), &zonesv1.SetZoneStatusRequest{Id: id, Status: "INACTIVE", Reason: "Obras en la avenida"})
+	require.NoError(t, err)
+	assert.Equal(t, "INACTIVE", res.GetZone().GetStatus())
+	assert.Equal(t, "Obras en la avenida", res.GetZone().GetStatusReason())
+}
+
+func TestDeleteZone_ActiveZoneIsFailedPrecondition(t *testing.T) {
+	srv := newServer()
+	created, err := srv.CreateZone(asRole("ADMIN"), &zonesv1.CreateZoneRequest{Code: "NORTE", Name: "Zona Norte", Ring: validRing()})
+	require.NoError(t, err)
+
+	_, err = srv.DeleteZone(asRole("ADMIN"), &zonesv1.DeleteZoneRequest{Id: created.GetZone().GetId(), Reason: "Motivo de prueba"})
+	assert.Equal(t, codes.FailedPrecondition, status.Code(err))
 }
