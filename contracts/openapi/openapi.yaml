@@ -277,10 +277,12 @@ components:
       enum: [PENDING, ROUTE_ASSIGNED, PICKED_UP, IN_TRANSIT, DELIVERED, NOT_DELIVERED, CANCELLED]
     Order:
       type: object
-      required: [id, address, deliveryDate, windowStart, windowEnd, status, createdAt]
+      required: [id, address, latitude, longitude, deliveryDate, windowStart, windowEnd, status, createdAt]
       properties:
         id: { type: string, format: uuid }
         address: { type: string }
+        latitude: { type: number, minimum: -90, maximum: 90, description: Latitud WGS 84 del punto de entrega }
+        longitude: { type: number, minimum: -180, maximum: 180, description: Longitud WGS 84 del punto de entrega }
         deliveryDate: { type: string, format: date, description: Fecha de entrega YYYY-MM-DD }
         windowStart: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$", description: Hora de inicio HH:mm }
         windowEnd: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$", description: Hora de fin HH:mm }
@@ -288,9 +290,11 @@ components:
         createdAt: { type: string, format: date-time }
     CreateOrderRequest:
       type: object
-      required: [address, deliveryDate, windowStart, windowEnd]
+      required: [address, latitude, longitude, deliveryDate, windowStart, windowEnd]
       properties:
         address: { type: string, minLength: 5, maxLength: 300 }
+        latitude: { type: number, minimum: -90, maximum: 90, description: Latitud WGS 84 elegida en el mapa }
+        longitude: { type: number, minimum: -180, maximum: 180, description: Longitud WGS 84 elegida en el mapa }
         deliveryDate: { type: string, format: date }
         windowStart: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$" }
         windowEnd: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$", description: Debe ser posterior a windowStart }
