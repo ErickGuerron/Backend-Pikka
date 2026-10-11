@@ -1,0 +1,144 @@
+syntax = "proto3";
+
+package orders.v1;
+
+option go_package = "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/orders/v1;ordersv1";
+
+// OrderService owns orders. The Gateway exposes REST; Routing uses gRPC.
+// Authorization is enforced by the service using the propagated user metadata.
+service OrderService {
+  // CreateOrder accepts delivery data only. ID, status and created_at are
+  // assigned by the service. Malformed input returns INVALID_ARGUMENT.
+  rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse);
+  // GetOrder returns NOT_FOUND for an unknown ID.
+  rpc GetOrder(GetOrderRequest) returns (GetOrderResponse);
+  // ListOrders applies optional filters. An empty result is an empty list.
+  rpc ListOrders(ListOrdersRequest) returns (ListOrdersResponse);
+  // GetPendingOrders selects only PENDING orders for a required delivery date,
+  // independently of when they were registered. Used by Routing in Sprint 3.
+  rpc GetPendingOrders(GetPendingOrdersRequest) returns (GetPendingOrdersResponse);
+  // Operations already published in OpenAPI; implemented in a later sprint.
+  rpc ListOrderExceptions(ListOrderExceptionsRequest) returns (ListOrderExceptionsResponse);
+  // ReviewOrder only accepts PENDING_REVIEW; another state returns
+  // ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
+  rpc ReviewOrder(ReviewOrderRequest) returns (ReviewOrderResponse);
+}
+
+enum OrderStatus {
+  ORDER_STATUS_UNSPECIFIED = 0;
+  ORDER_STATUS_PENDING = 1;
+  ORDER_STATUS_PENDING_REVIEW = 2;
+  ORDER_STATUS_ROUTE_ASSIGNED = 3;
+  ORDER_STATUS_PICKED_UP = 4;
+  ORDER_STATUS_IN_TRANSIT = 5;
+  ORDER_STATUS_DELIVERED = 6;
+  ORDER_STATUS_NOT_DELIVERED = 7;
+  ORDER_STATUS_CANCELLED = 8;
+}
+
+enum ReviewReason {
+  REVIEW_REASON_UNSPECIFIED = 0;
+  REVIEW_REASON_ZONE_NOT_COVERED = 1;
+  REVIEW_REASON_INVALID_WINDOW = 2;
+  REVIEW_REASON_CAPACITY_EXCEEDED = 3;
+  REVIEW_REASON_CUSTOMER_BLOCKED = 4;
+}
+
+enum ReviewAction {
+  REVIEW_ACTION_UNSPECIFIED = 0;
+  REVIEW_ACTION_CONFIRM = 1;
+  REVIEW_ACTION_CORRECT = 2;
+  REVIEW_ACTION_REJECT = 3;
+}
+
+message Order {
+  string id = 1;
+  // Trimmed address, 5 to 300 Unicode characters.
+  string address = 2;
+  // WGS 84: latitude [-90, 90], longitude [-180, 180]; both finite.
+  double latitude = 3;
+  double longitude = 4;
+  // Calendar date YYYY-MM-DD in the operating timezone, not a UTC instant.
+  string delivery_date = 5;
+  // Local times HH:mm on delivery_date. End must be strictly after start.
+  string window_start = 6;
+  string window_end = 7;
+  OrderStatus status = 8;
+  // Empty outside PENDING_REVIEW.
+  repeated ReviewReason review_reasons = 9;
+  // Registration instant in RFC 3339, UTC. Independent of delivery_date.
+  string created_at = 10;
+}
+
+message CreateOrderRequest {
+  string address = 1;
+  // Both must be present. Optional presence distinguishes valid zero degrees
+  // from an omitted coordinate; omission returns INVALID_ARGUMENT.
+  optional double latitude = 2;
+  optional double longitude = 3;
+  // Valid YYYY-MM-DD, today or later in the operating timezone.
+  string delivery_date = 4;
+  string window_start = 5;
+  string window_end = 6;
+}
+
+message CreateOrderResponse {
+  Order order = 1;
+}
+
+message GetOrderRequest {
+  // Required UUID.
+  string id = 1;
+}
+
+message GetOrderResponse {
+  Order order = 1;
+}
+
+message ListOrdersRequest {
+  // Empty means all dates; otherwise YYYY-MM-DD.
+  string delivery_date = 1;
+  // UNSPECIFIED means all states; unrecognized values are invalid.
+  OrderStatus status = 2;
+}
+
+message ListOrdersResponse {
+  // Ordered by created_at descending, then id ascending for ties.
+  repeated Order orders = 1;
+}
+
+message GetPendingOrdersRequest {
+  // Required YYYY-MM-DD. Filters by delivery_date, never by created_at.
+  string delivery_date = 1;
+}
+
+message GetPendingOrdersResponse {
+  repeated Order orders = 1;
+}
+
+message ListOrderExceptionsRequest {}
+
+message ListOrderExceptionsResponse {
+  repeated Order orders = 1;
+}
+
+// Presence distinguishes omitted fields from values supplied by the operator.
+message OrderCorrection {
+  optional string address = 1;
+  optional string delivery_date = 2;
+  optional string window_start = 3;
+  optional string window_end = 4;
+}
+
+message ReviewOrderRequest {
+  string id = 1;
+  ReviewAction action = 2;
+  // Required audit reason, 5 to 300 characters after trimming.
+  string reason = 3;
+  // Used only for CORRECT. Omitted fields preserve their current values.
+  OrderCorrection correction = 4;
+}
+
+message ReviewOrderResponse {
+  Order order = 1;
+}
