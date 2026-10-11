@@ -87,6 +87,7 @@ func run(log *slog.Logger) error {
 		GetUser:        application.NewGetUser(users),
 		ValidateToken:  application.NewValidateToken(tokens),
 		SignupCustomer: application.NewSignupCustomer(users, hasher, tokens),
+		ListUsers:      application.NewListUsers(users),
 	}))
 	healthSrv := health.NewServer()
 	healthpb.RegisterHealthServer(grpcServer, healthSrv)

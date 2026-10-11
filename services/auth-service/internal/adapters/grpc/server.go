@@ -30,6 +30,7 @@ type UseCases struct {
 	GetUser        *application.GetUser
 	ValidateToken  *application.ValidateToken
 	SignupCustomer *application.SignupCustomer
+	ListUsers      *application.ListUsers
 }
 
 // Server implementa authv1.AuthServiceServer. Solo traduce; no contiene reglas de negocio.
@@ -109,6 +110,23 @@ func (s *Server) SignupCustomer(ctx context.Context, req *authv1.SignupCustomerR
 		ExpiresInSeconds: int64(res.ExpiresIn / time.Second),
 		User:             toProtoUser(res.User),
 	}, nil
+}
+
+// ListUsers devuelve todos los usuarios. La autorización por rol (solo ADMIN)
+// se valida dentro del caso de uso antes de tocar la base (ADR 0008 §3).
+func (s *Server) ListUsers(ctx context.Context, _ *authv1.ListUsersRequest) (*authv1.ListUsersResponse, error) {
+	if s.uc.ListUsers == nil {
+		return nil, status.Error(codes.Unimplemented, "list users is not wired")
+	}
+	users, err := s.uc.ListUsers.Execute(ctx, callerFrom(ctx).Role)
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	out := make([]*authv1.User, 0, len(users))
+	for _, u := range users {
+		out = append(out, toProtoUser(u))
+	}
+	return &authv1.ListUsersResponse{Users: out}, nil
 }
 
 func callerFrom(ctx context.Context) ports.Caller {
