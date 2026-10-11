@@ -159,6 +159,49 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/orders/exceptions:
+    get:
+      tags: [orders]
+      operationId: listOrderExceptions
+      summary: Cola de excepciones de pedidos pendientes de revisión (ADMIN u OPERATOR)
+      description: Pedidos cuya validación automática no se cumplió (ADR 0007, sección 3). El operador los confirma, corrige o rechaza.
+      responses:
+        "200":
+          description: Pedidos en revisión
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Order" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/orders/{id}/review:
+    post:
+      tags: [orders]
+      operationId: reviewOrder
+      summary: Confirma, corrige o rechaza un pedido en revisión (ADMIN u OPERATOR)
+      description: Solo aplica a pedidos en estado PENDING_REVIEW. Toda decisión queda registrada con motivo.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderReviewRequest" }
+      responses:
+        "200":
+          description: Pedido actualizado según la decisión
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /api/v1/zones:
     post:
       tags: [zones]
@@ -274,10 +317,17 @@ components:
         role: { $ref: "#/components/schemas/Role" }
     OrderStatus:
       type: string
-      enum: [PENDING, ROUTE_ASSIGNED, PICKED_UP, IN_TRANSIT, DELIVERED, NOT_DELIVERED, CANCELLED]
+      enum: [PENDING, PENDING_REVIEW, ROUTE_ASSIGNED, PICKED_UP, IN_TRANSIT, DELIVERED, NOT_DELIVERED, CANCELLED]
+    ReviewReason:
+      type: string
+      description: Regla de la validación automática que no se cumplió (ADR 0007, sección 3).
+      enum: [ZONE_NOT_COVERED, INVALID_WINDOW, CAPACITY_EXCEEDED, CUSTOMER_BLOCKED]
+    OrderReviewAction:
+      type: string
+      enum: [CONFIRM, CORRECT, REJECT]
     Order:
       type: object
-      required: [id, address, latitude, longitude, deliveryDate, windowStart, windowEnd, status, createdAt]
+      required: [id, address, latitude, longitude, deliveryDate, windowStart, windowEnd, status, reviewReasons, createdAt]
       properties:
         id: { type: string, format: uuid }
         address: { type: string }
@@ -287,6 +337,10 @@ components:
         windowStart: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$", description: Hora de inicio HH:mm }
         windowEnd: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$", description: Hora de fin HH:mm }
         status: { $ref: "#/components/schemas/OrderStatus" }
+        reviewReasons:
+          type: array
+          description: Motivos por los que el pedido quedó en revisión. Vacío si no aplica.
+          items: { $ref: "#/components/schemas/ReviewReason" }
         createdAt: { type: string, format: date-time }
     CreateOrderRequest:
       type: object
@@ -298,6 +352,21 @@ components:
         deliveryDate: { type: string, format: date }
         windowStart: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$" }
         windowEnd: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$", description: Debe ser posterior a windowStart }
+    OrderCorrection:
+      type: object
+      description: Campos que el operador puede corregir. Los omitidos conservan su valor.
+      properties:
+        address: { type: string, minLength: 5, maxLength: 300 }
+        deliveryDate: { type: string, format: date }
+        windowStart: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$" }
+        windowEnd: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$" }
+    OrderReviewRequest:
+      type: object
+      required: [action, reason]
+      properties:
+        action: { $ref: "#/components/schemas/OrderReviewAction" }
+        reason: { type: string, minLength: 5, maxLength: 300, description: Motivo registrado en la auditoría }
+        correction: { $ref: "#/components/schemas/OrderCorrection" }
     Coordinate:
       type: object
       required: [latitude, longitude]
