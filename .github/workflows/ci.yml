@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [services/auth-service, services/api-gateway, services/zone-service]
+        module: [services/auth-service, services/api-gateway, services/order-service, services/zone-service]
     defaults:
       run:
         working-directory: ${{ matrix.module }}
@@ -123,6 +123,8 @@ jobs:
         run: docker build -f services/api-gateway/Dockerfile -t lastmile/api-gateway:ci .
       - name: Build zone-service
         run: docker build -f services/zone-service/Dockerfile -t lastmile/zone-service:ci .
+      - name: Build order-service
+        run: docker build -f services/order-service/Dockerfile -t lastmile/order-service:ci .
 
   secrets:
     name: Secret scan
