@@ -11,6 +11,9 @@ import (
 // Config agrupa la configuración del proceso.
 type Config struct {
 	HTTPPort int
+	// GRPCPort expone el dominio Customer al API Gateway y a otros
+	// servicios internos. BE-T5b lo suma al docker-compose.
+	GRPCPort int
 	Postgres PostgresConfig
 }
 
@@ -31,6 +34,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	grpcPort, err := intEnv("ORDER_GRPC_PORT", 9091)
+	if err != nil {
+		return Config{}, err
+	}
 
 	password := os.Getenv("POSTGRES_PASSWORD")
 	if password == "" {
@@ -39,6 +46,7 @@ func Load() (Config, error) {
 
 	return Config{
 		HTTPPort: httpPort,
+		GRPCPort: grpcPort,
 		Postgres: PostgresConfig{
 			Host:     getEnv("POSTGRES_HOST", "localhost"),
 			Port:     getEnv("POSTGRES_PORT", "5432"),
