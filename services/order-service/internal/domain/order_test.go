@@ -71,6 +71,7 @@ func TestNewOrderRejectsInvalidInput(t *testing.T) {
 		{"short address", func(i *domain.NewOrderInput) { i.Address = "1234" }, domain.ErrInvalidAddress},
 		{"long address", func(i *domain.NewOrderInput) { i.Address = strings.Repeat("á", 301) }, domain.ErrInvalidAddress},
 		{"invalid UTF8", func(i *domain.NewOrderInput) { i.Address = "abcde\xff" }, domain.ErrInvalidAddress},
+		{"NUL in address", func(i *domain.NewOrderInput) { i.Address = "Avenida\x00Amazonas 123" }, domain.ErrInvalidAddress},
 		{"latitude above range", func(i *domain.NewOrderInput) { i.Latitude = 90.01 }, domain.ErrInvalidCoordinate},
 		{"latitude below range", func(i *domain.NewOrderInput) { i.Latitude = -90.01 }, domain.ErrInvalidCoordinate},
 		{"longitude above range", func(i *domain.NewOrderInput) { i.Longitude = 180.01 }, domain.ErrInvalidCoordinate},

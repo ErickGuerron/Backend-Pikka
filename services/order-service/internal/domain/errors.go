@@ -3,7 +3,7 @@ package domain
 import "errors"
 
 var (
-	ErrInvalidAddress    = errors.New("address must contain 5 to 300 characters")
+	ErrInvalidAddress    = errors.New("address must contain 5 to 300 Unicode characters without NUL")
 	ErrInvalidCoordinate = errors.New("coordinates must be finite and within WGS 84 bounds")
 	ErrInvalidDate       = errors.New("delivery date must be a valid YYYY-MM-DD date")
 	ErrPastDeliveryDate  = errors.New("delivery date cannot precede the local registration date")

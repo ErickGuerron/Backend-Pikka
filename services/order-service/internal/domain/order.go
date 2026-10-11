@@ -41,7 +41,7 @@ func NewOrder(input NewOrderInput, registeredAt time.Time) (Order, error) {
 	}
 	address := strings.TrimSpace(input.Address)
 	length := utf8.RuneCountInString(address)
-	if !utf8.ValidString(address) || length < 5 || length > 300 {
+	if !utf8.ValidString(address) || strings.ContainsRune(address, '\x00') || length < 5 || length > 300 {
 		return Order{}, ErrInvalidAddress
 	}
 	if !validCoordinates(input.Latitude, input.Longitude) {

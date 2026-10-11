@@ -21,7 +21,8 @@ un servidor ni habilita los endpoints de pedidos.
 - La entrega puede programarse hoy o en el futuro. Se rechazan fechas inexistentes
   y formatos distintos de `YYYY-MM-DD`.
 - Las ventanas usan `HH:mm`; el fin es posterior al inicio en el mismo día.
-- La dirección se recorta y tiene entre 5 y 300 caracteres Unicode. Las coordenadas
+- La dirección se recorta y tiene entre 5 y 300 caracteres Unicode, sin NUL
+  (PostgreSQL no puede almacenar ese carácter en texto). Las coordenadas
   WGS 84 deben ser finitas y estar dentro de sus rangos.
 - Un pedido nuevo comienza en `PENDING`. El ID y la versión los asigna la base.
   Las transiciones devuelven una copia y no alteran el pedido original.
