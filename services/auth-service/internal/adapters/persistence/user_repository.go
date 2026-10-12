@@ -63,6 +63,32 @@ func (r *UserRepository) Count(ctx context.Context) (int, error) {
 	return n, err
 }
 
+// List devuelve todos los usuarios ordenados por fecha de creación descendente.
+// La autorización por rol se valida en la capa de aplicación, no acá: este
+// método solo lee filas cuando ya pasó la comprobación de Caller.
+func (r *UserRepository) List(ctx context.Context) ([]domain.User, error) {
+	rows, err := r.pool.Query(ctx, `SELECT `+userColumns+` FROM users ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	users := make([]domain.User, 0)
+	for rows.Next() {
+		var u domain.User
+		var role string
+		if err := rows.Scan(&u.ID, &u.Email, &u.FullName, &u.PasswordHash, &role, &u.Active, &u.Version, &u.CreatedAt, &u.UpdatedAt); err != nil {
+			return nil, err
+		}
+		u.Role = domain.Role(role)
+		users = append(users, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
 func scanUser(row pgx.Row) (domain.User, error) {
 	var u domain.User
 	var role string

@@ -52,16 +52,26 @@ func run(log *slog.Logger) error {
 	defer func() { _ = zoneConn.Close() }()
 	zones := grpcclient.NewZones(zoneConn, cfg.GRPCTimeout)
 
+	orderConn, err := grpcclient.Dial(cfg.OrderServiceAddr)
+	if err != nil {
+		return fmt.Errorf("dial order service: %w", err)
+	}
+	defer func() { _ = orderConn.Close() }()
+	customers := grpcclient.NewCustomer(orderConn, cfg.GRPCTimeout)
+
 	e := httpapi.NewRouter(log, httpapi.Options{
-		CORSAllowedOrigins: cfg.CORSAllowedOrigins,
-		RateLimitPerSecond: cfg.RateLimitPerSecond,
-		RateLimitBurst:     cfg.RateLimitBurst,
-		LoginRatePerMinute: cfg.LoginRatePerMinute,
-		RequestTimeout:     cfg.RequestTimeout,
-		BodyLimit:          cfg.BodyLimit,
-		TrustProxy:         cfg.TrustProxy,
-		EnableHSTS:         cfg.EnableHSTS,
-		EnableDocs:         cfg.EnableDocs,
+		CORSAllowedOrigins:  cfg.CORSAllowedOrigins,
+		RateLimitPerSecond:  cfg.RateLimitPerSecond,
+		RateLimitBurst:      cfg.RateLimitBurst,
+		LoginRatePerMinute:  cfg.LoginRatePerMinute,
+		SignupRatePerMinute: cfg.SignupRatePerMinute,
+		RequestTimeout:      cfg.RequestTimeout,
+		BodyLimit:           cfg.BodyLimit,
+		TrustProxy:          cfg.TrustProxy,
+		EnableHSTS:          cfg.EnableHSTS,
+		EnableDocs:          cfg.EnableDocs,
+		Customers:           customers,
+		CustomerQueries:     customers,
 	}, jwt.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer), auth, zones, func(ctx context.Context) bool {
 		// El gateway solo está listo si puede llegar a sus dependencias gRPC.
 		return auth.Ready(ctx) && zones.Ready(ctx)

@@ -68,6 +68,14 @@ func (r *memRepo) FindByID(_ context.Context, id string) (domain.User, error) {
 
 func (r *memRepo) Count(context.Context) (int, error) { return len(r.users), nil }
 
+func (r *memRepo) List(context.Context) ([]domain.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]domain.User, 0, len(r.users))
+	out = append(out, r.users...)
+	return out, nil
+}
+
 func newClient(t *testing.T) authv1.AuthServiceClient {
 	t.Helper()
 	repo := &memRepo{}
@@ -81,10 +89,11 @@ func newClient(t *testing.T) authv1.AuthServiceClient {
 	lis := bufconn.Listen(1 << 20)
 	srv := grpc.NewServer(grpcadapter.UnaryInterceptors(slog.New(slog.NewTextHandler(io.Discard, nil))))
 	authv1.RegisterAuthServiceServer(srv, grpcadapter.NewServer(grpcadapter.UseCases{
-		Login:         login,
-		CreateUser:    application.NewCreateUser(repo, hasher),
-		GetUser:       application.NewGetUser(repo),
-		ValidateToken: application.NewValidateToken(tokens),
+		Login:          login,
+		CreateUser:     application.NewCreateUser(repo, hasher),
+		GetUser:        application.NewGetUser(repo),
+		ValidateToken:  application.NewValidateToken(tokens),
+		SignupCustomer: application.NewSignupCustomer(repo, hasher, tokens),
 	}))
 	go func() { _ = srv.Serve(lis) }()
 	t.Cleanup(srv.Stop)
@@ -155,4 +164,40 @@ func TestGetUser(t *testing.T) {
 
 	_, err = c.GetUser(asCaller("u-7", "DRIVER"), &authv1.GetUserRequest{Id: "u-1"})
 	assert.Equal(t, codes.PermissionDenied, status.Code(err))
+}
+
+func TestSignupCustomer(t *testing.T) {
+	c := newClient(t)
+
+	res, err := c.SignupCustomer(context.Background(), &authv1.SignupCustomerRequest{
+		Email:    " Cliente@Example.com ",
+		Password: "password123",
+		FullName: "Cliente Nuevo",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "Bearer", res.GetTokenType())
+	assert.Equal(t, authv1.Role_ROLE_CUSTOMER, res.GetUser().GetRole())
+	assert.Equal(t, "cliente@example.com", res.GetUser().GetEmail())
+
+	// El JWT devuelto debe poder validarse y traer el rol CUSTOMER.
+	v, err := c.ValidateToken(context.Background(), &authv1.ValidateTokenRequest{AccessToken: res.GetAccessToken()})
+	require.NoError(t, err)
+	assert.Equal(t, authv1.Role_ROLE_CUSTOMER, v.GetRole())
+
+	// Email duplicado -> AlreadyExists.
+	_, err = c.SignupCustomer(context.Background(), &authv1.SignupCustomerRequest{
+		Email: "cliente@example.com", Password: "password123", FullName: "Otro",
+	})
+	assert.Equal(t, codes.AlreadyExists, status.Code(err))
+
+	// Entrada inválida -> InvalidArgument.
+	_, err = c.SignupCustomer(context.Background(), &authv1.SignupCustomerRequest{
+		Email: "no-es-correo", Password: "password123", FullName: "X",
+	})
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+
+	_, err = c.SignupCustomer(context.Background(), &authv1.SignupCustomerRequest{
+		Email: "x@example.com", Password: "corta", FullName: "X",
+	})
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
 }
