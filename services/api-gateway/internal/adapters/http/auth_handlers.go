@@ -6,8 +6,11 @@ import (
 	"strings"
 
 	"github.com/labstack/echo/v4"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	authv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/auth/v1"
+	customerv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/customer/v1"
 	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/grpcclient"
 )
 
@@ -22,7 +25,13 @@ type AuthClient interface {
 
 // Los handlers solo traducen REST <-> gRPC. La autorización y las reglas viven en los servicios.
 type authHandlers struct {
-	auth AuthClient
+	auth      AuthClient
+	customers CustomerClient // opcional: si es nil el signup no crea Customer
+}
+
+// CustomerClient es lo que el signup necesita del Order Service.
+type CustomerClient interface {
+	CreateCustomer(ctx context.Context, m grpcclient.CallMeta, req *customerv1.CreateCustomerRequest) (*customerv1.CreateCustomerResponse, error)
 }
 
 type loginRequest struct {
@@ -136,12 +145,42 @@ func (h *authHandlers) signup(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	h.createCustomer(c, res.GetUser())
 	return c.JSON(http.StatusCreated, signupResponse{
 		AccessToken: res.GetAccessToken(),
 		TokenType:   res.GetTokenType(),
 		ExpiresIn:   res.GetExpiresInSeconds(),
 		User:        toUserDTO(res.GetUser()),
 	})
+}
+
+// createCustomer registra el Customer en order-service tras un signup exitoso.
+//
+// Política de fallos: la cuenta de auth ya existe y el cliente recibe su token,
+// así que un fallo aquí NO se propaga: se loguea con el request id y el signup
+// responde 201. AlreadyExists cuenta como éxito (idempotencia). Un único
+// reintento cubre cortes transitorios (Unavailable). Si igualmente falla, el
+// reintento posterior es seguro: CreateCustomer es idempotente por user_id
+// (ErrCustomerAlreadyExists -> AlreadyExists), por lo que un backfill o job de
+// reconciliación puede volver a llamarlo sin riesgo.
+func (h *authHandlers) createCustomer(c echo.Context, u *authv1.User) {
+	if h.customers == nil || u == nil {
+		return
+	}
+	req := &customerv1.CreateCustomerRequest{UserId: u.GetId(), Email: u.GetEmail(), FullName: u.GetFullName()}
+	m := callMeta(c)
+	var err error
+	for attempt := 0; attempt < 2; attempt++ {
+		_, err = h.customers.CreateCustomer(c.Request().Context(), m, req)
+		code := status.Code(err)
+		if err == nil || code == codes.AlreadyExists {
+			return
+		}
+		if code != codes.Unavailable {
+			break
+		}
+	}
+	c.Logger().Errorf("signup: create customer failed request_id=%s user_id=%s err=%v", m.RequestID, u.GetId(), err)
 }
 
 // listUsers devuelve la lista completa de usuarios. La autorización por rol

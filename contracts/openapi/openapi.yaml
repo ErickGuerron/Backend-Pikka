@@ -20,6 +20,8 @@ tags:
     description: Inicio de sesión e identidad actual
   - name: users
     description: Administración de usuarios y roles
+  - name: customers
+    description: Consulta de clientes (solo ADMIN)
   - name: orders
     description: Registro y consulta de pedidos
   - name: zones
@@ -109,7 +111,7 @@ paths:
               required: [email, password, fullName]
               properties:
                 email: { type: string, format: email, maxLength: 254 }
-                password: { type: string, minLength: 8, maxLength: 128 }
+                password: { type: string, minLength: 8, maxLength: 72, description: Máximo 72 bytes (límite de bcrypt) }
                 fullName: { type: string, minLength: 1, maxLength: 120 }
       responses:
         "201":
@@ -121,6 +123,25 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
   /api/v1/users:
+    get:
+      tags: [users]
+      operationId: listUsers
+      summary: Lista todos los usuarios (solo ADMIN)
+      description: Sin filtros ni paginación; el filtrado por rol (p. ej. CUSTOMER) lo hace el cliente.
+      responses:
+        "200":
+          description: Usuarios
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [users]
+                properties:
+                  users:
+                    type: array
+                    items: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
     post:
       tags: [users]
       operationId: createUser
@@ -156,6 +177,53 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/customers:
+    get:
+      tags: [customers]
+      operationId: listCustomers
+      summary: Lista clientes paginados (solo ADMIN)
+      description: Orden estable por fecha de creación e id.
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 100, default: 50 }
+          description: Máximo de clientes a devolver. 0 o ausente usa 50; un valor mayor a 100 se limita a 100.
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/CustomerStatus" }
+          description: Filtro opcional por estado.
+      responses:
+        "200":
+          description: Página de clientes
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/customers/{id}:
+    get:
+      tags: [customers]
+      operationId: getCustomer
+      summary: Obtiene un cliente por id (solo ADMIN)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Cliente
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Customer" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -327,6 +395,31 @@ components:
         role: { $ref: "#/components/schemas/Role" }
         active: { type: boolean }
         createdAt: { type: string, format: date-time }
+    CustomerStatus:
+      type: string
+      enum: [ACTIVO, BLOQUEADO_POR_SALDO, BLOQUEADO_POR_INCIDENCIAS]
+    Customer:
+      type: object
+      required: [id, userId, fullName, email, status, pendingSurcharge, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        fullName: { type: string }
+        email: { type: string, format: email }
+        status: { $ref: "#/components/schemas/CustomerStatus" }
+        pendingSurcharge: { type: string, example: "0.00", description: "Decimal con 2 decimales, como string" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CustomerList:
+      type: object
+      required: [customers, total, limit, offset]
+      properties:
+        customers:
+          type: array
+          items: { $ref: "#/components/schemas/Customer" }
+        total: { type: integer, description: "Total que cumple el filtro, independiente de limit/offset" }
+        limit: { type: integer, description: Valor solicitado (0 = default del servicio) }
+        offset: { type: integer }
     LoginRequest:
       type: object
       required: [email, password]
