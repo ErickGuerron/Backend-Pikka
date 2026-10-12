@@ -24,12 +24,13 @@ type Config struct {
 	JWTSecret string
 	JWTIssuer string
 
-	CORSAllowedOrigins []string
-	RateLimitPerSecond float64
-	RateLimitBurst     int
-	LoginRatePerMinute float64
-	RequestTimeout     time.Duration
-	BodyLimit          string
+	CORSAllowedOrigins  []string
+	RateLimitPerSecond  float64
+	RateLimitBurst      int
+	LoginRatePerMinute  float64
+	SignupRatePerMinute float64
+	RequestTimeout      time.Duration
+	BodyLimit           string
 	// TrustProxy indica si se confía en X-Forwarded-For para identificar al cliente.
 	TrustProxy bool
 	// HSTS solo tiene sentido detrás de HTTPS (por ejemplo, en el balanceador).
@@ -42,22 +43,23 @@ type Config struct {
 func Load() (Config, error) {
 	var errs []error
 	cfg := Config{
-		AppEnv:             getEnv("APP_ENV", "development"),
-		HTTPPort:           getInt("HTTP_PORT", 8080, &errs),
-		AuthServiceAddr:    getEnv("AUTH_SERVICE_ADDR", "localhost:9090"),
-		ZoneServiceAddr:    getEnv("ZONE_SERVICE_ADDR", "localhost:9090"),
-		GRPCTimeout:        getDuration("GRPC_TIMEOUT", 3*time.Second, &errs),
-		JWTSecret:          os.Getenv("JWT_SECRET"),
-		JWTIssuer:          getEnv("JWT_ISSUER", "lastmile-auth"),
-		CORSAllowedOrigins: splitList(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:5173")),
-		RateLimitPerSecond: getFloat("RATE_LIMIT_PER_SECOND", 20, &errs),
-		RateLimitBurst:     getInt("RATE_LIMIT_BURST", 40, &errs),
-		LoginRatePerMinute: getFloat("LOGIN_RATE_PER_MINUTE", 10, &errs),
-		RequestTimeout:     getDuration("REQUEST_TIMEOUT", 10*time.Second, &errs),
-		BodyLimit:          getEnv("BODY_LIMIT", "1M"),
-		TrustProxy:         getEnv("TRUST_PROXY", "false") == "true",
-		EnableHSTS:         getEnv("ENABLE_HSTS", "true") == "true",
-		EnableDocs:         getEnv("ENABLE_API_DOCS", "true") == "true",
+		AppEnv:              getEnv("APP_ENV", "development"),
+		HTTPPort:            getInt("HTTP_PORT", 8080, &errs),
+		AuthServiceAddr:     getEnv("AUTH_SERVICE_ADDR", "localhost:9090"),
+		ZoneServiceAddr:     getEnv("ZONE_SERVICE_ADDR", "localhost:9090"),
+		GRPCTimeout:         getDuration("GRPC_TIMEOUT", 3*time.Second, &errs),
+		JWTSecret:           os.Getenv("JWT_SECRET"),
+		JWTIssuer:           getEnv("JWT_ISSUER", "lastmile-auth"),
+		CORSAllowedOrigins:  splitList(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:5173")),
+		RateLimitPerSecond:  getFloat("RATE_LIMIT_PER_SECOND", 20, &errs),
+		RateLimitBurst:      getInt("RATE_LIMIT_BURST", 40, &errs),
+		LoginRatePerMinute:  getFloat("LOGIN_RATE_PER_MINUTE", 10, &errs),
+		SignupRatePerMinute: getFloat("SIGNUP_RATE_PER_MINUTE", 10, &errs),
+		RequestTimeout:      getDuration("REQUEST_TIMEOUT", 10*time.Second, &errs),
+		BodyLimit:           getEnv("BODY_LIMIT", "1M"),
+		TrustProxy:          getEnv("TRUST_PROXY", "false") == "true",
+		EnableHSTS:          getEnv("ENABLE_HSTS", "true") == "true",
+		EnableDocs:          getEnv("ENABLE_API_DOCS", "true") == "true",
 	}
 	if len(cfg.JWTSecret) < minJWTSecretLen {
 		errs = append(errs, fmt.Errorf("JWT_SECRET must be at least %d characters", minJWTSecretLen))

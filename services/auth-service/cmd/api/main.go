@@ -82,10 +82,11 @@ func run(log *slog.Logger) error {
 		grpc.KeepaliveParams(keepalive.ServerParameters{MaxConnectionIdle: 5 * time.Minute}),
 	)
 	authv1.RegisterAuthServiceServer(grpcServer, grpcadapter.NewServer(grpcadapter.UseCases{
-		Login:         login,
-		CreateUser:    application.NewCreateUser(users, hasher),
-		GetUser:       application.NewGetUser(users),
-		ValidateToken: application.NewValidateToken(tokens),
+		Login:          login,
+		CreateUser:     application.NewCreateUser(users, hasher),
+		GetUser:        application.NewGetUser(users),
+		ValidateToken:  application.NewValidateToken(tokens),
+		SignupCustomer: application.NewSignupCustomer(users, hasher, tokens),
 	}))
 	healthSrv := health.NewServer()
 	healthpb.RegisterHealthServer(grpcServer, healthSrv)

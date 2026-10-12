@@ -19,10 +19,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AuthService_Login_FullMethodName         = "/auth.v1.AuthService/Login"
-	AuthService_CreateUser_FullMethodName    = "/auth.v1.AuthService/CreateUser"
-	AuthService_GetUser_FullMethodName       = "/auth.v1.AuthService/GetUser"
-	AuthService_ValidateToken_FullMethodName = "/auth.v1.AuthService/ValidateToken"
+	AuthService_Login_FullMethodName          = "/auth.v1.AuthService/Login"
+	AuthService_CreateUser_FullMethodName     = "/auth.v1.AuthService/CreateUser"
+	AuthService_GetUser_FullMethodName        = "/auth.v1.AuthService/GetUser"
+	AuthService_ValidateToken_FullMethodName  = "/auth.v1.AuthService/ValidateToken"
+	AuthService_SignupCustomer_FullMethodName = "/auth.v1.AuthService/SignupCustomer"
 )
 
 // AuthServiceClient is the client API for AuthService service.
@@ -40,6 +41,9 @@ type AuthServiceClient interface {
 	GetUser(ctx context.Context, in *GetUserRequest, opts ...grpc.CallOption) (*GetUserResponse, error)
 	// ValidateToken verifica un JWT y devuelve la identidad que contiene.
 	ValidateToken(ctx context.Context, in *ValidateTokenRequest, opts ...grpc.CallOption) (*ValidateTokenResponse, error)
+	// SignupCustomer registra un cliente nuevo desde la app móvil.
+	// Es público: no requiere JWT. El API Gateway lo protege con rate limit.
+	SignupCustomer(ctx context.Context, in *SignupCustomerRequest, opts ...grpc.CallOption) (*SignupCustomerResponse, error)
 }
 
 type authServiceClient struct {
@@ -90,6 +94,16 @@ func (c *authServiceClient) ValidateToken(ctx context.Context, in *ValidateToken
 	return out, nil
 }
 
+func (c *authServiceClient) SignupCustomer(ctx context.Context, in *SignupCustomerRequest, opts ...grpc.CallOption) (*SignupCustomerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SignupCustomerResponse)
+	err := c.cc.Invoke(ctx, AuthService_SignupCustomer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AuthServiceServer is the server API for AuthService service.
 // All implementations must embed UnimplementedAuthServiceServer
 // for forward compatibility.
@@ -105,6 +119,9 @@ type AuthServiceServer interface {
 	GetUser(context.Context, *GetUserRequest) (*GetUserResponse, error)
 	// ValidateToken verifica un JWT y devuelve la identidad que contiene.
 	ValidateToken(context.Context, *ValidateTokenRequest) (*ValidateTokenResponse, error)
+	// SignupCustomer registra un cliente nuevo desde la app móvil.
+	// Es público: no requiere JWT. El API Gateway lo protege con rate limit.
+	SignupCustomer(context.Context, *SignupCustomerRequest) (*SignupCustomerResponse, error)
 	mustEmbedUnimplementedAuthServiceServer()
 }
 
@@ -126,6 +143,9 @@ func (UnimplementedAuthServiceServer) GetUser(context.Context, *GetUserRequest) 
 }
 func (UnimplementedAuthServiceServer) ValidateToken(context.Context, *ValidateTokenRequest) (*ValidateTokenResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ValidateToken not implemented")
+}
+func (UnimplementedAuthServiceServer) SignupCustomer(context.Context, *SignupCustomerRequest) (*SignupCustomerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SignupCustomer not implemented")
 }
 func (UnimplementedAuthServiceServer) mustEmbedUnimplementedAuthServiceServer() {}
 func (UnimplementedAuthServiceServer) testEmbeddedByValue()                     {}
@@ -220,6 +240,24 @@ func _AuthService_ValidateToken_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuthService_SignupCustomer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SignupCustomerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).SignupCustomer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_SignupCustomer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).SignupCustomer(ctx, req.(*SignupCustomerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AuthService_ServiceDesc is the grpc.ServiceDesc for AuthService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -242,6 +280,10 @@ var AuthService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ValidateToken",
 			Handler:    _AuthService_ValidateToken_Handler,
+		},
+		{
+			MethodName: "SignupCustomer",
+			Handler:    _AuthService_SignupCustomer_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

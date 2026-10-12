@@ -16,6 +16,7 @@ type AuthClient interface {
 	Login(ctx context.Context, m grpcclient.CallMeta, req *authv1.LoginRequest) (*authv1.LoginResponse, error)
 	CreateUser(ctx context.Context, m grpcclient.CallMeta, req *authv1.CreateUserRequest) (*authv1.CreateUserResponse, error)
 	GetUser(ctx context.Context, m grpcclient.CallMeta, req *authv1.GetUserRequest) (*authv1.GetUserResponse, error)
+	SignupCustomer(ctx context.Context, m grpcclient.CallMeta, req *authv1.SignupCustomerRequest) (*authv1.SignupCustomerResponse, error)
 }
 
 // Los handlers solo traducen REST <-> gRPC. La autorización y las reglas viven en los servicios.
@@ -40,6 +41,19 @@ type createUserRequest struct {
 	Password string `json:"password"`
 	FullName string `json:"fullName"`
 	Role     string `json:"role"`
+}
+
+type signupRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	FullName string `json:"fullName"`
+}
+
+type signupResponse struct {
+	AccessToken string  `json:"accessToken"`
+	TokenType   string  `json:"tokenType"`
+	ExpiresIn   int64   `json:"expiresIn"`
+	User        userDTO `json:"user"`
 }
 
 type userDTO struct {
@@ -102,6 +116,29 @@ func (h *authHandlers) createUser(c echo.Context) error {
 	return c.JSON(http.StatusCreated, toUserDTO(res.GetUser()))
 }
 
+// signup registra un cliente nuevo. Ruta pública: no propaga identidad del
+// Gateway (el cliente todavía no existe). Devuelve 201 con el JWT.
+func (h *authHandlers) signup(c echo.Context) error {
+	var req signupRequest
+	if err := bindJSON(c, &req); err != nil {
+		return err
+	}
+	res, err := h.auth.SignupCustomer(c.Request().Context(), callMeta(c), &authv1.SignupCustomerRequest{
+		Email:    req.Email,
+		Password: req.Password,
+		FullName: req.FullName,
+	})
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusCreated, signupResponse{
+		AccessToken: res.GetAccessToken(),
+		TokenType:   res.GetTokenType(),
+		ExpiresIn:   res.GetExpiresInSeconds(),
+		User:        toUserDTO(res.GetUser()),
+	})
+}
+
 func bindJSON(c echo.Context, dst any) error {
 	if ct := c.Request().Header.Get(echo.HeaderContentType); !isJSON(ct) {
 		return echo.NewHTTPError(http.StatusUnsupportedMediaType, "content type must be application/json")
@@ -148,6 +185,8 @@ func roleFromProto(r authv1.Role) string {
 		return "OPERATOR"
 	case authv1.Role_ROLE_DRIVER:
 		return "DRIVER"
+	case authv1.Role_ROLE_CUSTOMER:
+		return "CUSTOMER"
 	default:
 		return ""
 	}

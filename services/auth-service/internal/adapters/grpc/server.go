@@ -25,10 +25,11 @@ const (
 
 // UseCases agrupa los casos de uso que este adaptador necesita.
 type UseCases struct {
-	Login         *application.Login
-	CreateUser    *application.CreateUser
-	GetUser       *application.GetUser
-	ValidateToken *application.ValidateToken
+	Login          *application.Login
+	CreateUser     *application.CreateUser
+	GetUser        *application.GetUser
+	ValidateToken  *application.ValidateToken
+	SignupCustomer *application.SignupCustomer
 }
 
 // Server implementa authv1.AuthServiceServer. Solo traduce; no contiene reglas de negocio.
@@ -92,6 +93,24 @@ func (s *Server) ValidateToken(_ context.Context, req *authv1.ValidateTokenReque
 	return &authv1.ValidateTokenResponse{UserId: c.UserID, Role: toProtoRole(c.Role)}, nil
 }
 
+// SignupCustomer registra un cliente nuevo. Es público (no exige caller) y
+// devuelve un JWT con rol CUSTOMER.
+func (s *Server) SignupCustomer(ctx context.Context, req *authv1.SignupCustomerRequest) (*authv1.SignupCustomerResponse, error) {
+	if s.uc.SignupCustomer == nil {
+		return nil, status.Error(codes.Unimplemented, "signup customer is not wired")
+	}
+	res, err := s.uc.SignupCustomer.Execute(ctx, req.GetEmail(), req.GetPassword(), req.GetFullName())
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	return &authv1.SignupCustomerResponse{
+		AccessToken:      res.AccessToken,
+		TokenType:        "Bearer",
+		ExpiresInSeconds: int64(res.ExpiresIn / time.Second),
+		User:             toProtoUser(res.User),
+	}, nil
+}
+
 func callerFrom(ctx context.Context) ports.Caller {
 	md, _ := metadata.FromIncomingContext(ctx)
 	first := func(k string) string {
@@ -153,6 +172,8 @@ func toProtoRole(r domain.Role) authv1.Role {
 		return authv1.Role_ROLE_OPERATOR
 	case domain.RoleDriver:
 		return authv1.Role_ROLE_DRIVER
+	case domain.RoleCustomer:
+		return authv1.Role_ROLE_CUSTOMER
 	default:
 		return authv1.Role_ROLE_UNSPECIFIED
 	}
@@ -166,6 +187,8 @@ func fromProtoRole(r authv1.Role) (domain.Role, bool) {
 		return domain.RoleOperator, true
 	case authv1.Role_ROLE_DRIVER:
 		return domain.RoleDriver, true
+	case authv1.Role_ROLE_CUSTOMER:
+		return domain.RoleCustomer, true
 	default:
 		return "", false
 	}

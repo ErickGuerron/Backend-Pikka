@@ -16,14 +16,15 @@ import (
 
 // Options configura las políticas HTTP transversales.
 type Options struct {
-	CORSAllowedOrigins []string
-	RateLimitPerSecond float64
-	RateLimitBurst     int
-	LoginRatePerMinute float64
-	RequestTimeout     time.Duration
-	BodyLimit          string
-	TrustProxy         bool
-	EnableHSTS         bool
+	CORSAllowedOrigins  []string
+	RateLimitPerSecond  float64
+	RateLimitBurst      int
+	LoginRatePerMinute  float64
+	SignupRatePerMinute float64
+	RequestTimeout      time.Duration
+	BodyLimit           string
+	TrustProxy          bool
+	EnableHSTS          bool
 	// EnableDocs publica /docs (Scalar) y /openapi.yaml.
 	EnableDocs bool
 }
@@ -96,6 +97,14 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 
 	loginLimit := rateLimiter(rate.Limit(opts.LoginRatePerMinute/60), max(1, int(opts.LoginRatePerMinute/2)))
 	api.POST("/auth/login", h.login, loginLimit)
+	// signup tiene bucket dedicado: comparte la política (mismo valor por defecto)
+	// sin compartir el almacenamiento, para que el abuso de uno no vacíe el otro.
+	signupPerMinute := opts.SignupRatePerMinute
+	if signupPerMinute <= 0 {
+		signupPerMinute = opts.LoginRatePerMinute
+	}
+	signupLimit := rateLimiter(rate.Limit(signupPerMinute/60), max(1, int(signupPerMinute/2)))
+	api.POST("/auth/signup", h.signup, signupLimit)
 
 	authed := api.Group("", Authenticate(verifier))
 	authed.GET("/auth/me", h.me)
