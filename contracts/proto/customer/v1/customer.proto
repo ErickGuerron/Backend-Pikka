@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package customer.v1;
+
+option go_package = "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/customer/v1;customerv1";
+
+// CustomerService atiende operaciones de dominio del cliente.
+// Consumido por el API Gateway y otros servicios internos.
+service CustomerService {
+  // CreateCustomer registra un Customer nuevo (a partir de un user_id CUSTOMER).
+  rpc CreateCustomer(CreateCustomerRequest) returns (CreateCustomerResponse);
+
+  // GetByUserID devuelve el Customer asociado a un user_id.
+  rpc GetByUserID(GetByUserIDRequest) returns (GetByUserIDResponse);
+
+  // UpdateStatus actualiza el estado del Customer (solo ADMIN lo invoca).
+  rpc UpdateStatus(UpdateStatusRequest) returns (UpdateStatusResponse);
+
+  // CanCreateOrders indica si el cliente puede crear pedidos.
+  rpc CanCreateOrders(CanCreateOrdersRequest) returns (CanCreateOrdersResponse);
+}
+
+message Customer {
+  string id = 1;                       // UUID v4
+  string user_id = 2;                  // UUID v4
+  string full_name = 3;
+  string email = 4;
+  string status = 5;                   // ACTIVO | BLOQUEADO_POR_SALDO | BLOQUEADO_POR_INCIDENCIAS
+  string pending_surcharge = 6;        // NUMERIC(12,2) como string
+  string created_at = 7;               // RFC 3339
+  string updated_at = 8;               // RFC 3339
+}
+
+message CreateCustomerRequest {
+  string user_id = 1;                  // UUID v4 del CUSTOMER en auth.users
+  string full_name = 2;
+  string email = 3;
+}
+
+message CreateCustomerResponse {
+  Customer customer = 1;
+}
+
+message GetByUserIDRequest {
+  string user_id = 1;
+}
+
+message GetByUserIDResponse {
+  Customer customer = 1;
+}
+
+message UpdateStatusRequest {
+  string id = 1;
+  string status = 2;
+}
+
+message UpdateStatusResponse {
+  Customer customer = 1;
+}
+
+message CanCreateOrdersRequest {
+  string user_id = 1;
+}
+
+message CanCreateOrdersResponse {
+  bool can_create = 1;
+}
