@@ -43,8 +43,80 @@ func (r *memRepo) FindContaining(_ context.Context, _ domain.Coordinate) (domain
 	return domain.Zone{}, domain.ErrZoneNotFound
 }
 
+func (r *memRepo) Update(_ context.Context, z domain.Zone) (domain.Zone, error) {
+	if _, ok := r.zones[z.ID]; !ok {
+		return domain.Zone{}, domain.ErrZoneNotFound
+	}
+	r.zones[z.ID] = z
+	return z, nil
+}
+
+func (r *memRepo) ListAll(_ context.Context) ([]domain.Zone, error) {
+	out := make([]domain.Zone, 0, len(r.zones))
+	for _, z := range r.zones {
+		out = append(out, z)
+	}
+	return out, nil
+}
+
+func (r *memRepo) SetStatus(_ context.Context, id, status, reason string) (domain.Zone, error) {
+	z, ok := r.zones[id]
+	if !ok {
+		return domain.Zone{}, domain.ErrZoneNotFound
+	}
+	z.Status, z.StatusReason = status, reason
+	r.zones[id] = z
+	return z, nil
+}
+
+func (r *memRepo) Delete(_ context.Context, id, _ string) error {
+	z, ok := r.zones[id]
+	if !ok {
+		return domain.ErrZoneNotFound
+	}
+	if z.Status != domain.StatusInactive {
+		return domain.ErrZoneNotInactive
+	}
+	delete(r.zones, id)
+	return nil
+}
+
+func (r *memRepo) NextCode(_ context.Context, _ string) (int, error) {
+	return 1, nil
+}
+
 func newServer() *grpcadapter.Server {
 	return grpcadapter.NewServer(application.NewZoneService(&memRepo{zones: map[string]domain.Zone{}}))
+}
+
+func TestListZones_AdminAndOperatorOnly(t *testing.T) {
+	srv := newServer()
+	_, err := srv.ListZones(asRole("DRIVER"), &zonesv1.ListZonesRequest{})
+	assert.Equal(t, codes.PermissionDenied, status.Code(err))
+
+	res, err := srv.ListZones(asRole("OPERATOR"), &zonesv1.ListZonesRequest{})
+	require.NoError(t, err)
+	assert.Empty(t, res.GetZones())
+}
+
+func TestUpdateZone_OnlyAdminAndKeepsID(t *testing.T) {
+	srv := newServer()
+	created, err := srv.CreateZone(asRole("ADMIN"), &zonesv1.CreateZoneRequest{Code: "NORTE", Name: "Zona Norte", Ring: validRing(), Settings: validProtoSettings()})
+	require.NoError(t, err)
+	id := created.GetZone().GetId()
+
+	_, err = srv.UpdateZone(asRole("OPERATOR"), &zonesv1.UpdateZoneRequest{Id: id, Code: "NORTE", Name: "X", Ring: validRing(), Settings: validProtoSettings()})
+	assert.Equal(t, codes.PermissionDenied, status.Code(err))
+
+	res, err := srv.UpdateZone(asRole("ADMIN"), &zonesv1.UpdateZoneRequest{Id: id, Code: "NORTE", Name: "Zona Norte 2", Ring: validRing(), Settings: validProtoSettings()})
+	require.NoError(t, err)
+	assert.Equal(t, id, res.GetZone().GetId())
+	assert.Equal(t, "Zona Norte 2", res.GetZone().GetName())
+}
+
+func TestUpdateZone_MissingIsNotFound(t *testing.T) {
+	_, err := newServer().UpdateZone(asRole("ADMIN"), &zonesv1.UpdateZoneRequest{Id: "11111111-1111-1111-1111-111111111111", Code: "X", Name: "X", Ring: validRing(), Settings: validProtoSettings()})
+	assert.Equal(t, codes.NotFound, status.Code(err))
 }
 
 func validRing() []*zonesv1.Coordinate {
@@ -57,11 +129,30 @@ func validRing() []*zonesv1.Coordinate {
 	}
 }
 
+// validProtoSettings es la configuración operativa válida que envía el administrador.
+func validProtoSettings() *zonesv1.ZoneSettings {
+	return &zonesv1.ZoneSettings{
+		DepotName:              "Hub Norte",
+		DepotLatitude:          -0.179,
+		DepotLongitude:         -78.483,
+		MaxOrdersPerRoute:      18,
+		DefaultRouteCapacityKg: 45,
+		Timezone:               "America/Guayaquil",
+		ServiceDays:            []string{"MON", "TUE", "WED", "THU", "FRI", "SAT"},
+		DeliveryWindowStart:    "08:00",
+		DeliveryWindowEnd:      "20:00",
+		CutoffTime:             "14:00",
+		DispatchTime:           "15:30",
+		Priority:               "HIGH",
+		DailyOrderLimit:        250,
+	}
+}
+
 func TestCreateZone_ReturnsZoneWithID(t *testing.T) {
 	srv := newServer()
 
 	res, err := srv.CreateZone(asRole("ADMIN"), &zonesv1.CreateZoneRequest{
-		Code: "NORTE", Name: "Zona Norte", Ring: validRing(),
+		Code: "NORTE", Name: "Zona Norte", Ring: validRing(), Settings: validProtoSettings(),
 	})
 
 	require.NoError(t, err)
@@ -81,13 +172,42 @@ func TestCreateZone_InvalidRingIsInvalidArgument(t *testing.T) {
 
 func TestCreateZone_DuplicateCodeIsAlreadyExists(t *testing.T) {
 	srv := newServer()
-	req := &zonesv1.CreateZoneRequest{Code: "NORTE", Name: "Zona Norte", Ring: validRing()}
+	req := &zonesv1.CreateZoneRequest{Code: "NORTE", Name: "Zona Norte", Ring: validRing(), Settings: validProtoSettings()}
 	_, err := srv.CreateZone(asRole("ADMIN"), req)
 	require.NoError(t, err)
 
 	_, err = srv.CreateZone(asRole("ADMIN"), req)
 
 	assert.Equal(t, codes.AlreadyExists, status.Code(err))
+}
+
+func TestCreateZone_MissingSettingsIsInvalidArgument(t *testing.T) {
+	_, err := newServer().CreateZone(asRole("ADMIN"), &zonesv1.CreateZoneRequest{Code: "NORTE", Name: "Zona Norte", Ring: validRing()})
+
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+func TestCreateZone_ReturnsSettingsVersionAndAuthor(t *testing.T) {
+	created, err := newServer().CreateZone(asRole("ADMIN"), &zonesv1.CreateZoneRequest{Code: "NORTE", Name: "Zona Norte", Ring: validRing(), Settings: validProtoSettings()})
+
+	require.NoError(t, err)
+	z := created.GetZone()
+	assert.Equal(t, int32(1), z.GetVersion())
+	assert.Equal(t, "Hub Norte", z.GetSettings().GetDepotName())
+	assert.Equal(t, []string{"MON", "TUE", "WED", "THU", "FRI", "SAT"}, z.GetSettings().GetServiceDays())
+}
+
+func TestUpdateZone_StaleExpectedVersionIsAborted(t *testing.T) {
+	srv := newServer()
+	created, err := srv.CreateZone(asRole("ADMIN"), &zonesv1.CreateZoneRequest{Code: "NORTE", Name: "Zona Norte", Ring: validRing(), Settings: validProtoSettings()})
+	require.NoError(t, err)
+
+	_, err = srv.UpdateZone(asRole("ADMIN"), &zonesv1.UpdateZoneRequest{
+		Id: created.GetZone().GetId(), Code: "NORTE", Name: "Zona Norte", Ring: validRing(),
+		Settings: validProtoSettings(), ExpectedVersion: 99,
+	})
+
+	assert.Equal(t, codes.Aborted, status.Code(err))
 }
 
 func TestGetZone_MissingIsNotFound(t *testing.T) {
@@ -120,7 +240,7 @@ func TestClassifyPoint_NoZoneIsNotFound(t *testing.T) {
 
 // asRole simula la identidad que el API Gateway propaga tras validar el JWT.
 func asRole(role string) context.Context {
-	return metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-user-role", role))
+	return metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-user-role", role, "x-user-id", "user-test"))
 }
 
 func TestClassifyPoint_MissingPointIsInvalidArgument(t *testing.T) {
@@ -137,7 +257,7 @@ func TestOperationsRequireIdentity(t *testing.T) {
 
 func TestCreateZone_OnlyAdmin(t *testing.T) {
 	for _, role := range []string{"OPERATOR", "DRIVER"} {
-		_, err := newServer().CreateZone(asRole(role), &zonesv1.CreateZoneRequest{Code: "X", Name: "X", Ring: validRing()})
+		_, err := newServer().CreateZone(asRole(role), &zonesv1.CreateZoneRequest{Code: "X", Name: "X", Ring: validRing(), Settings: validProtoSettings()})
 		assert.Equal(t, codes.PermissionDenied, status.Code(err), role)
 	}
 }
@@ -152,4 +272,32 @@ func TestReadZone_AdminAndOperatorOnly(t *testing.T) {
 	}
 	_, err := srv.ClassifyPoint(asRole("OPERATOR"), &zonesv1.ClassifyPointRequest{Point: &zonesv1.Coordinate{Latitude: -0.15, Longitude: -78.45}})
 	assert.Equal(t, codes.NotFound, status.Code(err))
+}
+
+func TestSetZoneStatus_RequiresActorAndReason(t *testing.T) {
+	srv := newServer()
+	created, err := srv.CreateZone(asRole("ADMIN"), &zonesv1.CreateZoneRequest{Code: "NORTE", Name: "Zona Norte", Ring: validRing(), Settings: validProtoSettings()})
+	require.NoError(t, err)
+	id := created.GetZone().GetId()
+
+	noActor := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-user-role", "ADMIN"))
+	_, err = srv.SetZoneStatus(noActor, &zonesv1.SetZoneStatusRequest{Id: id, Status: "INACTIVE", Reason: "Obras en la avenida"})
+	assert.Equal(t, codes.Unauthenticated, status.Code(err), "sin usuario no hay bitácora")
+
+	_, err = srv.SetZoneStatus(asRole("ADMIN"), &zonesv1.SetZoneStatusRequest{Id: id, Status: "INACTIVE", Reason: "x"})
+	assert.Equal(t, codes.InvalidArgument, status.Code(err), "el motivo es obligatorio")
+
+	res, err := srv.SetZoneStatus(asRole("ADMIN"), &zonesv1.SetZoneStatusRequest{Id: id, Status: "INACTIVE", Reason: "Obras en la avenida"})
+	require.NoError(t, err)
+	assert.Equal(t, "INACTIVE", res.GetZone().GetStatus())
+	assert.Equal(t, "Obras en la avenida", res.GetZone().GetStatusReason())
+}
+
+func TestDeleteZone_ActiveZoneIsFailedPrecondition(t *testing.T) {
+	srv := newServer()
+	created, err := srv.CreateZone(asRole("ADMIN"), &zonesv1.CreateZoneRequest{Code: "NORTE", Name: "Zona Norte", Ring: validRing(), Settings: validProtoSettings()})
+	require.NoError(t, err)
+
+	_, err = srv.DeleteZone(asRole("ADMIN"), &zonesv1.DeleteZoneRequest{Id: created.GetZone().GetId(), Reason: "Motivo de prueba"})
+	assert.Equal(t, codes.FailedPrecondition, status.Code(err))
 }

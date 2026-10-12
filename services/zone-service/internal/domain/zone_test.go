@@ -34,7 +34,7 @@ func square(t *testing.T) []domain.Coordinate {
 }
 
 func TestNewZone_ValidCreatesZone(t *testing.T) {
-	zone, err := domain.NewZone("  NORTE  ", " Zona Norte ", square(t))
+	zone, err := newZone("  NORTE  ", " Zona Norte ", square(t))
 
 	require.NoError(t, err)
 	assert.Equal(t, "NORTE", zone.Code)
@@ -57,12 +57,14 @@ func TestNewZone_RejectsInvalidInput(t *testing.T) {
 		{"empty code", "", "Norte", sq, domain.ErrInvalidCode},
 		{"code too long", string(make([]byte, 33)), "Norte", sq, domain.ErrInvalidCode},
 		{"empty name", "N", "   ", sq, domain.ErrInvalidName},
+		{"name too short", "N", "Ab", sq, domain.ErrInvalidName},
+		{"name with symbols not allowed", "N", "Zona @ Norte", sq, domain.ErrInvalidName},
 		{"too few points", "N", "Norte", sq[:3], domain.ErrInvalidRing},
 		{"open ring", "N", "Norte", open, domain.ErrRingNotClosed},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := domain.NewZone(tt.code, tt.zone, tt.ring)
+			_, err := newZone(tt.code, tt.zone, tt.ring)
 			assert.ErrorIs(t, err, tt.wantErr)
 		})
 	}
@@ -77,7 +79,7 @@ func TestNewZone_AcceptsConvexQuadrilateralsAndPolygons(t *testing.T) {
 	}
 	for name, r := range shapes {
 		t.Run(name, func(t *testing.T) {
-			_, err := domain.NewZone("C", "Zona", r)
+			_, err := newZone("C", "Zona", r)
 			assert.NoError(t, err)
 		})
 	}
@@ -99,15 +101,73 @@ func TestNewZone_RejectsIrregularShapes(t *testing.T) {
 	}
 	for name, r := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, err := domain.NewZone("C", "Zona", r)
+			_, err := newZone("C", "Zona", r)
 			assert.Error(t, err)
 		})
 	}
 }
 
 func TestNewZone_IrregularShapeIsNotConvex(t *testing.T) {
-	_, err := domain.NewZone("C", "Zona", closed(t, [2]float64{0, 0}, [2]float64{4, 2}, [2]float64{0, 4}, [2]float64{1, 2}))
+	_, err := newZone("C", "Zona", closed(t, [2]float64{0, 0}, [2]float64{4, 2}, [2]float64{0, 4}, [2]float64{1, 2}))
 	assert.ErrorIs(t, err, domain.ErrNotConvex)
+}
+
+// donut es un cuadrado exterior de 4x4 con un hueco centrado de 2x2.
+func donutOuter(t *testing.T) []domain.Coordinate {
+	t.Helper()
+	return closed(t, [2]float64{0, 0}, [2]float64{0, 4}, [2]float64{4, 4}, [2]float64{4, 0})
+}
+
+func TestNewZoneWithHoles_AcceptsHoleStrictlyInside(t *testing.T) {
+	hole := closed(t, [2]float64{1, 1}, [2]float64{1, 3}, [2]float64{3, 3}, [2]float64{3, 1})
+	zone, err := newZoneWithHoles("C", "Dona", donutOuter(t), [][]domain.Coordinate{hole})
+
+	require.NoError(t, err)
+	assert.Len(t, zone.Holes, 1)
+	assert.Equal(t, hole, zone.Holes[0])
+}
+
+func TestNewZoneWithHoles_RejectsHoleOutsideOrTouchingOuter(t *testing.T) {
+	tests := map[string][]domain.Coordinate{
+		"fuera del exterior": closed(t, [2]float64{5, 5}, [2]float64{5, 7}, [2]float64{7, 7}, [2]float64{7, 5}),
+		// Toca el borde del exterior: no es estrictamente interior.
+		"toca el borde": closed(t, [2]float64{0, 1}, [2]float64{0, 3}, [2]float64{2, 3}, [2]float64{2, 1}),
+	}
+	for name, hole := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := newZoneWithHoles("C", "Dona", donutOuter(t), [][]domain.Coordinate{hole})
+			assert.ErrorIs(t, err, domain.ErrHoleOutside)
+		})
+	}
+}
+
+func TestNewZoneWithHoles_RejectsOverlappingOrTouchingHoles(t *testing.T) {
+	left := closed(t, [2]float64{1, 0.5}, [2]float64{1, 1.5}, [2]float64{3, 1.5}, [2]float64{3, 0.5})
+	overlapping := closed(t, [2]float64{1, 1}, [2]float64{1, 2}, [2]float64{2, 2}, [2]float64{2, 1})
+	// Compartir un lado: se tocan, así que se consideran superpuestos.
+	touching := closed(t, [2]float64{1, 1.5}, [2]float64{1, 2.5}, [2]float64{2, 2.5}, [2]float64{2, 1.5})
+
+	for name, other := range map[string][]domain.Coordinate{"superpuestos": overlapping, "tocándose": touching} {
+		t.Run(name, func(t *testing.T) {
+			_, err := newZoneWithHoles("C", "Dona", donutOuter(t), [][]domain.Coordinate{left, other})
+			assert.ErrorIs(t, err, domain.ErrHolesOverlap)
+		})
+	}
+}
+
+func TestNewZoneWithHoles_AcceptsSeparateHoles(t *testing.T) {
+	a := closed(t, [2]float64{0.5, 0.5}, [2]float64{0.5, 1.5}, [2]float64{1.5, 1.5}, [2]float64{1.5, 0.5})
+	b := closed(t, [2]float64{2.5, 2.5}, [2]float64{2.5, 3.5}, [2]float64{3.5, 3.5}, [2]float64{3.5, 2.5})
+	zone, err := newZoneWithHoles("C", "Dona", donutOuter(t), [][]domain.Coordinate{a, b})
+
+	require.NoError(t, err)
+	assert.Len(t, zone.Holes, 2)
+}
+
+func TestNewZoneWithHoles_HoleMustBeAValidConvexRing(t *testing.T) {
+	triangle := closed(t, [2]float64{1, 1}, [2]float64{1, 3}, [2]float64{2, 1})
+	_, err := newZoneWithHoles("C", "Dona", donutOuter(t), [][]domain.Coordinate{triangle})
+	assert.ErrorIs(t, err, domain.ErrInvalidRing)
 }
 
 func TestNewCoordinate_RejectsOutOfRange(t *testing.T) {
