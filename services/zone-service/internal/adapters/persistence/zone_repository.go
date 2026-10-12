@@ -39,22 +39,37 @@ func NewZoneRepository(pool *pgxpool.Pool) *ZoneRepository {
 	return &ZoneRepository{pool: pool}
 }
 
-// Save inserta la zona y su entrada de bitácora en una misma transacción.
+// Save inserta la zona, su configuración y su entrada de bitácora en una misma transacción.
 func (r *ZoneRepository) Save(ctx context.Context, zone domain.Zone) (domain.Zone, error) {
+	actor := domain.ActorFrom(ctx)
+	s := zone.Settings
 	err := r.inTx(ctx, func(tx pgx.Tx) error {
 		var id string
-		var createdAt time.Time
+		var createdAt, updatedAt time.Time
+		var version int32
 		err := tx.QueryRow(ctx,
-			`INSERT INTO zones (code, name, area)
-			 VALUES ($1, $2, ST_GeogFromText($3))
-			 RETURNING id::text, created_at`,
+			`INSERT INTO zones (code, name, area, description, depot_name, depot_lat, depot_lng,
+			                    max_orders_per_route, route_capacity_kg, timezone, service_days,
+			                    delivery_window_from, delivery_window_to, cutoff_time, dispatch_time,
+			                    priority, daily_order_limit, created_by, updated_by)
+			 VALUES ($1, $2, ST_GeogFromText($3), $4, $5, $6, $7, $8, $9, $10, $11,
+			         $12, $13, $14, $15, $16, $17, $18, $18)
+			 RETURNING id::text, created_at, updated_at, version`,
 			zone.Code, zone.Name, wktPolygon(zone.Ring, zone.Holes),
-		).Scan(&id, &createdAt)
+			s.Description, s.DepotName, s.DepotLatitude, s.DepotLongitude,
+			int32(s.MaxOrdersPerRoute), s.RouteCapacityKg, s.Timezone, s.ServiceDays,
+			s.DeliveryWindowFrom, s.DeliveryWindowTo, s.CutoffTime, s.DispatchTime,
+			s.Priority, int32(s.DailyOrderLimit), actor,
+		).Scan(&id, &createdAt, &updatedAt, &version)
 		if err != nil {
 			return err
 		}
 		zone.ID = id
 		zone.CreatedAt = createdAt
+		zone.UpdatedAt = updatedAt
+		zone.Version = int(version)
+		zone.CreatedBy = actor
+		zone.UpdatedBy = actor
 		return recordEvent(ctx, tx, id, "CREATED", "")
 	})
 	if err != nil {
@@ -67,25 +82,44 @@ func (r *ZoneRepository) Save(ctx context.Context, zone domain.Zone) (domain.Zon
 	return zone, nil
 }
 
-// Update reemplaza nombre y área, incrementa la versión y registra la bitácora.
+// Update reemplaza nombre, área y configuración solo si la versión sigue siendo la que se leyó.
+// Incrementa la versión y registra la bitácora en la misma transacción.
 func (r *ZoneRepository) Update(ctx context.Context, zone domain.Zone) (domain.Zone, error) {
+	actor := domain.ActorFrom(ctx)
+	s := zone.Settings
 	err := r.inTx(ctx, func(tx pgx.Tx) error {
-		var createdAt time.Time
+		var createdAt, updatedAt time.Time
+		var version int32
+		var createdBy string
 		err := tx.QueryRow(ctx,
 			`UPDATE zones
 			    SET name = $2, area = ST_GeogFromText($3),
+			        description = $4, depot_name = $5, depot_lat = $6, depot_lng = $7,
+			        max_orders_per_route = $8, route_capacity_kg = $9, timezone = $10,
+			        service_days = $11, delivery_window_from = $12, delivery_window_to = $13,
+			        cutoff_time = $14, dispatch_time = $15, priority = $16, daily_order_limit = $17,
+			        updated_by = $18,
 			        version = version + 1, updated_at = now()
-			  WHERE id = $1
-			  RETURNING created_at`,
+			  WHERE id = $1 AND version = $19
+			  RETURNING created_at, updated_at, version, created_by`,
 			zone.ID, zone.Name, wktPolygon(zone.Ring, zone.Holes),
-		).Scan(&createdAt)
+			s.Description, s.DepotName, s.DepotLatitude, s.DepotLongitude,
+			int32(s.MaxOrdersPerRoute), s.RouteCapacityKg, s.Timezone,
+			s.ServiceDays, s.DeliveryWindowFrom, s.DeliveryWindowTo,
+			s.CutoffTime, s.DispatchTime, s.Priority, int32(s.DailyOrderLimit),
+			actor, int32(zone.Version),
+		).Scan(&createdAt, &updatedAt, &version, &createdBy)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return domain.ErrZoneNotFound
+			return r.versionOrNotFound(ctx, tx, zone.ID)
 		}
 		if err != nil {
 			return err
 		}
 		zone.CreatedAt = createdAt
+		zone.UpdatedAt = updatedAt
+		zone.Version = int(version)
+		zone.CreatedBy = createdBy
+		zone.UpdatedBy = actor
 		return recordEvent(ctx, tx, zone.ID, "UPDATED", "")
 	})
 	if err != nil {
@@ -94,18 +128,32 @@ func (r *ZoneRepository) Update(ctx context.Context, zone domain.Zone) (domain.Z
 	return zone, nil
 }
 
+// versionOrNotFound distingue "la zona no existe" de "la versión cambió mientras editabas".
+func (r *ZoneRepository) versionOrNotFound(ctx context.Context, tx pgx.Tx, id string) error {
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM zones WHERE id = $1)`, id).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		return domain.ErrZoneNotFound
+	}
+	return domain.ErrVersionConflict
+}
+
 // SetStatus cambia el estado y guarda el motivo. La bitácora distingue desactivar de reactivar.
 func (r *ZoneRepository) SetStatus(ctx context.Context, id, status, reason string) (domain.Zone, error) {
 	action := "REACTIVATED"
 	if status == domain.StatusInactive {
 		action = "DEACTIVATED"
 	}
+	actor := domain.ActorFrom(ctx)
 	err := r.inTx(ctx, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx,
 			`UPDATE zones
-			    SET status = $2, status_reason = $3, version = version + 1, updated_at = now()
+			    SET status = $2, status_reason = $3, updated_by = $4,
+			        version = version + 1, updated_at = now()
 			  WHERE id = $1`,
-			id, status, reason,
+			id, status, reason, actor,
 		)
 		if err != nil {
 			return err
@@ -159,7 +207,7 @@ func (r *ZoneRepository) NextCode(ctx context.Context, prefix string) (int, erro
 	return next, nil
 }
 
-// FindByID carga la zona con su estado, su anillo exterior y sus huecos.
+// FindByID carga la zona con su estado, su configuración, su anillo exterior y sus huecos.
 func (r *ZoneRepository) FindByID(ctx context.Context, id string) (domain.Zone, error) {
 	rows, err := r.pool.Query(ctx, ringPointsQuery+` WHERE z.id = $1 ORDER BY d.path`, id)
 	if err != nil {
@@ -243,7 +291,9 @@ func recordEvent(ctx context.Context, tx pgx.Tx, zoneID, action, reason string) 
 // mapError traduce los errores de PostgreSQL a errores de dominio cuando corresponde.
 func mapError(what string, err error) error {
 	switch {
-	case errors.Is(err, domain.ErrZoneNotFound), errors.Is(err, domain.ErrZoneNotInactive):
+	case errors.Is(err, domain.ErrZoneNotFound),
+		errors.Is(err, domain.ErrZoneNotInactive),
+		errors.Is(err, domain.ErrVersionConflict):
 		return err
 	case isUniqueViolation(err):
 		return domain.ErrZoneCodeTaken
@@ -254,7 +304,12 @@ func mapError(what string, err error) error {
 
 // ringPointsQuery devuelve los puntos de todos los anillos de cada zona, con sus datos.
 // En ST_DumpPoints, path[1] es el índice del anillo: 1 es el exterior y 2 en adelante, los huecos.
-const ringPointsQuery = `SELECT z.id::text, z.code, z.name, z.status, z.status_reason, z.created_at,
+const ringPointsQuery = `SELECT z.id::text, z.code, z.name, z.status, z.status_reason,
+		        z.description, z.depot_name, z.depot_lat, z.depot_lng,
+		        z.max_orders_per_route, z.route_capacity_kg, z.timezone, z.service_days,
+		        z.delivery_window_from, z.delivery_window_to, z.cutoff_time, z.dispatch_time,
+		        z.priority, z.daily_order_limit,
+		        z.version, z.created_at, z.updated_at, z.created_by, z.updated_by,
 		        d.path[1], ST_Y(d.geom), ST_X(d.geom)
 		   FROM zones z
 		   CROSS JOIN LATERAL ST_DumpPoints(z.area::geometry) AS d`
@@ -265,16 +320,55 @@ func collectZones(rows pgx.Rows) ([]domain.Zone, error) {
 	var zones []domain.Zone
 	index := map[string]int{}
 	for rows.Next() {
-		var id, code, name, status, reason string
-		var createdAt time.Time
-		var ringIndex int32
-		var lat, lng float64
-		if err := rows.Scan(&id, &code, &name, &status, &reason, &createdAt, &ringIndex, &lat, &lng); err != nil {
+		var (
+			id, code, name, status, reason string
+			description, depotName         string
+			depotLat, depotLng             *float64 // NULL en zonas anteriores a la migración 000003
+			maxOrders, dailyLimit, version int32
+			routeCapacity                  float64
+			timezone, from, to             string
+			cutoff, dispatch, priority     string
+			serviceDays                    []string
+			createdAt, updatedAt           time.Time
+			createdBy, updatedBy           string
+			ringIndex                      int32
+			lat, lng                       float64
+		)
+		if err := rows.Scan(&id, &code, &name, &status, &reason,
+			&description, &depotName, &depotLat, &depotLng,
+			&maxOrders, &routeCapacity, &timezone, &serviceDays,
+			&from, &to, &cutoff, &dispatch,
+			&priority, &dailyLimit,
+			&version, &createdAt, &updatedAt, &createdBy, &updatedBy,
+			&ringIndex, &lat, &lng); err != nil {
 			return nil, fmt.Errorf("scan ring point: %w", err)
 		}
 		i, seen := index[id]
 		if !seen {
-			zones = append(zones, domain.Zone{ID: id, Code: code, Name: name, Status: status, StatusReason: reason, CreatedAt: createdAt})
+			zones = append(zones, domain.Zone{
+				ID: id, Code: code, Name: name, Status: status, StatusReason: reason,
+				Settings: domain.Settings{
+					Description:        description,
+					DepotName:          depotName,
+					DepotLatitude:      derefFloat(depotLat),
+					DepotLongitude:     derefFloat(depotLng),
+					MaxOrdersPerRoute:  int(maxOrders),
+					RouteCapacityKg:    routeCapacity,
+					Timezone:           timezone,
+					ServiceDays:        serviceDays,
+					DeliveryWindowFrom: from,
+					DeliveryWindowTo:   to,
+					CutoffTime:         cutoff,
+					DispatchTime:       dispatch,
+					Priority:           priority,
+					DailyOrderLimit:    int(dailyLimit),
+				},
+				Version:   int(version),
+				CreatedAt: createdAt,
+				UpdatedAt: updatedAt,
+				CreatedBy: createdBy,
+				UpdatedBy: updatedBy,
+			})
 			i = len(zones) - 1
 			index[id] = i
 		}
@@ -284,6 +378,13 @@ func collectZones(rows pgx.Rows) ([]domain.Zone, error) {
 		return nil, fmt.Errorf("read rings: %w", err)
 	}
 	return zones, nil
+}
+
+func derefFloat(v *float64) float64 {
+	if v == nil {
+		return 0
+	}
+	return *v
 }
 
 // attachRingPoint coloca un punto en el anillo exterior o en el hueco que indica el índice de PostGIS.

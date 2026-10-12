@@ -27,14 +27,10 @@ func NewZoneService(zones ports.ZoneRepository) *ZoneService {
 	return &ZoneService{zones: zones}
 }
 
-// CreateZone valida y registra una zona nueva sin huecos. Si el código va vacío, se genera.
-func (s *ZoneService) CreateZone(ctx context.Context, code, name string, ring []domain.Coordinate) (domain.Zone, error) {
-	return s.CreateZoneWithHoles(ctx, code, name, ring, nil)
-}
-
-// CreateZoneWithHoles valida y registra una zona nueva con huecos opcionales (dona). Si el código
-// va vacío, el servidor lo genera a partir del nombre (NORTE-001) y lo asigna de forma atómica.
-func (s *ZoneService) CreateZoneWithHoles(ctx context.Context, code, name string, ring []domain.Coordinate, holes [][]domain.Coordinate) (domain.Zone, error) {
+// CreateZoneWithHoles valida y registra una zona nueva con huecos opcionales (dona) y su
+// configuración operativa. Si el código va vacío, el servidor lo genera a partir del nombre
+// (NORTE-001) y lo asigna de forma atómica.
+func (s *ZoneService) CreateZoneWithHoles(ctx context.Context, code, name string, ring []domain.Coordinate, holes [][]domain.Coordinate, settings domain.Settings) (domain.Zone, error) {
 	name, err := domain.ValidateName(name)
 	if err != nil {
 		return domain.Zone{}, err
@@ -44,23 +40,23 @@ func (s *ZoneService) CreateZoneWithHoles(ctx context.Context, code, name string
 	}
 
 	if strings.TrimSpace(code) != "" {
-		zone, err := domain.NewZoneWithHoles(code, name, ring, holes)
+		zone, err := domain.NewZoneWithHoles(code, name, ring, holes, settings)
 		if err != nil {
 			return domain.Zone{}, err
 		}
 		return s.save(ctx, zone)
 	}
-	return s.createWithGeneratedCode(ctx, name, ring, holes)
+	return s.createWithGeneratedCode(ctx, name, ring, holes, settings)
 }
 
-func (s *ZoneService) createWithGeneratedCode(ctx context.Context, name string, ring []domain.Coordinate, holes [][]domain.Coordinate) (domain.Zone, error) {
+func (s *ZoneService) createWithGeneratedCode(ctx context.Context, name string, ring []domain.Coordinate, holes [][]domain.Coordinate, settings domain.Settings) (domain.Zone, error) {
 	prefix := domain.CodePrefixFromName(name)
 	for attempt := 0; attempt < maxCodeAttempts; attempt++ {
 		number, err := s.zones.NextCode(ctx, prefix)
 		if err != nil {
 			return domain.Zone{}, fmt.Errorf("next zone code: %w", err)
 		}
-		zone, err := domain.NewZoneWithHoles(domain.FormatCode(prefix, number), name, ring, holes)
+		zone, err := domain.NewZoneWithHoles(domain.FormatCode(prefix, number), name, ring, holes, settings)
 		if err != nil {
 			return domain.Zone{}, err
 		}
@@ -83,7 +79,10 @@ func (s *ZoneService) save(ctx context.Context, zone domain.Zone) (domain.Zone, 
 
 // UpdateZone redibuja una zona activa: reemplaza nombre y geometría con las mismas reglas que la
 // creación. El código y el identificador no cambian. Una zona inactiva debe reactivarse primero.
-func (s *ZoneService) UpdateZone(ctx context.Context, id, name string, ring []domain.Coordinate, holes [][]domain.Coordinate) (domain.Zone, error) {
+// expectedVersion es la versión que el cliente vio por última vez; 0 significa sin control. La
+// persistencia vuelve a comprobar la versión dentro de la transacción, así que dos ediciones
+// simultáneas no se pisan.
+func (s *ZoneService) UpdateZone(ctx context.Context, id, name string, ring []domain.Coordinate, holes [][]domain.Coordinate, settings domain.Settings, expectedVersion int) (domain.Zone, error) {
 	if _, err := uuid.Parse(id); err != nil {
 		return domain.Zone{}, domain.ErrZoneNotFound
 	}
@@ -91,14 +90,18 @@ func (s *ZoneService) UpdateZone(ctx context.Context, id, name string, ring []do
 	if err != nil {
 		return domain.Zone{}, err
 	}
+	if expectedVersion != 0 && expectedVersion != existing.Version {
+		return domain.Zone{}, domain.ErrVersionConflict
+	}
 	if existing.Status != domain.StatusActive {
 		return domain.Zone{}, domain.ErrZoneInactive
 	}
-	zone, err := domain.NewZoneWithHoles(existing.Code, name, ring, holes)
+	zone, err := domain.NewZoneWithHoles(existing.Code, name, ring, holes, settings)
 	if err != nil {
 		return domain.Zone{}, err
 	}
 	zone.ID = id
+	zone.Version = existing.Version
 	updated, err := s.zones.Update(ctx, zone)
 	if err != nil {
 		return domain.Zone{}, fmt.Errorf("update zone: %w", err)

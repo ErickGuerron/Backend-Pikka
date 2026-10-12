@@ -43,6 +43,10 @@ message UpdateZoneRequest {
   string name = 3;
   repeated Coordinate ring = 4;
   repeated Ring holes = 5;
+  // Configuración operativa de la zona. Reemplaza la configuración completa.
+  ZoneSettings settings = 6;
+  // Versión que el cliente vio por última vez. 0 = sin control de concurrencia. Si no coincide, responde ABORTED.
+  int32 expected_version = 7;
 }
 
 message UpdateZoneResponse {
@@ -59,6 +63,32 @@ message Ring {
   repeated Coordinate points = 1;
 }
 
+// ZoneSettings es la configuración operativa de una zona: depósito de salida, capacidad de ruta,
+// horario de servicio, cortes y prioridad.
+message ZoneSettings {
+  string description = 1;
+  string depot_name = 2;
+  double depot_latitude = 3;
+  double depot_longitude = 4;
+  // Máximo de pedidos por ruta (ej. 4; zonas con poco volumen usan 1 o 2).
+  int32 max_orders_per_route = 5;
+  // Capacidad de carga por ruta, en kilogramos.
+  double default_route_capacity_kg = 6;
+  // Zona horaria IANA, ej. America/Guayaquil.
+  string timezone = 7;
+  // Días de servicio: MON, TUE, WED, THU, FRI, SAT, SUN.
+  repeated string service_days = 8;
+  // Horas locales HH:MM.
+  string delivery_window_start = 9;
+  string delivery_window_end = 10;
+  string cutoff_time = 11;
+  string dispatch_time = 12;
+  // NORMAL, HIGH o LOW.
+  string priority = 13;
+  // Límite de pedidos por fecha de entrega.
+  int32 daily_order_limit = 14;
+}
+
 message Zone {
   string id = 1;
   string code = 2;
@@ -73,6 +103,13 @@ message Zone {
   string status = 7;
   // Motivo del último cambio de estado. Vacío si nunca se ha desactivado.
   string status_reason = 8;
+  ZoneSettings settings = 9;
+  // Versión de la zona; sube en cada cambio. Úsala como expected_version al editar.
+  int32 version = 10;
+  // RFC 3339, UTC.
+  string updated_at = 11;
+  string created_by = 12;
+  string updated_by = 13;
 }
 
 message CreateZoneRequest {
@@ -81,6 +118,7 @@ message CreateZoneRequest {
   repeated Coordinate ring = 3;
   // Huecos opcionales (dona). Cada uno debe quedar dentro del anillo exterior y no tocarlo.
   repeated Ring holes = 4;
+  ZoneSettings settings = 5;
 }
 
 message CreateZoneResponse {

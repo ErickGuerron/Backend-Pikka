@@ -4,14 +4,17 @@ package domain
 
 import (
 	"math"
+	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
 	minVertices     = 4               // trapecio o cuadrado como mínimo; un triángulo no es una zona válida
 	minRingPoints   = minVertices + 1 // los vértices más el primero repetido al final
 	maxCodeLength   = 32
+	minNameLength   = 3
 	maxNameLength   = 120
 	minReasonLength = 5
 	maxReasonLength = 300
@@ -50,16 +53,19 @@ type Zone struct {
 	Holes        [][]Coordinate
 	Status       string
 	StatusReason string
-	CreatedAt    time.Time
+	Settings     Settings
+	// Version sube en cada cambio. Al editar, el cliente envía la versión que vio para evitar
+	// sobrescribir cambios ajenos.
+	Version   int
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	CreatedBy string
+	UpdatedBy string
 }
 
-// NewZone valida una zona sin huecos. El ID y la fecha de creación los asigna la persistencia.
-func NewZone(code, name string, ring []Coordinate) (Zone, error) {
-	return NewZoneWithHoles(code, name, ring, nil)
-}
-
-// NewZoneWithHoles valida una zona con huecos opcionales. Una zona nueva nace activa.
-func NewZoneWithHoles(code, name string, ring []Coordinate, holes [][]Coordinate) (Zone, error) {
+// NewZoneWithHoles valida una zona con huecos opcionales y su configuración. Una zona nueva nace
+// activa. El ID, la fecha y los autores los asigna la persistencia.
+func NewZoneWithHoles(code, name string, ring []Coordinate, holes [][]Coordinate, settings Settings) (Zone, error) {
 	code = strings.TrimSpace(code)
 	if code == "" || len(code) > maxCodeLength {
 		return Zone{}, ErrInvalidCode
@@ -71,20 +77,31 @@ func NewZoneWithHoles(code, name string, ring []Coordinate, holes [][]Coordinate
 	if err := ValidateGeometry(ring, holes); err != nil {
 		return Zone{}, err
 	}
+	normalized, err := ValidateSettings(settings)
+	if err != nil {
+		return Zone{}, err
+	}
 
 	return Zone{
-		Code:   code,
-		Name:   trimmedName,
-		Ring:   append([]Coordinate(nil), ring...),
-		Holes:  copyRings(holes),
-		Status: StatusActive,
+		Code:     code,
+		Name:     trimmedName,
+		Ring:     append([]Coordinate(nil), ring...),
+		Holes:    copyRings(holes),
+		Status:   StatusActive,
+		Settings: normalized,
+		Version:  1,
 	}, nil
 }
 
+// zoneNamePattern: letras (con acentos), números, espacios y . - & ( ) '.
+var zoneNamePattern = regexp.MustCompile(`^[\p{L}\p{N} .\-&()']+$`)
+
 // ValidateName devuelve el nombre sin espacios sobrantes, o ErrInvalidName si no es válido.
+// Un nombre tiene entre 3 y 120 caracteres y solo usa letras, números, espacios y . - & ( ) '.
 func ValidateName(name string) (string, error) {
 	trimmed := strings.TrimSpace(name)
-	if trimmed == "" || len(trimmed) > maxNameLength {
+	length := utf8.RuneCountInString(trimmed)
+	if length < minNameLength || length > maxNameLength || !zoneNamePattern.MatchString(trimmed) {
 		return "", ErrInvalidName
 	}
 	return trimmed, nil

@@ -59,7 +59,7 @@ func squareZone(t *testing.T, repo *persistence.ZoneRepository, pool *pgxpool.Po
 		coord(t, minLat, minLng),
 	}
 	code := "IT-" + uuid.NewString()[:8]
-	zone, err := domain.NewZone(code, "Zona de prueba", ring)
+	zone, err := domain.NewZoneWithHoles(code, "Zona de prueba", ring, nil, testSettings())
 	require.NoError(t, err)
 
 	saved, err := repo.Save(testCtx(), zone)
@@ -111,7 +111,7 @@ func TestZoneRepository_Save_RejectsDuplicateCode(t *testing.T) {
 	repo, pool := setupRepo(t)
 	saved := squareZone(t, repo, pool, -0.20, -78.50, 0.10)
 
-	dup, err := domain.NewZone(saved.Code, "Otra", saved.Ring)
+	dup, err := domain.NewZoneWithHoles(saved.Code, "Otra", saved.Ring, nil, testSettings())
 	require.NoError(t, err)
 	_, err = repo.Save(testCtx(), dup)
 
@@ -136,7 +136,7 @@ func TestZoneRepository_DonutRoundTripsAndExcludesHole(t *testing.T) {
 	outer := square(40.0, -3.0, 2.0)
 	hole := square(40.5, -2.5, 1.0)
 	code := "IT-" + uuid.NewString()[:8]
-	zone, err := domain.NewZoneWithHoles(code, "Dona de prueba", outer, [][]domain.Coordinate{hole})
+	zone, err := domain.NewZoneWithHoles(code, "Dona de prueba", outer, [][]domain.Coordinate{hole}, testSettings())
 	require.NoError(t, err)
 
 	saved, err := repo.Save(ctx, zone)
@@ -166,7 +166,7 @@ func TestZoneRepository_ListAllIncludesHoles(t *testing.T) {
 	ctx := testCtx()
 	outer := []domain.Coordinate{coord(t, 41, -3), coord(t, 41, -1), coord(t, 43, -1), coord(t, 43, -3), coord(t, 41, -3)}
 	hole := []domain.Coordinate{coord(t, 41.5, -2.5), coord(t, 41.5, -1.5), coord(t, 42.5, -1.5), coord(t, 42.5, -2.5), coord(t, 41.5, -2.5)}
-	zone, err := domain.NewZoneWithHoles("IT-"+uuid.NewString()[:8], "Dona listado", outer, [][]domain.Coordinate{hole})
+	zone, err := domain.NewZoneWithHoles("IT-"+uuid.NewString()[:8], "Dona listado", outer, [][]domain.Coordinate{hole}, testSettings())
 	require.NoError(t, err)
 	saved, err := repo.Save(ctx, zone)
 	require.NoError(t, err)
@@ -192,10 +192,12 @@ func TestZoneRepository_UpdateReplacesGeometryAndKeepsID(t *testing.T) {
 	saved := squareZone(t, repo, pool, -0.20, -78.50, 0.10)
 
 	bigger := domain.Zone{
-		ID:   saved.ID,
-		Code: saved.Code,
-		Name: "Zona ampliada",
-		Ring: []domain.Coordinate{coord(t, -0.30, -78.60), coord(t, -0.30, -78.40), coord(t, -0.10, -78.40), coord(t, -0.10, -78.60), coord(t, -0.30, -78.60)},
+		ID:       saved.ID,
+		Code:     saved.Code,
+		Name:     "Zona ampliada",
+		Ring:     []domain.Coordinate{coord(t, -0.30, -78.60), coord(t, -0.30, -78.40), coord(t, -0.10, -78.40), coord(t, -0.10, -78.60), coord(t, -0.30, -78.60)},
+		Settings: testSettings(),
+		Version:  saved.Version,
 	}
 	updated, err := repo.Update(ctx, bigger)
 	require.NoError(t, err)
@@ -211,8 +213,39 @@ func TestZoneRepository_UpdateMissingZoneIsNotFound(t *testing.T) {
 	repo, pool := setupRepo(t)
 	first := squareZone(t, repo, pool, -0.20, -78.50, 0.10)
 
-	_, err := repo.Update(testCtx(), domain.Zone{ID: "11111111-1111-1111-1111-111111111111", Code: first.Code, Name: "X", Ring: first.Ring})
+	_, err := repo.Update(testCtx(), domain.Zone{ID: "11111111-1111-1111-1111-111111111111", Code: first.Code, Name: "X", Ring: first.Ring, Settings: testSettings(), Version: 1})
 	assert.ErrorIs(t, err, domain.ErrZoneNotFound)
+}
+
+func TestZoneRepository_UpdateWithStaleVersionIsConflict(t *testing.T) {
+	repo, pool := setupRepo(t)
+	saved := squareZone(t, repo, pool, -0.20, -78.50, 0.10)
+
+	stale := saved
+	stale.Name = "Versión vieja"
+	stale.Version = saved.Version + 5 // alguien más ya cambió la zona
+
+	_, err := repo.Update(testCtx(), stale)
+	assert.ErrorIs(t, err, domain.ErrVersionConflict)
+}
+
+// testSettings es una configuración operativa válida para las pruebas de persistencia.
+func testSettings() domain.Settings {
+	return domain.Settings{
+		DepotName:          "Hub Norte",
+		DepotLatitude:      -0.179,
+		DepotLongitude:     -78.483,
+		MaxOrdersPerRoute:  18,
+		RouteCapacityKg:    45,
+		Timezone:           "America/Guayaquil",
+		ServiceDays:        []string{"MON", "TUE", "WED", "THU", "FRI", "SAT"},
+		DeliveryWindowFrom: "08:00",
+		DeliveryWindowTo:   "20:00",
+		CutoffTime:         "14:00",
+		DispatchTime:       "15:30",
+		Priority:           domain.PriorityHigh,
+		DailyOrderLimit:    250,
+	}
 }
 func TestZoneRepository_InactiveZoneDoesNotClassifyAndCanBeReactivated(t *testing.T) {
 	repo, pool := setupRepo(t)

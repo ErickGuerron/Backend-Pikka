@@ -19,4 +19,6 @@ var (
 	ErrInvalidStatus     = errors.New("status must be ACTIVE or INACTIVE")
 	ErrZoneNotFound      = errors.New("zone not found")
 	ErrZoneCodeTaken     = errors.New("zone code already exists")
+	ErrInvalidSettings   = errors.New("invalid zone settings")
+	ErrVersionConflict   = errors.New("the zone was changed by someone else: reload it and try again")
 )

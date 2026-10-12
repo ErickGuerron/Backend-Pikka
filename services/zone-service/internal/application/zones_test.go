@@ -87,6 +87,23 @@ func (r *fakeRepo) FindContaining(_ context.Context, _ domain.Coordinate) (domai
 	return domain.Zone{}, domain.ErrZoneNotFound
 }
 
+// validSettings es una configuración operativa válida para los casos de uso.
+func validSettings() domain.Settings {
+	return domain.Settings{
+		DepotName:          "Hub Norte",
+		DepotLatitude:      -0.179,
+		DepotLongitude:     -78.483,
+		MaxOrdersPerRoute:  4,
+		RouteCapacityKg:    45,
+		ServiceDays:        []string{"MON"},
+		DeliveryWindowFrom: "08:00",
+		DeliveryWindowTo:   "20:00",
+		CutoffTime:         "14:00",
+		DispatchTime:       "15:30",
+		DailyOrderLimit:    250,
+	}
+}
+
 func ring(t *testing.T) []domain.Coordinate {
 	t.Helper()
 	pts := [][2]float64{{-0.20, -78.50}, {-0.20, -78.40}, {-0.10, -78.40}, {-0.10, -78.50}, {-0.20, -78.50}}
@@ -102,7 +119,7 @@ func ring(t *testing.T) []domain.Coordinate {
 func TestCreateZone_PersistsValidZone(t *testing.T) {
 	svc := application.NewZoneService(newFakeRepo())
 
-	zone, err := svc.CreateZone(context.Background(), "NORTE", "Zona Norte", ring(t))
+	zone, err := svc.CreateZoneWithHoles(context.Background(), "NORTE", "Zona Norte", ring(t), nil, validSettings())
 
 	require.NoError(t, err)
 	assert.NotEmpty(t, zone.ID)
@@ -112,7 +129,7 @@ func TestCreateZone_PersistsValidZone(t *testing.T) {
 func TestCreateZone_GeneratesCodeWhenEmpty(t *testing.T) {
 	svc := application.NewZoneService(newFakeRepo())
 
-	zone, err := svc.CreateZone(context.Background(), "", "Zona Norte", ring(t))
+	zone, err := svc.CreateZoneWithHoles(context.Background(), "", "Zona Norte", ring(t), nil, validSettings())
 
 	require.NoError(t, err)
 	assert.Equal(t, "NORTE-001", zone.Code)
@@ -123,7 +140,7 @@ func TestCreateZone_RejectsInvalidNameBeforePersisting(t *testing.T) {
 	repo := newFakeRepo()
 	svc := application.NewZoneService(repo)
 
-	_, err := svc.CreateZone(context.Background(), "", "   ", ring(t))
+	_, err := svc.CreateZoneWithHoles(context.Background(), "", "   ", ring(t), nil, validSettings())
 
 	assert.ErrorIs(t, err, domain.ErrInvalidName)
 	assert.Empty(t, repo.zones)
@@ -131,10 +148,10 @@ func TestCreateZone_RejectsInvalidNameBeforePersisting(t *testing.T) {
 
 func TestCreateZone_PropagatesDuplicateCode(t *testing.T) {
 	svc := application.NewZoneService(newFakeRepo())
-	_, err := svc.CreateZone(context.Background(), "NORTE", "Zona Norte", ring(t))
+	_, err := svc.CreateZoneWithHoles(context.Background(), "NORTE", "Zona Norte", ring(t), nil, validSettings())
 	require.NoError(t, err)
 
-	_, err = svc.CreateZone(context.Background(), "NORTE", "Otra", ring(t))
+	_, err = svc.CreateZoneWithHoles(context.Background(), "NORTE", "Otra", ring(t), nil, validSettings())
 
 	assert.True(t, errors.Is(err, domain.ErrZoneCodeTaken))
 }

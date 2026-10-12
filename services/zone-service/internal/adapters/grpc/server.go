@@ -4,6 +4,7 @@ package grpc
 import (
 	"context"
 	"errors"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -35,7 +36,7 @@ func (s *Server) CreateZone(ctx context.Context, req *zonesv1.CreateZoneRequest)
 	}
 	ring := fromProtoRing(req.GetRing())
 	holes := fromProtoHoles(req.GetHoles())
-	zone, err := s.zones.CreateZoneWithHoles(ctx, req.GetCode(), req.GetName(), ring, holes)
+	zone, err := s.zones.CreateZoneWithHoles(ctx, req.GetCode(), req.GetName(), ring, holes, fromProtoSettings(req.GetSettings()))
 	if err != nil {
 		return nil, toStatus(err)
 	}
@@ -67,7 +68,7 @@ func (s *Server) UpdateZone(ctx context.Context, req *zonesv1.UpdateZoneRequest)
 	if err != nil {
 		return nil, err
 	}
-	zone, err := s.zones.UpdateZone(ctx, req.GetId(), req.GetName(), fromProtoRing(req.GetRing()), fromProtoHoles(req.GetHoles()))
+	zone, err := s.zones.UpdateZone(ctx, req.GetId(), req.GetName(), fromProtoRing(req.GetRing()), fromProtoHoles(req.GetHoles()), fromProtoSettings(req.GetSettings()), int(req.GetExpectedVersion()))
 	if err != nil {
 		return nil, toStatus(err)
 	}
@@ -145,12 +146,16 @@ func toStatus(err error) error {
 		errors.Is(err, domain.ErrHoleOutside),
 		errors.Is(err, domain.ErrHolesOverlap),
 		errors.Is(err, domain.ErrReasonRequired),
-		errors.Is(err, domain.ErrInvalidStatus):
+		errors.Is(err, domain.ErrInvalidStatus),
+		errors.Is(err, domain.ErrInvalidSettings):
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, domain.ErrZoneNotFound):
 		return status.Error(codes.NotFound, err.Error())
 	case errors.Is(err, domain.ErrZoneCodeTaken):
 		return status.Error(codes.AlreadyExists, err.Error())
+	case errors.Is(err, domain.ErrVersionConflict):
+		// Otra edición ganó la carrera: el cliente debe recargar la zona y reintentar.
+		return status.Error(codes.Aborted, err.Error())
 	case errors.Is(err, domain.ErrStatusUnchanged),
 		errors.Is(err, domain.ErrZoneNotInactive),
 		errors.Is(err, domain.ErrZoneInactive):
@@ -208,7 +213,59 @@ func toProtoZone(z domain.Zone) *zonesv1.Zone {
 		Ring:         ring,
 		Status:       z.Status,
 		StatusReason: z.StatusReason,
-		CreatedAt:    z.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		CreatedAt:    formatTime(z.CreatedAt),
 		Holes:        holes,
+		Settings:     toProtoSettings(z.Settings),
+		Version:      int32(z.Version),
+		UpdatedAt:    formatTime(z.UpdatedAt),
+		CreatedBy:    z.CreatedBy,
+		UpdatedBy:    z.UpdatedBy,
+	}
+}
+
+func formatTime(t time.Time) string {
+	return t.UTC().Format(time.RFC3339)
+}
+
+// fromProtoSettings convierte la configuración del request. Un request sin configuración llega
+// como nil y el dominio la rechaza con InvalidArgument por los campos obligatorios.
+func fromProtoSettings(s *zonesv1.ZoneSettings) domain.Settings {
+	if s == nil {
+		return domain.Settings{}
+	}
+	return domain.Settings{
+		Description:        s.GetDescription(),
+		DepotName:          s.GetDepotName(),
+		DepotLatitude:      s.GetDepotLatitude(),
+		DepotLongitude:     s.GetDepotLongitude(),
+		MaxOrdersPerRoute:  int(s.GetMaxOrdersPerRoute()),
+		RouteCapacityKg:    s.GetDefaultRouteCapacityKg(),
+		Timezone:           s.GetTimezone(),
+		ServiceDays:        s.GetServiceDays(),
+		DeliveryWindowFrom: s.GetDeliveryWindowStart(),
+		DeliveryWindowTo:   s.GetDeliveryWindowEnd(),
+		CutoffTime:         s.GetCutoffTime(),
+		DispatchTime:       s.GetDispatchTime(),
+		Priority:           s.GetPriority(),
+		DailyOrderLimit:    int(s.GetDailyOrderLimit()),
+	}
+}
+
+func toProtoSettings(s domain.Settings) *zonesv1.ZoneSettings {
+	return &zonesv1.ZoneSettings{
+		Description:            s.Description,
+		DepotName:              s.DepotName,
+		DepotLatitude:          s.DepotLatitude,
+		DepotLongitude:         s.DepotLongitude,
+		MaxOrdersPerRoute:      int32(s.MaxOrdersPerRoute),
+		DefaultRouteCapacityKg: s.RouteCapacityKg,
+		Timezone:               s.Timezone,
+		ServiceDays:            s.ServiceDays,
+		DeliveryWindowStart:    s.DeliveryWindowFrom,
+		DeliveryWindowEnd:      s.DeliveryWindowTo,
+		CutoffTime:             s.CutoffTime,
+		DispatchTime:           s.DispatchTime,
+		Priority:               s.Priority,
+		DailyOrderLimit:        int32(s.DailyOrderLimit),
 	}
 }

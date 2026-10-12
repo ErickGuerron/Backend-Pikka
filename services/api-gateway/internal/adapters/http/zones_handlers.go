@@ -35,16 +35,18 @@ func (h *zonesHandlers) list(c echo.Context) error {
 }
 
 func (h *zonesHandlers) update(c echo.Context) error {
-	var req createZoneRequest
+	var req updateZoneRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
 	}
 	res, err := h.zones.UpdateZone(c.Request().Context(), callMeta(c), &zonesv1.UpdateZoneRequest{
-		Id:    c.Param("id"),
-		Code:  req.Code,
-		Name:  req.Name,
-		Ring:  toProtoRing(req.Ring),
-		Holes: toProtoHoles(req.Holes),
+		Id:              c.Param("id"),
+		Code:            req.Code,
+		Name:            req.Name,
+		Ring:            toProtoRing(req.Ring),
+		Holes:           toProtoHoles(req.Holes),
+		Settings:        toProtoSettings(req.Settings),
+		ExpectedVersion: req.ExpectedVersion,
 	})
 	if err != nil {
 		return err
@@ -71,13 +73,45 @@ type zoneDTO struct {
 	Status       string            `json:"status"`
 	StatusReason string            `json:"statusReason"`
 	CreatedAt    string            `json:"createdAt"`
+	UpdatedAt    string            `json:"updatedAt"`
+	Version      int32             `json:"version"`
+	CreatedBy    string            `json:"createdBy"`
+	UpdatedBy    string            `json:"updatedBy"`
+	Settings     settingsDTO       `json:"settings"`
+}
+
+// settingsDTO es la configuración operativa de la zona. El depósito llega vacío (depotName "") en
+// zonas anteriores a la configuración.
+type settingsDTO struct {
+	Description        string   `json:"description"`
+	DepotName          string   `json:"depotName"`
+	DepotLatitude      float64  `json:"depotLatitude"`
+	DepotLongitude     float64  `json:"depotLongitude"`
+	MaxOrdersPerRoute  int32    `json:"maxOrdersPerRoute"`
+	RouteCapacityKg    float64  `json:"routeCapacityKg"`
+	Timezone           string   `json:"timezone"`
+	ServiceDays        []string `json:"serviceDays"`
+	DeliveryWindowFrom string   `json:"deliveryWindowFrom"`
+	DeliveryWindowTo   string   `json:"deliveryWindowTo"`
+	CutoffTime         string   `json:"cutoffTime"`
+	DispatchTime       string   `json:"dispatchTime"`
+	Priority           string   `json:"priority"`
+	DailyOrderLimit    int32    `json:"dailyOrderLimit"`
 }
 
 type createZoneRequest struct {
-	Code  string            `json:"code"`
-	Name  string            `json:"name"`
-	Ring  []coordinateDTO   `json:"ring"`
-	Holes [][]coordinateDTO `json:"holes"`
+	Code     string            `json:"code"`
+	Name     string            `json:"name"`
+	Ring     []coordinateDTO   `json:"ring"`
+	Holes    [][]coordinateDTO `json:"holes"`
+	Settings settingsDTO       `json:"settings"`
+}
+
+// updateZoneRequest reemplaza la zona completa. ExpectedVersion es la versión que el cliente vio;
+// 0 significa sin control de concurrencia.
+type updateZoneRequest struct {
+	createZoneRequest
+	ExpectedVersion int32 `json:"expectedVersion"`
 }
 
 func (h *zonesHandlers) create(c echo.Context) error {
@@ -86,10 +120,11 @@ func (h *zonesHandlers) create(c echo.Context) error {
 		return err
 	}
 	res, err := h.zones.CreateZone(c.Request().Context(), callMeta(c), &zonesv1.CreateZoneRequest{
-		Code:  req.Code,
-		Name:  req.Name,
-		Ring:  toProtoRing(req.Ring),
-		Holes: toProtoHoles(req.Holes),
+		Code:     req.Code,
+		Name:     req.Name,
+		Ring:     toProtoRing(req.Ring),
+		Holes:    toProtoHoles(req.Holes),
+		Settings: toProtoSettings(req.Settings),
 	})
 	if err != nil {
 		return err
@@ -162,6 +197,49 @@ func toZoneDTO(z *zonesv1.Zone) zoneDTO {
 		Status:       z.GetStatus(),
 		StatusReason: z.GetStatusReason(),
 		CreatedAt:    z.GetCreatedAt(),
+		UpdatedAt:    z.GetUpdatedAt(),
+		Version:      z.GetVersion(),
+		CreatedBy:    z.GetCreatedBy(),
+		UpdatedBy:    z.GetUpdatedBy(),
+		Settings:     toSettingsDTO(z.GetSettings()),
+	}
+}
+
+func toSettingsDTO(s *zonesv1.ZoneSettings) settingsDTO {
+	return settingsDTO{
+		Description:        s.GetDescription(),
+		DepotName:          s.GetDepotName(),
+		DepotLatitude:      s.GetDepotLatitude(),
+		DepotLongitude:     s.GetDepotLongitude(),
+		MaxOrdersPerRoute:  s.GetMaxOrdersPerRoute(),
+		RouteCapacityKg:    s.GetDefaultRouteCapacityKg(),
+		Timezone:           s.GetTimezone(),
+		ServiceDays:        s.GetServiceDays(),
+		DeliveryWindowFrom: s.GetDeliveryWindowStart(),
+		DeliveryWindowTo:   s.GetDeliveryWindowEnd(),
+		CutoffTime:         s.GetCutoffTime(),
+		DispatchTime:       s.GetDispatchTime(),
+		Priority:           s.GetPriority(),
+		DailyOrderLimit:    s.GetDailyOrderLimit(),
+	}
+}
+
+func toProtoSettings(s settingsDTO) *zonesv1.ZoneSettings {
+	return &zonesv1.ZoneSettings{
+		Description:            s.Description,
+		DepotName:              s.DepotName,
+		DepotLatitude:          s.DepotLatitude,
+		DepotLongitude:         s.DepotLongitude,
+		MaxOrdersPerRoute:      s.MaxOrdersPerRoute,
+		DefaultRouteCapacityKg: s.RouteCapacityKg,
+		Timezone:               s.Timezone,
+		ServiceDays:            s.ServiceDays,
+		DeliveryWindowStart:    s.DeliveryWindowFrom,
+		DeliveryWindowEnd:      s.DeliveryWindowTo,
+		CutoffTime:             s.CutoffTime,
+		DispatchTime:           s.DispatchTime,
+		Priority:               s.Priority,
+		DailyOrderLimit:        s.DailyOrderLimit,
 	}
 }
 
