@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"errors"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -34,9 +35,10 @@ import (
 //     emparejamos ambos UUIDs para que el test refleje el comportamiento
 //     observable del handler.
 type fakeCustomerRepository struct {
-	mu       sync.Mutex
-	byID     map[uuid.UUID]domain.Customer
-	byUserID map[uuid.UUID]uuid.UUID
+	mu         sync.Mutex
+	byID       map[uuid.UUID]domain.Customer
+	byUserID   map[uuid.UUID]uuid.UUID
+	lastFilter ports.CustomerListFilter
 }
 
 func newFakeCustomerRepository() *fakeCustomerRepository {
@@ -111,6 +113,8 @@ func newTestServer(t *testing.T, repo ports.CustomerRepository) *CustomerServer 
 	t.Helper()
 	return NewCustomerServer(UseCases{
 		Create:          customercase.NewCreateCustomer(repo),
+		GetByID:         customercase.NewGetByID(repo),
+		List:            customercase.NewListCustomers(repo),
 		GetByUserID:     customercase.NewGetByUserID(repo),
 		UpdateStatus:    customercase.NewUpdateStatus(repo),
 		CanCreateOrders: customercase.NewCanCreateOrders(repo),
@@ -347,4 +351,77 @@ func mustDecimal(t *testing.T, s string) decimal.Decimal {
 	d, err := decimal.NewFromString(s)
 	require.NoError(t, err)
 	return d
+}
+
+// List filtra por status, ordena de forma estable por id y pagina.
+func (f *fakeCustomerRepository) List(_ context.Context, fl ports.CustomerListFilter) ([]domain.Customer, int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.lastFilter = fl
+	all := make([]domain.Customer, 0, len(f.byID))
+	for _, c := range f.byID {
+		if fl.Status != nil && c.Status != *fl.Status {
+			continue
+		}
+		all = append(all, c)
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].ID.String() < all[j].ID.String() })
+	total := len(all)
+	if fl.Offset >= total {
+		return []domain.Customer{}, total, nil
+	}
+	end := fl.Offset + fl.Limit
+	if end > total {
+		end = total
+	}
+	return all[fl.Offset:end], total, nil
+}
+
+func TestGetByID_Existing_ReturnsCustomer(t *testing.T) {
+	repo := newFakeCustomerRepository()
+	srv := newTestServer(t, repo)
+	c, err := repo.Create(context.Background(), domain.Customer{
+		UserID: uuid.New(), Email: "ada@example.com", FullName: "Ada", Status: domain.StatusActive,
+	})
+	require.NoError(t, err)
+
+	resp, err := srv.GetByID(context.Background(), &customerv1.GetByIDRequest{Id: c.ID.String()})
+	require.NoError(t, err)
+	assert.Equal(t, c.ID.String(), resp.GetCustomer().GetId())
+}
+
+func TestGetByID_Errors(t *testing.T) {
+	srv := newTestServer(t, newFakeCustomerRepository())
+	_, err := srv.GetByID(context.Background(), &customerv1.GetByIDRequest{Id: "x"})
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	_, err = srv.GetByID(context.Background(), &customerv1.GetByIDRequest{Id: uuid.NewString()})
+	assert.Equal(t, codes.NotFound, status.Code(err))
+}
+
+func TestListCustomers_ReturnsPageAndTotal(t *testing.T) {
+	repo := newFakeCustomerRepository()
+	srv := newTestServer(t, repo)
+	for i := 0; i < 3; i++ {
+		_, err := repo.Create(context.Background(), domain.Customer{
+			UserID: uuid.New(), Email: "a@example.com", FullName: "A", Status: domain.StatusActive,
+		})
+		require.NoError(t, err)
+	}
+	resp, err := srv.ListCustomers(context.Background(), &customerv1.ListCustomersRequest{Limit: 2})
+	require.NoError(t, err)
+	assert.Len(t, resp.GetCustomers(), 2)
+	assert.Equal(t, int32(3), resp.GetTotal())
+}
+
+func TestListCustomers_InvalidArguments(t *testing.T) {
+	srv := newTestServer(t, newFakeCustomerRepository())
+	_, err := srv.ListCustomers(context.Background(), &customerv1.ListCustomersRequest{Limit: -1})
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	_, err = srv.ListCustomers(context.Background(), &customerv1.ListCustomersRequest{Status: "NOPE"})
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+func TestListCustomers_NotWired_Unimplemented(t *testing.T) {
+	_, err := NewCustomerServer(UseCases{}).ListCustomers(context.Background(), &customerv1.ListCustomersRequest{})
+	assert.Equal(t, codes.Unimplemented, status.Code(err))
 }

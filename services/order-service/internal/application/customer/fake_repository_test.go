@@ -2,10 +2,12 @@ package customer
 
 import (
 	"context"
+	"sort"
 	"sync"
 
 	"github.com/google/uuid"
 
+	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/application/ports"
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/domain"
 )
 
@@ -17,9 +19,10 @@ import (
 //   - Búsquedas indexadas por id y user_id.
 //   - UpdateStatus respeta Valid() y devuelve ErrInvalidStatus / ErrCustomerNotFound.
 type fakeCustomerRepository struct {
-	mu       sync.Mutex
-	byID     map[uuid.UUID]domain.Customer
-	byUserID map[uuid.UUID]uuid.UUID // user_id -> customer id
+	mu         sync.Mutex
+	byID       map[uuid.UUID]domain.Customer
+	byUserID   map[uuid.UUID]uuid.UUID // user_id -> customer id
+	lastFilter ports.CustomerListFilter
 }
 
 func newFakeCustomerRepository() *fakeCustomerRepository {
@@ -76,4 +79,28 @@ func (f *fakeCustomerRepository) UpdateStatus(_ context.Context, id uuid.UUID, s
 	c.Status = status
 	f.byID[id] = c
 	return c, nil
+}
+
+// List filtra por status, ordena de forma estable por id y pagina.
+func (f *fakeCustomerRepository) List(_ context.Context, fl ports.CustomerListFilter) ([]domain.Customer, int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.lastFilter = fl
+	all := make([]domain.Customer, 0, len(f.byID))
+	for _, c := range f.byID {
+		if fl.Status != nil && c.Status != *fl.Status {
+			continue
+		}
+		all = append(all, c)
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].ID.String() < all[j].ID.String() })
+	total := len(all)
+	if fl.Offset >= total {
+		return []domain.Customer{}, total, nil
+	}
+	end := fl.Offset + fl.Limit
+	if end > total {
+		end = total
+	}
+	return all[fl.Offset:end], total, nil
 }

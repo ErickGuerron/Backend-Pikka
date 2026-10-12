@@ -21,6 +21,8 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	CustomerService_CreateCustomer_FullMethodName  = "/customer.v1.CustomerService/CreateCustomer"
 	CustomerService_GetByUserID_FullMethodName     = "/customer.v1.CustomerService/GetByUserID"
+	CustomerService_GetByID_FullMethodName         = "/customer.v1.CustomerService/GetByID"
+	CustomerService_ListCustomers_FullMethodName   = "/customer.v1.CustomerService/ListCustomers"
 	CustomerService_UpdateStatus_FullMethodName    = "/customer.v1.CustomerService/UpdateStatus"
 	CustomerService_CanCreateOrders_FullMethodName = "/customer.v1.CustomerService/CanCreateOrders"
 )
@@ -36,6 +38,16 @@ type CustomerServiceClient interface {
 	CreateCustomer(ctx context.Context, in *CreateCustomerRequest, opts ...grpc.CallOption) (*CreateCustomerResponse, error)
 	// GetByUserID devuelve el Customer asociado a un user_id.
 	GetByUserID(ctx context.Context, in *GetByUserIDRequest, opts ...grpc.CallOption) (*GetByUserIDResponse, error)
+	// GetByID devuelve el Customer por su id interno.
+	//
+	// Códigos de estado gRPC: INVALID_ARGUMENT si id no es un UUID; NOT_FOUND si no existe.
+	GetByID(ctx context.Context, in *GetByIDRequest, opts ...grpc.CallOption) (*GetByIDResponse, error)
+	// ListCustomers devuelve una página de Customers ordenados por created_at e id
+	// (ascendente, orden estable), con filtro opcional por estado. Solo lo invoca ADMIN.
+	//
+	// Códigos de estado gRPC: INVALID_ARGUMENT si limit u offset son negativos o si
+	// status no es un estado válido.
+	ListCustomers(ctx context.Context, in *ListCustomersRequest, opts ...grpc.CallOption) (*ListCustomersResponse, error)
 	// UpdateStatus actualiza el estado del Customer (solo ADMIN lo invoca).
 	UpdateStatus(ctx context.Context, in *UpdateStatusRequest, opts ...grpc.CallOption) (*UpdateStatusResponse, error)
 	// CanCreateOrders indica si el cliente puede crear pedidos.
@@ -64,6 +76,26 @@ func (c *customerServiceClient) GetByUserID(ctx context.Context, in *GetByUserID
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetByUserIDResponse)
 	err := c.cc.Invoke(ctx, CustomerService_GetByUserID_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) GetByID(ctx context.Context, in *GetByIDRequest, opts ...grpc.CallOption) (*GetByIDResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetByIDResponse)
+	err := c.cc.Invoke(ctx, CustomerService_GetByID_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *customerServiceClient) ListCustomers(ctx context.Context, in *ListCustomersRequest, opts ...grpc.CallOption) (*ListCustomersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCustomersResponse)
+	err := c.cc.Invoke(ctx, CustomerService_ListCustomers_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -101,6 +133,16 @@ type CustomerServiceServer interface {
 	CreateCustomer(context.Context, *CreateCustomerRequest) (*CreateCustomerResponse, error)
 	// GetByUserID devuelve el Customer asociado a un user_id.
 	GetByUserID(context.Context, *GetByUserIDRequest) (*GetByUserIDResponse, error)
+	// GetByID devuelve el Customer por su id interno.
+	//
+	// Códigos de estado gRPC: INVALID_ARGUMENT si id no es un UUID; NOT_FOUND si no existe.
+	GetByID(context.Context, *GetByIDRequest) (*GetByIDResponse, error)
+	// ListCustomers devuelve una página de Customers ordenados por created_at e id
+	// (ascendente, orden estable), con filtro opcional por estado. Solo lo invoca ADMIN.
+	//
+	// Códigos de estado gRPC: INVALID_ARGUMENT si limit u offset son negativos o si
+	// status no es un estado válido.
+	ListCustomers(context.Context, *ListCustomersRequest) (*ListCustomersResponse, error)
 	// UpdateStatus actualiza el estado del Customer (solo ADMIN lo invoca).
 	UpdateStatus(context.Context, *UpdateStatusRequest) (*UpdateStatusResponse, error)
 	// CanCreateOrders indica si el cliente puede crear pedidos.
@@ -120,6 +162,12 @@ func (UnimplementedCustomerServiceServer) CreateCustomer(context.Context, *Creat
 }
 func (UnimplementedCustomerServiceServer) GetByUserID(context.Context, *GetByUserIDRequest) (*GetByUserIDResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetByUserID not implemented")
+}
+func (UnimplementedCustomerServiceServer) GetByID(context.Context, *GetByIDRequest) (*GetByIDResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetByID not implemented")
+}
+func (UnimplementedCustomerServiceServer) ListCustomers(context.Context, *ListCustomersRequest) (*ListCustomersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListCustomers not implemented")
 }
 func (UnimplementedCustomerServiceServer) UpdateStatus(context.Context, *UpdateStatusRequest) (*UpdateStatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateStatus not implemented")
@@ -184,6 +232,42 @@ func _CustomerService_GetByUserID_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CustomerService_GetByID_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetByIDRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).GetByID(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_GetByID_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).GetByID(ctx, req.(*GetByIDRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CustomerService_ListCustomers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCustomersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CustomerServiceServer).ListCustomers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CustomerService_ListCustomers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CustomerServiceServer).ListCustomers(ctx, req.(*ListCustomersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CustomerService_UpdateStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(UpdateStatusRequest)
 	if err := dec(in); err != nil {
@@ -234,6 +318,14 @@ var CustomerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetByUserID",
 			Handler:    _CustomerService_GetByUserID_Handler,
+		},
+		{
+			MethodName: "GetByID",
+			Handler:    _CustomerService_GetByID_Handler,
+		},
+		{
+			MethodName: "ListCustomers",
+			Handler:    _CustomerService_ListCustomers_Handler,
 		},
 		{
 			MethodName: "UpdateStatus",

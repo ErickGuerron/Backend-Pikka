@@ -32,7 +32,9 @@ import (
 // uso no cableado devolvemos codes.Unimplemented, igual que auth-service.
 type UseCases struct {
 	Create          *customercase.CreateCustomer
+	GetByID         *customercase.GetByID
 	GetByUserID     *customercase.GetByUserID
+	List            *customercase.ListCustomers
 	UpdateStatus    *customercase.UpdateStatus
 	CanCreateOrders *customercase.CanCreateOrders
 }
@@ -84,6 +86,38 @@ func (s *CustomerServer) GetByUserID(ctx context.Context, req *customerv1.GetByU
 	return &customerv1.GetByUserIDResponse{Customer: domainToProto(c)}, nil
 }
 
+// GetByID devuelve el Customer por su id interno.
+func (s *CustomerServer) GetByID(ctx context.Context, req *customerv1.GetByIDRequest) (*customerv1.GetByIDResponse, error) {
+	if s.useCases.GetByID == nil {
+		return nil, status.Error(codes.Unimplemented, "get by id is not wired")
+	}
+	id, err := uuid.Parse(req.GetId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "id inválido: %v", err)
+	}
+	c, err := s.useCases.GetByID.Run(ctx, id)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	return &customerv1.GetByIDResponse{Customer: domainToProto(c)}, nil
+}
+
+// ListCustomers devuelve una pagina de Customers con filtro opcional de estado.
+func (s *CustomerServer) ListCustomers(ctx context.Context, req *customerv1.ListCustomersRequest) (*customerv1.ListCustomersResponse, error) {
+	if s.useCases.List == nil {
+		return nil, status.Error(codes.Unimplemented, "list customers is not wired")
+	}
+	cs, total, err := s.useCases.List.Run(ctx, req.GetStatus(), int(req.GetLimit()), int(req.GetOffset()))
+	if err != nil {
+		return nil, mapError(err)
+	}
+	out := make([]*customerv1.Customer, 0, len(cs))
+	for _, c := range cs {
+		out = append(out, domainToProto(c))
+	}
+	return &customerv1.ListCustomersResponse{Customers: out, Total: int32(total)}, nil
+}
+
 // UpdateStatus cambia el estado del Customer. El handler valida el status
 // antes de delegar para devolver codes.InvalidArgument con un mensaje claro.
 func (s *CustomerServer) UpdateStatus(ctx context.Context, req *customerv1.UpdateStatusRequest) (*customerv1.UpdateStatusResponse, error) {
@@ -131,6 +165,8 @@ func mapError(err error) error {
 		return status.Error(codes.NotFound, "cliente no encontrado")
 	case errors.Is(err, domain.ErrCustomerAlreadyExists):
 		return status.Error(codes.AlreadyExists, "cliente ya existe")
+	case errors.Is(err, domain.ErrInvalidPagination):
+		return status.Error(codes.InvalidArgument, "paginación inválida")
 	case errors.Is(err, domain.ErrInvalidStatus):
 		return status.Error(codes.InvalidArgument, "status inválido")
 	case errors.Is(err, context.DeadlineExceeded):

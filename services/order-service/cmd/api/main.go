@@ -57,11 +57,15 @@ func run(log *slog.Logger) error {
 	// se exponen vía gRPC en este mismo proceso (BE-T5a).
 	customerRepo := persistence.NewCustomerRepository(pool)
 	createCustomer := customercase.NewCreateCustomer(customerRepo)
+	getCustomerByID := customercase.NewGetByID(customerRepo)
+	listCustomers := customercase.NewListCustomers(customerRepo)
 	getByUserID := customercase.NewGetByUserID(customerRepo)
 	updateCustomerStatus := customercase.NewUpdateStatus(customerRepo)
 	canCreateOrders := customercase.NewCanCreateOrders(customerRepo)
 	log.Info("customer use cases wired",
 		"create", createCustomer != nil,
+		"getByID", getCustomerByID != nil,
+		"list", listCustomers != nil,
 		"getByUserID", getByUserID != nil,
 		"updateStatus", updateCustomerStatus != nil,
 		"canCreateOrders", canCreateOrders != nil,
@@ -73,6 +77,8 @@ func run(log *slog.Logger) error {
 	grpcServer := grpc.NewServer()
 	customerv1.RegisterCustomerServiceServer(grpcServer, grpcadapter.NewCustomerServer(grpcadapter.UseCases{
 		Create:          createCustomer,
+		GetByID:         getCustomerByID,
+		List:            listCustomers,
 		GetByUserID:     getByUserID,
 		UpdateStatus:    updateCustomerStatus,
 		CanCreateOrders: canCreateOrders,

@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/application/ports"
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/domain"
 )
 
@@ -128,4 +129,52 @@ func isUniqueViolation(err error) bool {
 		return pgErr.Code == "23505"
 	}
 	return false
+}
+
+// List devuelve una pagina de clientes y el total que cumple el filtro.
+// Orden determinista (created_at, id); el SQL esta parametrizado y el limit
+// ya viene acotado por el caso de uso (se re-acota aqui como defensa).
+func (r *CustomerRepository) List(ctx context.Context, f ports.CustomerListFilter) ([]domain.Customer, int, error) {
+	limit, offset := f.Limit, f.Offset
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	var status *string
+	if f.Status != nil {
+		s := string(*f.Status)
+		status = &s
+	}
+
+	var total int
+	if err := r.pool.QueryRow(ctx,
+		`SELECT count(*) FROM customers WHERE ($1::text IS NULL OR status = $1)`, status,
+	).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count customers: %w", err)
+	}
+
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+customerColumns+` FROM customers
+		 WHERE ($1::text IS NULL OR status = $1)
+		 ORDER BY created_at ASC, id ASC
+		 LIMIT $2 OFFSET $3`, status, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list customers: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]domain.Customer, 0, limit)
+	for rows.Next() {
+		c, err := scanCustomer(rows)
+		if err != nil {
+			return nil, 0, fmt.Errorf("scan customer: %w", err)
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("list customers: %w", err)
+	}
+	return out, total, nil
 }

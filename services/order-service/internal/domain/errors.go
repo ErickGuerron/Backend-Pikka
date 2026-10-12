@@ -15,6 +15,9 @@ var (
 	// ErrInvalidStatus: se intentó asignar un CustomerStatus desconocido.
 	ErrInvalidStatus = errors.New("invalid customer status")
 
+	// ErrInvalidPagination: limit u offset negativos en un listado.
+	ErrInvalidPagination = errors.New("invalid pagination")
+
 	// ErrInvalidSurcharge: el monto pasado a AddSurcharge/PaySurcharge es
 	// negativo o produciría un saldo inconsistente.
 	ErrInvalidSurcharge = errors.New("invalid surcharge amount")

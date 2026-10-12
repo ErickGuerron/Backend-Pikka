@@ -13,6 +13,18 @@ service CustomerService {
   // GetByUserID devuelve el Customer asociado a un user_id.
   rpc GetByUserID(GetByUserIDRequest) returns (GetByUserIDResponse);
 
+  // GetByID devuelve el Customer por su id interno.
+  //
+  // Códigos de estado gRPC: INVALID_ARGUMENT si id no es un UUID; NOT_FOUND si no existe.
+  rpc GetByID(GetByIDRequest) returns (GetByIDResponse);
+
+  // ListCustomers devuelve una página de Customers ordenados por created_at e id
+  // (ascendente, orden estable), con filtro opcional por estado. Solo lo invoca ADMIN.
+  //
+  // Códigos de estado gRPC: INVALID_ARGUMENT si limit u offset son negativos o si
+  // status no es un estado válido.
+  rpc ListCustomers(ListCustomersRequest) returns (ListCustomersResponse);
+
   // UpdateStatus actualiza el estado del Customer (solo ADMIN lo invoca).
   rpc UpdateStatus(UpdateStatusRequest) returns (UpdateStatusResponse);
 
@@ -47,6 +59,32 @@ message GetByUserIDRequest {
 
 message GetByUserIDResponse {
   Customer customer = 1;
+}
+
+message GetByIDRequest {
+  string id = 1;                       // UUID v4 del Customer
+}
+
+message GetByIDResponse {
+  Customer customer = 1;
+}
+
+message ListCustomersRequest {
+  // Cantidad máxima de clientes a devolver. Cero usa el valor por defecto (50).
+  // El máximo es 100: un valor mayor se limita a 100 y no es un error.
+  // Un valor negativo falla con INVALID_ARGUMENT.
+  int32 limit = 1;
+  // Cantidad de clientes a saltar. Cero empieza en el primero. Negativo falla con INVALID_ARGUMENT.
+  int32 offset = 2;
+  // Filtro opcional por estado (ACTIVO | BLOQUEADO_POR_SALDO | BLOQUEADO_POR_INCIDENCIAS).
+  // Vacío no filtra.
+  string status = 3;
+}
+
+message ListCustomersResponse {
+  repeated Customer customers = 1;
+  // Total de clientes que cumplen el filtro (independiente de limit/offset).
+  int32 total = 2;
 }
 
 message UpdateStatusRequest {
