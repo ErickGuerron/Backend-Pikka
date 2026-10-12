@@ -88,6 +88,15 @@ func (a *Auth) GetUser(ctx context.Context, m CallMeta, req *authv1.GetUserReque
 	return a.client.GetUser(ctx, req)
 }
 
+// ListUsers consulta el listado completo de usuarios. El llamador ya pasó el
+// adminOnlyMiddleware del router: la autorización final igual se valida en el
+// caso de uso de auth-service.
+func (a *Auth) ListUsers(ctx context.Context, m CallMeta, req *authv1.ListUsersRequest) (*authv1.ListUsersResponse, error) {
+	ctx, cancel := a.outgoing(ctx, m)
+	defer cancel()
+	return a.client.ListUsers(ctx, req)
+}
+
 // Ready verifica con el protocolo estándar de health de gRPC que el servicio atiende.
 func (a *Auth) Ready(ctx context.Context) bool {
 	if a.health == nil {

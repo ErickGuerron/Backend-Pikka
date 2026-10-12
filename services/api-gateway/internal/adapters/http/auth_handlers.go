@@ -17,6 +17,7 @@ type AuthClient interface {
 	CreateUser(ctx context.Context, m grpcclient.CallMeta, req *authv1.CreateUserRequest) (*authv1.CreateUserResponse, error)
 	GetUser(ctx context.Context, m grpcclient.CallMeta, req *authv1.GetUserRequest) (*authv1.GetUserResponse, error)
 	SignupCustomer(ctx context.Context, m grpcclient.CallMeta, req *authv1.SignupCustomerRequest) (*authv1.SignupCustomerResponse, error)
+	ListUsers(ctx context.Context, m grpcclient.CallMeta, req *authv1.ListUsersRequest) (*authv1.ListUsersResponse, error)
 }
 
 // Los handlers solo traducen REST <-> gRPC. La autorización y las reglas viven en los servicios.
@@ -54,6 +55,10 @@ type signupResponse struct {
 	TokenType   string  `json:"tokenType"`
 	ExpiresIn   int64   `json:"expiresIn"`
 	User        userDTO `json:"user"`
+}
+
+type listUsersResponse struct {
+	Users []userDTO `json:"users"`
 }
 
 type userDTO struct {
@@ -137,6 +142,21 @@ func (h *authHandlers) signup(c echo.Context) error {
 		ExpiresIn:   res.GetExpiresInSeconds(),
 		User:        toUserDTO(res.GetUser()),
 	})
+}
+
+// listUsers devuelve la lista completa de usuarios. La autorización por rol
+// (solo ADMIN) la aplica el adminOnlyMiddleware antes de llegar a este handler;
+// la capa de auth-service revalida por defensa en profundidad.
+func (h *authHandlers) listUsers(c echo.Context) error {
+	res, err := h.auth.ListUsers(c.Request().Context(), callMeta(c), &authv1.ListUsersRequest{})
+	if err != nil {
+		return err
+	}
+	out := listUsersResponse{Users: make([]userDTO, 0, len(res.GetUsers()))}
+	for _, u := range res.GetUsers() {
+		out.Users = append(out.Users, toUserDTO(u))
+	}
+	return c.JSON(http.StatusOK, out)
 }
 
 func bindJSON(c echo.Context, dst any) error {

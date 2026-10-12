@@ -111,6 +111,11 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 	authed.POST("/users", h.createUser)
 	authed.GET("/users/:id", h.getUser)
 
+	// Subgrupo adminOnly: 403 antes de tocar el handler ni el servicio interno
+	// para cualquier rol distinto de ADMIN (ADR 0008 §3).
+	adminOnly := authed.Group("", AdminOnly())
+	adminOnly.GET("/users", h.listUsers)
+
 	z := &zonesHandlers{zones: zones}
 	authed.POST("/zones", z.create)
 	authed.GET("/zones/classify", z.classify)

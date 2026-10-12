@@ -22,6 +22,9 @@ service AuthService {
   // SignupCustomer registra un cliente nuevo desde la app móvil.
   // Es público: no requiere JWT. El API Gateway lo protege con rate limit.
   rpc SignupCustomer(SignupCustomerRequest) returns (SignupCustomerResponse);
+
+  // ListUsers devuelve todos los usuarios del sistema. Solo ADMIN.
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
 }
 
 enum Role {
@@ -93,4 +96,10 @@ message SignupCustomerResponse {
   string token_type = 2;
   int64 expires_in_seconds = 3;
   User user = 4;
+}
+
+message ListUsersRequest {}
+
+message ListUsersResponse {
+  repeated User users = 1;
 }

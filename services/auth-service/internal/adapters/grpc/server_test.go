@@ -68,6 +68,14 @@ func (r *memRepo) FindByID(_ context.Context, id string) (domain.User, error) {
 
 func (r *memRepo) Count(context.Context) (int, error) { return len(r.users), nil }
 
+func (r *memRepo) List(context.Context) ([]domain.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]domain.User, 0, len(r.users))
+	out = append(out, r.users...)
+	return out, nil
+}
+
 func newClient(t *testing.T) authv1.AuthServiceClient {
 	t.Helper()
 	repo := &memRepo{}

@@ -71,6 +71,24 @@ func (f *fakeAuth) SignupCustomer(_ context.Context, m grpcclient.CallMeta, req 
 		User: &authv1.User{Id: "u-customer", Email: req.GetEmail(), FullName: req.GetFullName(), Role: authv1.Role_ROLE_CUSTOMER, Active: true, CreatedAt: "2026-01-02T03:04:05Z"}}, nil
 }
 
+// ListUsers devuelve una lista con dos usuarios. Los handlers reciben
+// CallMeta con el rol del llamador; el handler debe rechazar (403) si el rol
+// no es ADMIN antes de invocar este método. El fake no hace ninguna validación
+// de rol porque la lógica vive en el handler HTTP (adminOnlyMiddleware) y en
+// el caso de uso (ListUsers del Auth Service).
+func (f *fakeAuth) ListUsers(_ context.Context, m grpcclient.CallMeta, _ *authv1.ListUsersRequest) (*authv1.ListUsersResponse, error) {
+	f.lastMeta = m
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &authv1.ListUsersResponse{
+		Users: []*authv1.User{
+			{Id: "u-admin", Email: "admin@example.com", FullName: "Admin", Role: authv1.Role_ROLE_ADMIN, Active: true, CreatedAt: "2026-01-01T00:00:00Z"},
+			{Id: "u-customer", Email: "cliente@example.com", FullName: "Cliente", Role: authv1.Role_ROLE_CUSTOMER, Active: true, CreatedAt: "2026-01-02T00:00:00Z"},
+		},
+	}, nil
+}
+
 func token(t *testing.T, sub, role string) string {
 	t.Helper()
 	s, err := gojwt.NewWithClaims(gojwt.SigningMethodHS256, gojwt.MapClaims{
@@ -204,6 +222,67 @@ func TestCreateUser(t *testing.T) {
 		map[string]string{"Authorization": "Bearer " + token(t, "u-1", "ADMIN")})
 	require.Equal(t, http.StatusCreated, rec.Code)
 	assert.Contains(t, rec.Body.String(), `"role":"DRIVER"`)
+}
+
+// --- BE-T3: GET /api/v1/users (solo ADMIN) ---------------------------------
+
+func TestListUsers_AsAdmin_Returns200(t *testing.T) {
+	auth := &fakeAuth{}
+	h := newRouter(auth, true)
+
+	rec := do(h, http.MethodGet, "/api/v1/users", "",
+		map[string]string{"Authorization": "Bearer " + token(t, "u-1", "ADMIN")})
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	users, ok := body["users"].([]any)
+	require.True(t, ok, "la respuesta debe tener clave users como array")
+	assert.Len(t, users, 2)
+
+	// El rol del caller se propagó al backend vía CallMeta.
+	assert.Equal(t, "u-1", auth.lastMeta.UserID)
+	assert.Equal(t, "ADMIN", auth.lastMeta.Role)
+}
+
+func TestListUsers_AsCustomer_Returns403(t *testing.T) {
+	auth := &fakeAuth{}
+	h := newRouter(auth, true)
+
+	rec := do(h, http.MethodGet, "/api/v1/users", "",
+		map[string]string{"Authorization": "Bearer " + token(t, "u-9", "CUSTOMER")})
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Equal(t, "FORBIDDEN", decodeError(t, rec).Code)
+
+	// El middleware corta antes de llegar al handler, así que CallMeta queda vacío.
+	assert.Equal(t, "", auth.lastMeta.UserID)
+}
+
+func TestListUsers_AsOperator_Returns403(t *testing.T) {
+	h := newRouter(&fakeAuth{}, true)
+
+	rec := do(h, http.MethodGet, "/api/v1/users", "",
+		map[string]string{"Authorization": "Bearer " + token(t, "u-3", "OPERATOR")})
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Equal(t, "FORBIDDEN", decodeError(t, rec).Code)
+}
+
+func TestListUsers_AsDriver_Returns403(t *testing.T) {
+	h := newRouter(&fakeAuth{}, true)
+
+	rec := do(h, http.MethodGet, "/api/v1/users", "",
+		map[string]string{"Authorization": "Bearer " + token(t, "u-7", "DRIVER")})
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Equal(t, "FORBIDDEN", decodeError(t, rec).Code)
+}
+
+func TestListUsers_WithoutAuth_Returns401(t *testing.T) {
+	auth := &fakeAuth{}
+	h := newRouter(auth, true)
+
+	rec := do(h, http.MethodGet, "/api/v1/users", "", nil)
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Equal(t, "UNAUTHENTICATED", decodeError(t, rec).Code)
 }
 
 func TestGRPCErrorsAreTranslated(t *testing.T) {

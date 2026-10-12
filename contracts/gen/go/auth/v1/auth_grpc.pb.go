@@ -24,6 +24,7 @@ const (
 	AuthService_GetUser_FullMethodName        = "/auth.v1.AuthService/GetUser"
 	AuthService_ValidateToken_FullMethodName  = "/auth.v1.AuthService/ValidateToken"
 	AuthService_SignupCustomer_FullMethodName = "/auth.v1.AuthService/SignupCustomer"
+	AuthService_ListUsers_FullMethodName      = "/auth.v1.AuthService/ListUsers"
 )
 
 // AuthServiceClient is the client API for AuthService service.
@@ -44,6 +45,8 @@ type AuthServiceClient interface {
 	// SignupCustomer registra un cliente nuevo desde la app móvil.
 	// Es público: no requiere JWT. El API Gateway lo protege con rate limit.
 	SignupCustomer(ctx context.Context, in *SignupCustomerRequest, opts ...grpc.CallOption) (*SignupCustomerResponse, error)
+	// ListUsers devuelve todos los usuarios del sistema. Solo ADMIN.
+	ListUsers(ctx context.Context, in *ListUsersRequest, opts ...grpc.CallOption) (*ListUsersResponse, error)
 }
 
 type authServiceClient struct {
@@ -104,6 +107,16 @@ func (c *authServiceClient) SignupCustomer(ctx context.Context, in *SignupCustom
 	return out, nil
 }
 
+func (c *authServiceClient) ListUsers(ctx context.Context, in *ListUsersRequest, opts ...grpc.CallOption) (*ListUsersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListUsersResponse)
+	err := c.cc.Invoke(ctx, AuthService_ListUsers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AuthServiceServer is the server API for AuthService service.
 // All implementations must embed UnimplementedAuthServiceServer
 // for forward compatibility.
@@ -122,6 +135,8 @@ type AuthServiceServer interface {
 	// SignupCustomer registra un cliente nuevo desde la app móvil.
 	// Es público: no requiere JWT. El API Gateway lo protege con rate limit.
 	SignupCustomer(context.Context, *SignupCustomerRequest) (*SignupCustomerResponse, error)
+	// ListUsers devuelve todos los usuarios del sistema. Solo ADMIN.
+	ListUsers(context.Context, *ListUsersRequest) (*ListUsersResponse, error)
 	mustEmbedUnimplementedAuthServiceServer()
 }
 
@@ -146,6 +161,9 @@ func (UnimplementedAuthServiceServer) ValidateToken(context.Context, *ValidateTo
 }
 func (UnimplementedAuthServiceServer) SignupCustomer(context.Context, *SignupCustomerRequest) (*SignupCustomerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SignupCustomer not implemented")
+}
+func (UnimplementedAuthServiceServer) ListUsers(context.Context, *ListUsersRequest) (*ListUsersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListUsers not implemented")
 }
 func (UnimplementedAuthServiceServer) mustEmbedUnimplementedAuthServiceServer() {}
 func (UnimplementedAuthServiceServer) testEmbeddedByValue()                     {}
@@ -258,6 +276,24 @@ func _AuthService_SignupCustomer_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuthService_ListUsers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListUsersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).ListUsers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_ListUsers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).ListUsers(ctx, req.(*ListUsersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AuthService_ServiceDesc is the grpc.ServiceDesc for AuthService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -284,6 +320,10 @@ var AuthService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SignupCustomer",
 			Handler:    _AuthService_SignupCustomer_Handler,
+		},
+		{
+			MethodName: "ListUsers",
+			Handler:    _AuthService_ListUsers_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
