@@ -1,2 +1,0 @@
--- BE-T4a: placeholder. La migración real del esquema orders
--- (incluida la tabla customers) llega en BE-T4b.
