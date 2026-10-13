@@ -63,6 +63,18 @@ func (r *fakeRepo) Count(context.Context) (int, error) {
 	return len(r.users), nil
 }
 
+// List devuelve los usuarios en orden de creación (el orden natural del map
+// puede no ser estable, pero para los tests basta con "los devuelve todos").
+func (r *fakeRepo) List(context.Context) ([]domain.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]domain.User, 0, len(r.users))
+	for _, u := range r.users {
+		out = append(out, u)
+	}
+	return out, nil
+}
+
 // fakeHasher evita el costo de bcrypt en pruebas unitarias.
 type fakeHasher struct{ compares int }
 

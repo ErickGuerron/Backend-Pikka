@@ -6,10 +6,15 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+
+	"github.com/ErickGuerron/Backend-Pikka/services/zone-service/internal/domain"
 )
 
 // Metadata que el API Gateway propaga tras validar el JWT (ADR 0002).
-const metadataUserRole = "x-user-role"
+const (
+	metadataUserRole = "x-user-role"
+	metadataUserID   = "x-user-id"
+)
 
 // Roles que pueden usar las operaciones de zonas (ADR 0008).
 const (
@@ -32,4 +37,15 @@ func requireRole(ctx context.Context, allowed ...string) error {
 		}
 	}
 	return status.Error(codes.PermissionDenied, "forbidden")
+}
+
+// withActor fija en el contexto quién hace el cambio, para la bitácora. Sin usuario identificado
+// no se puede auditar, así que la operación se rechaza.
+func withActor(ctx context.Context) (context.Context, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	ids := md.Get(metadataUserID)
+	if len(ids) == 0 || ids[0] == "" {
+		return ctx, status.Error(codes.Unauthenticated, "missing user identity")
+	}
+	return domain.WithActor(ctx, ids[0]), nil
 }
