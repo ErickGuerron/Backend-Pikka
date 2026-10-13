@@ -232,7 +232,19 @@ paths:
       tags: [orders]
       operationId: listOrders
       summary: Lista pedidos (ADMIN u OPERATOR)
-      description: DRIVER no tiene acceso. El filtrado por alcance se define con el rol CUSTOMER.
+      description: |
+        Contrato de Sprint 1; transporte implementado en Sprint 2.
+        DRIVER no tiene acceso. El filtrado por alcance se define con el rol CUSTOMER.
+        Orden descendente por createdAt y ascendente por id en empates.
+        Sin resultados devuelve un arreglo vacío.
+      parameters:
+        - name: deliveryDate
+          in: query
+          schema: { type: string, format: date }
+          description: Filtra por fecha de entrega, independientemente de createdAt.
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/OrderStatus" }
       responses:
         "200":
           description: Pedidos
@@ -241,12 +253,19 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/Order" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
     post:
       tags: [orders]
       operationId: createOrder
       summary: Registra un pedido (ADMIN u OPERATOR)
+      description: |
+        Contrato de Sprint 1; transporte implementado en Sprint 2.
+        El servidor asigna id, createdAt y el estado. La base del Sprint 1 inicia
+        en PENDING; la validación automática posterior puede enviarlo a revisión.
+        La fecha de entrega debe ser hoy o posterior en la zona horaria de operación.
+        La ventana no cruza medianoche: windowEnd debe ser posterior a windowStart.
       requestBody:
         required: true
         content:
@@ -261,6 +280,27 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/orders/{id}:
+    get:
+      tags: [orders]
+      operationId: getOrder
+      summary: Obtiene un pedido (ADMIN u OPERATOR)
+      description: Contrato de Sprint 1; transporte implementado en Sprint 2.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Pedido encontrado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/orders/exceptions:
     get:
       tags: [orders]
@@ -552,10 +592,10 @@ components:
       required: [id, address, latitude, longitude, deliveryDate, windowStart, windowEnd, status, reviewReasons, createdAt]
       properties:
         id: { type: string, format: uuid }
-        address: { type: string }
+        address: { type: string, minLength: 5, maxLength: 300 }
         latitude: { type: number, minimum: -90, maximum: 90, description: Latitud WGS 84 del punto de entrega }
         longitude: { type: number, minimum: -180, maximum: 180, description: Longitud WGS 84 del punto de entrega }
-        deliveryDate: { type: string, format: date, description: Fecha de entrega YYYY-MM-DD }
+        deliveryDate: { type: string, format: date, description: Fecha civil de entrega YYYY-MM-DD en la zona horaria de operación; independiente de createdAt }
         windowStart: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$", description: Hora de inicio HH:mm }
         windowEnd: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$", description: Hora de fin HH:mm }
         status: { $ref: "#/components/schemas/OrderStatus" }
@@ -563,7 +603,7 @@ components:
           type: array
           description: Motivos por los que el pedido quedó en revisión. Vacío si no aplica.
           items: { $ref: "#/components/schemas/ReviewReason" }
-        createdAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time, description: Instante de registro asignado por el servidor en RFC 3339 UTC }
     CreateOrderRequest:
       type: object
       required: [address, latitude, longitude, deliveryDate, windowStart, windowEnd]

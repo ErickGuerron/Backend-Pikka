@@ -2,6 +2,8 @@ module github.com/ErickGuerron/Backend-Pikka/services/order-service
 
 go 1.26.0
 
+toolchain go1.26.9
+
 require (
 	github.com/ErickGuerron/Backend-Pikka/contracts v0.0.0-00010101000000-000000000000
 	github.com/golang-migrate/migrate/v4 v4.20.1

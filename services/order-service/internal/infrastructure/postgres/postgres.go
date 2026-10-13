@@ -3,17 +3,10 @@ package postgres
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"strings"
 	"time"
 
-	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5" // driver pgx5://
-	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/ErickGuerron/Backend-Pikka/services/order-service/migrations"
 )
 
 // Connect abre un pool y verifica la conexión, reintentando mientras la base arranca.
@@ -47,22 +40,4 @@ func Connect(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	}
 	pool.Close()
 	return nil, fmt.Errorf("postgres not reachable: %w", lastErr)
-}
-
-// Migrate aplica las migraciones pendientes del esquema del servicio.
-func Migrate(dsn string) error {
-	src, err := iofs.New(migrations.FS, ".")
-	if err != nil {
-		return err
-	}
-	m, err := migrate.NewWithSourceInstance("iofs", src, "pgx5://"+strings.TrimPrefix(dsn, "postgres://"))
-	if err != nil {
-		return fmt.Errorf("init migrations: %w", err)
-	}
-	upErr := m.Up()
-	srcErr, dbErr := m.Close()
-	if upErr != nil && !errors.Is(upErr, migrate.ErrNoChange) {
-		return fmt.Errorf("apply migrations: %w", upErr)
-	}
-	return errors.Join(srcErr, dbErr)
 }
