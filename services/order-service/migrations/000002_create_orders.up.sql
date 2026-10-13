@@ -1,4 +1,5 @@
 -- Run with order_service_user and search_path=orders,public.
+-- Version 1 is the existing customers migration from develop.
 -- No foreign keys or queries cross another service's schema.
 CREATE TABLE orders (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -21,7 +21,7 @@ func ParseStatus(value string) (Status, error) {
 		StatusInTransit, StatusDelivered, StatusNotDelivered, StatusCancelled:
 		return status, nil
 	default:
-		return "", ErrInvalidStatus
+		return "", ErrInvalidOrderStatus
 	}
 }
 

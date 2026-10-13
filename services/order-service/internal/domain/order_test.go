@@ -181,7 +181,7 @@ func TestStatusTransitionsAndCancellation(t *testing.T) {
 		}
 	}
 	for _, value := range []string{"", "pending", "UNKNOWN", "ORDER_STATUS_PENDING"} {
-		if _, err := domain.ParseStatus(value); !errors.Is(err, domain.ErrInvalidStatus) {
+		if _, err := domain.ParseStatus(value); !errors.Is(err, domain.ErrInvalidOrderStatus) {
 			t.Errorf("unknown status %q: %v", value, err)
 		}
 	}
@@ -203,7 +203,7 @@ func TestTransitionPreservesDeliveryDataAndRejectsInvalidChanges(t *testing.T) {
 	if _, err := order.TransitionTo(domain.StatusDelivered); !errors.Is(err, domain.ErrInvalidTransition) {
 		t.Fatalf("skipped steps: %v", err)
 	}
-	if _, err := order.TransitionTo("UNKNOWN"); !errors.Is(err, domain.ErrInvalidStatus) {
+	if _, err := order.TransitionTo("UNKNOWN"); !errors.Is(err, domain.ErrInvalidOrderStatus) {
 		t.Fatalf("unknown next status: %v", err)
 	}
 	invalid := domain.Order{}

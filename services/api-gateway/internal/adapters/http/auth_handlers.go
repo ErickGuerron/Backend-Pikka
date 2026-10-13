@@ -6,8 +6,11 @@ import (
 	"strings"
 
 	"github.com/labstack/echo/v4"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	authv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/auth/v1"
+	customerv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/customer/v1"
 	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/grpcclient"
 )
 
@@ -16,11 +19,19 @@ type AuthClient interface {
 	Login(ctx context.Context, m grpcclient.CallMeta, req *authv1.LoginRequest) (*authv1.LoginResponse, error)
 	CreateUser(ctx context.Context, m grpcclient.CallMeta, req *authv1.CreateUserRequest) (*authv1.CreateUserResponse, error)
 	GetUser(ctx context.Context, m grpcclient.CallMeta, req *authv1.GetUserRequest) (*authv1.GetUserResponse, error)
+	SignupCustomer(ctx context.Context, m grpcclient.CallMeta, req *authv1.SignupCustomerRequest) (*authv1.SignupCustomerResponse, error)
+	ListUsers(ctx context.Context, m grpcclient.CallMeta, req *authv1.ListUsersRequest) (*authv1.ListUsersResponse, error)
 }
 
 // Los handlers solo traducen REST <-> gRPC. La autorización y las reglas viven en los servicios.
 type authHandlers struct {
-	auth AuthClient
+	auth      AuthClient
+	customers CustomerClient // opcional: si es nil el signup no crea Customer
+}
+
+// CustomerClient es lo que el signup necesita del Order Service.
+type CustomerClient interface {
+	CreateCustomer(ctx context.Context, m grpcclient.CallMeta, req *customerv1.CreateCustomerRequest) (*customerv1.CreateCustomerResponse, error)
 }
 
 type loginRequest struct {
@@ -40,6 +51,23 @@ type createUserRequest struct {
 	Password string `json:"password"`
 	FullName string `json:"fullName"`
 	Role     string `json:"role"`
+}
+
+type signupRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	FullName string `json:"fullName"`
+}
+
+type signupResponse struct {
+	AccessToken string  `json:"accessToken"`
+	TokenType   string  `json:"tokenType"`
+	ExpiresIn   int64   `json:"expiresIn"`
+	User        userDTO `json:"user"`
+}
+
+type listUsersResponse struct {
+	Users []userDTO `json:"users"`
 }
 
 type userDTO struct {
@@ -102,6 +130,74 @@ func (h *authHandlers) createUser(c echo.Context) error {
 	return c.JSON(http.StatusCreated, toUserDTO(res.GetUser()))
 }
 
+// signup registra un cliente nuevo. Ruta pública: no propaga identidad del
+// Gateway (el cliente todavía no existe). Devuelve 201 con el JWT.
+func (h *authHandlers) signup(c echo.Context) error {
+	var req signupRequest
+	if err := bindJSON(c, &req); err != nil {
+		return err
+	}
+	res, err := h.auth.SignupCustomer(c.Request().Context(), callMeta(c), &authv1.SignupCustomerRequest{
+		Email:    req.Email,
+		Password: req.Password,
+		FullName: req.FullName,
+	})
+	if err != nil {
+		return err
+	}
+	h.createCustomer(c, res.GetUser())
+	return c.JSON(http.StatusCreated, signupResponse{
+		AccessToken: res.GetAccessToken(),
+		TokenType:   res.GetTokenType(),
+		ExpiresIn:   res.GetExpiresInSeconds(),
+		User:        toUserDTO(res.GetUser()),
+	})
+}
+
+// createCustomer registra el Customer en order-service tras un signup exitoso.
+//
+// Política de fallos: la cuenta de auth ya existe y el cliente recibe su token,
+// así que un fallo aquí NO se propaga: se loguea con el request id y el signup
+// responde 201. AlreadyExists cuenta como éxito (idempotencia). Un único
+// reintento cubre cortes transitorios (Unavailable). Si igualmente falla, el
+// reintento posterior es seguro: CreateCustomer es idempotente por user_id
+// (ErrCustomerAlreadyExists -> AlreadyExists), por lo que un backfill o job de
+// reconciliación puede volver a llamarlo sin riesgo.
+func (h *authHandlers) createCustomer(c echo.Context, u *authv1.User) {
+	if h.customers == nil || u == nil {
+		return
+	}
+	req := &customerv1.CreateCustomerRequest{UserId: u.GetId(), Email: u.GetEmail(), FullName: u.GetFullName()}
+	m := callMeta(c)
+	var err error
+	for attempt := 0; attempt < 2; attempt++ {
+		_, err = h.customers.CreateCustomer(c.Request().Context(), m, req)
+		code := status.Code(err)
+		if err == nil || code == codes.AlreadyExists {
+			return
+		}
+		if code != codes.Unavailable {
+			break
+		}
+	}
+	c.Logger().Errorf("signup: create customer failed request_id=%s user_id=%s err=%v", m.RequestID, u.GetId(), err)
+}
+
+// listUsers devuelve la lista completa de usuarios. La autorización por rol
+// (solo ADMIN) la aplica el adminOnlyMiddleware antes de llegar a este handler;
+// la capa de auth-service revalida por defensa en profundidad.
+func (h *authHandlers) listUsers(c echo.Context) error {
+	res, err := h.auth.ListUsers(c.Request().Context(), callMeta(c), &authv1.ListUsersRequest{})
+	if err != nil {
+		return err
+	}
+	out := listUsersResponse{Users: make([]userDTO, 0, len(res.GetUsers()))}
+	for _, u := range res.GetUsers() {
+		out.Users = append(out.Users, toUserDTO(u))
+	}
+	return c.JSON(http.StatusOK, out)
+}
+
 func bindJSON(c echo.Context, dst any) error {
 	if ct := c.Request().Header.Get(echo.HeaderContentType); !isJSON(ct) {
 		return echo.NewHTTPError(http.StatusUnsupportedMediaType, "content type must be application/json")
@@ -148,6 +244,8 @@ func roleFromProto(r authv1.Role) string {
 		return "OPERATOR"
 	case authv1.Role_ROLE_DRIVER:
 		return "DRIVER"
+	case authv1.Role_ROLE_CUSTOMER:
+		return "CUSTOMER"
 	default:
 		return ""
 	}

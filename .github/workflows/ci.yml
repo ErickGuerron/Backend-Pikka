@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [services/auth-service, services/api-gateway, services/zone-service, services/order-service]
+        module: [services/auth-service, services/api-gateway, services/order-service, services/zone-service]
     env:
       # Order Service must declare every dependency without inheriting go.work.
       GOWORK: ${{ matrix.module == 'services/order-service' && 'off' || 'auto' }}
@@ -132,6 +132,8 @@ jobs:
         run: docker build -f services/api-gateway/Dockerfile -t lastmile/api-gateway:ci .
       - name: Build zone-service
         run: docker build -f services/zone-service/Dockerfile -t lastmile/zone-service:ci .
+      - name: Build order-service
+        run: docker build -f services/order-service/Dockerfile -t lastmile/order-service:ci .
 
   secrets:
     name: Secret scan

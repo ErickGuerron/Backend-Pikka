@@ -13,9 +13,26 @@ dependencias están declaradas en su propio `go.mod`, sin heredar versiones de
 otros servicios a través del workspace.
 
 El contrato `orders.v1` está en `contracts/proto/orders/v1/orders.proto` y su
-correspondencia REST en `docs/contracts/orders-v1.md`. El transporte gRPC y su
-consumo desde el Gateway pertenecen al Sprint 2. Esta base todavía no levanta
-un servidor ni habilita los endpoints de pedidos.
+correspondencia REST en `docs/contracts/orders-v1.md`. El transporte gRPC de
+pedidos y su consumo desde el Gateway pertenecen al Sprint 2. El servidor
+existente ya publica el dominio Customer y los health checks del servicio.
+
+## Clientes del MVP
+
+Se conserva la implementación integrada en `develop`: dominio `Customer`,
+casos de uso en `internal/application/customer`, repositorio PostgreSQL y
+`CustomerService` gRPC consumido por el Gateway. Los clientes tienen estados
+`ACTIVO`, `BLOQUEADO_POR_SALDO` y `BLOQUEADO_POR_INCIDENCIAS`, con saldo
+`pending_surcharge` representado por `decimal.Decimal`.
+
+`cmd/api/main.go` aplica las migraciones del esquema, abre el pool y atiende HTTP
+y gRPC. `HTTP_PORT` vale 8080 y `ORDER_GRPC_PORT` 9091 por defecto. La conexión
+usa `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`,
+`POSTGRES_SCHEMA` y la credencial requerida `POSTGRES_PASSWORD`.
+
+La migración existente `000001_create_customers` se conserva. La creación de
+pedidos usa la versión 2 y el límite de fechas la versión 3, para que las bases
+que ya tienen clientes puedan actualizarse sin colisiones de versión.
 
 ## Reglas del dominio
 
@@ -52,7 +69,7 @@ Las migraciones embebidas crean `orders.orders` con `DATE` para la entrega,
 versión positiva. PostgreSQL valida coordenadas, estados, ventanas y coherencia
 entre `PENDING_REVIEW` y sus motivos. Hay índices por fecha y estado, y por
 instante de registro. La migración inversa elimina la tabla y sus índices.
-Una segunda migración limita los años de entrega a 0001–9999, para impedir que
+La migración `000003_limit_delivery_date` limita los años de entrega a 0001–9999, para impedir que
 PostgreSQL acepte fechas anteriores a nuestra era o años de cinco dígitos que el
 contrato `YYYY-MM-DD` no representa. Incluye su propia migración inversa.
 

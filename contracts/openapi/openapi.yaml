@@ -4,11 +4,12 @@ info:
   version: 1.0.0
   description: |
     API pública REST/JSON expuesta por el API Gateway. Clientes: aplicación web
-    (React) y aplicación móvil de repartidores (React Native). Los microservicios
-    internos no son accesibles directamente.
+    (React) y aplicación móvil (React Native, clientes y repartidores). Los
+    microservicios internos no son accesibles directamente.
 
     Fase 1 cubre autenticación y usuarios. Pedidos, zonas, rutas, repartidores y
-    seguimiento se agregan en las fases siguientes.
+    seguimiento se agregan en las fases siguientes. El MVP del cliente
+    (ADR 0006, ADR 0007, ADR 0008) agrega el signup público de CUSTOMER.
 servers:
   - url: /
     description: Este API Gateway
@@ -19,6 +20,8 @@ tags:
     description: Inicio de sesión e identidad actual
   - name: users
     description: Administración de usuarios y roles
+  - name: customers
+    description: Consulta de clientes (solo ADMIN)
   - name: orders
     description: Registro y consulta de pedidos
   - name: zones
@@ -86,7 +89,59 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/User" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/auth/signup:
+    post:
+      tags: [auth]
+      operationId: signupCustomer
+      summary: Registra un cliente y devuelve un token de acceso (rol CUSTOMER)
+      description: |
+        Endpoint público para que un cliente se registre de forma autónoma desde
+        la app móvil. No requiere JWT. Protegido por rate limit por IP
+        (SIGNUP_RATE_PER_MINUTE, default 10/min).
+
+        El token emitido sirve para `GET /api/v1/auth/me` y devuelve
+        `role: "CUSTOMER"`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, fullName]
+              properties:
+                email: { type: string, format: email, maxLength: 254 }
+                password: { type: string, minLength: 8, maxLength: 72, description: Máximo 72 bytes (límite de bcrypt) }
+                fullName: { type: string, minLength: 1, maxLength: 120 }
+      responses:
+        "201":
+          description: Cliente registrado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /api/v1/users:
+    get:
+      tags: [users]
+      operationId: listUsers
+      summary: Lista todos los usuarios (solo ADMIN)
+      description: Sin filtros ni paginación; el filtrado por rol (p. ej. CUSTOMER) lo hace el cliente.
+      responses:
+        "200":
+          description: Usuarios
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [users]
+                properties:
+                  users:
+                    type: array
+                    items: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
     post:
       tags: [users]
       operationId: createUser
@@ -122,6 +177,53 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/customers:
+    get:
+      tags: [customers]
+      operationId: listCustomers
+      summary: Lista clientes paginados (solo ADMIN)
+      description: Orden estable por fecha de creación e id.
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 100, default: 50 }
+          description: Máximo de clientes a devolver. 0 o ausente usa 50; un valor mayor a 100 se limita a 100.
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/CustomerStatus" }
+          description: Filtro opcional por estado.
+      responses:
+        "200":
+          description: Página de clientes
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/customers/{id}:
+    get:
+      tags: [customers]
+      operationId: getCustomer
+      summary: Obtiene un cliente por id (solo ADMIN)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Cliente
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Customer" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -243,6 +345,20 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
   /api/v1/zones:
+    get:
+      tags: [zones]
+      operationId: listZones
+      summary: Lista todas las zonas (ADMIN u OPERATOR)
+      responses:
+        "200":
+          description: Zonas registradas
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Zone" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
     post:
       tags: [zones]
       operationId: createZone
@@ -306,6 +422,87 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [zones]
+      operationId: updateZone
+      summary: Redibuja una zona existente (solo ADMIN). Valida las mismas reglas que la creación.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateZoneRequest" }
+      responses:
+        "200":
+          description: Zona actualizada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Zone" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [zones]
+      operationId: deleteZone
+      summary: Borra físicamente una zona inactiva (solo ADMIN). Requiere motivo y queda en la bitácora.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 5, maxLength: 300 }
+      responses:
+        "204": { description: Zona borrada }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /api/v1/zones/{id}/status:
+    patch:
+      tags: [zones]
+      operationId: setZoneStatus
+      summary: Activa o desactiva una zona (solo ADMIN). El motivo es obligatorio y queda en la bitácora.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status, reason]
+              properties:
+                status: { type: string, enum: [ACTIVE, INACTIVE] }
+                reason: { type: string, minLength: 5, maxLength: 300 }
+      responses:
+        "200":
+          description: Zona actualizada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Zone" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
 security:
   - bearerAuth: []
 components:
@@ -333,6 +530,31 @@ components:
         role: { $ref: "#/components/schemas/Role" }
         active: { type: boolean }
         createdAt: { type: string, format: date-time }
+    CustomerStatus:
+      type: string
+      enum: [ACTIVO, BLOQUEADO_POR_SALDO, BLOQUEADO_POR_INCIDENCIAS]
+    Customer:
+      type: object
+      required: [id, userId, fullName, email, status, pendingSurcharge, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        fullName: { type: string }
+        email: { type: string, format: email }
+        status: { $ref: "#/components/schemas/CustomerStatus" }
+        pendingSurcharge: { type: string, example: "0.00", description: "Decimal con 2 decimales, como string" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CustomerList:
+      type: object
+      required: [customers, total, limit, offset]
+      properties:
+        customers:
+          type: array
+          items: { $ref: "#/components/schemas/Customer" }
+        total: { type: integer, description: "Total que cumple el filtro, independiente de limit/offset" }
+        limit: { type: integer, description: Valor solicitado (0 = default del servicio) }
+        offset: { type: integer }
     LoginRequest:
       type: object
       required: [email, password]
@@ -425,18 +647,74 @@ components:
           minItems: 5
           items: { $ref: "#/components/schemas/Coordinate" }
           description: Anillo cerrado; el primer punto coincide con el último. Son 4 vértices como mínimo, formando un polígono convexo y simple (trapecio, cuadrado o similar).
+        holes:
+          type: array
+          description: Huecos de la zona (dona). Cada hueco es un anillo cerrado estrictamente dentro del exterior y sin tocarlo ni superponerse con otros. Vacío si no hay huecos.
+          items:
+            type: array
+            minItems: 5
+            items: { $ref: "#/components/schemas/Coordinate" }
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
+          description: Una zona inactiva no clasifica puntos ni valida pedidos, pero se conserva para el historial.
+        statusReason:
+          type: string
+          description: Motivo del último cambio de estado. Vacío si nunca se ha desactivado.
         createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, minimum: 1, description: "Sube en cada cambio. Envíala como expectedVersion al editar la zona." }
+        createdBy: { type: string, description: "Usuario que creó la zona, tomado del token." }
+        updatedBy: { type: string, description: "Usuario del último cambio, tomado del token." }
+        settings: { $ref: "#/components/schemas/ZoneSettings" }
+    ZoneSettings:
+      type: object
+      description: Configuración operativa de la zona. Solo ADMIN la define.
+      required: [depotName, depotLatitude, depotLongitude, maxOrdersPerRoute, routeCapacityKg, serviceDays, deliveryWindowFrom, deliveryWindowTo, cutoffTime, dispatchTime, priority, dailyOrderLimit]
+      properties:
+        description: { type: string, maxLength: 500 }
+        depotName: { type: string, maxLength: 120, description: Bodega o almacén de salida de los repartidores. Vacío en zonas anteriores a la configuración. }
+        depotLatitude: { type: number, minimum: -5, maximum: 2, description: "Latitud de la bodega. Dentro de Ecuador (-5 a 2)." }
+        depotLongitude: { type: number, minimum: -92, maximum: -75, description: "Longitud de la bodega. Dentro de Ecuador (-92 a -75)." }
+        maxOrdersPerRoute: { type: integer, minimum: 1, maximum: 50, description: "Máximo de pedidos por ruta (1 a 50)." }
+        routeCapacityKg: { type: number, minimum: 1, maximum: 1000, description: "Capacidad de carga por ruta en kilogramos (1 a 1000)." }
+        timezone: { type: string, example: "America/Guayaquil", description: "Zona horaria IANA. Por defecto America/Guayaquil." }
+        serviceDays:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, enum: [MON, TUE, WED, THU, FRI, SAT, SUN] }
+        deliveryWindowFrom: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$", description: "Inicio de la ventana de entrega, HH:MM local." }
+        deliveryWindowTo: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$", description: "Fin de la ventana de entrega, HH:MM local. Debe ser posterior al inicio." }
+        cutoffTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$", description: "Hora de corte para pedidos de la fecha, HH:MM local." }
+        dispatchTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$", description: "Hora en que salen las rutas, HH:MM local." }
+        priority: { type: string, enum: [NORMAL, HIGH, LOW] }
+        dailyOrderLimit: { type: integer, minimum: 1, maximum: 10000, description: "Límite de pedidos por fecha de entrega (1 a 10000)." }
     CreateZoneRequest:
       type: object
-      required: [code, name, ring]
+      required: [name, ring]
       properties:
-        code: { type: string, maxLength: 32 }
+        code: { type: string, maxLength: 32, description: "Opcional. Si se omite, el servidor genera el código a partir del nombre (NORTE-001)." }
         name: { type: string, maxLength: 120 }
         ring:
           type: array
           minItems: 5
           items: { $ref: "#/components/schemas/Coordinate" }
           description: Anillo cerrado con al menos 4 vértices. Debe ser un polígono convexo y simple; el servicio responde INVALID_ARGUMENT si no lo es.
+        holes:
+          type: array
+          description: Huecos opcionales (dona). Cada uno debe quedar estrictamente dentro del anillo exterior y no superponerse con otro hueco; si no, INVALID_ARGUMENT.
+          items:
+            type: array
+            minItems: 5
+            items: { $ref: "#/components/schemas/Coordinate" }
+        settings: { $ref: "#/components/schemas/ZoneSettings" }
+    UpdateZoneRequest:
+      allOf:
+        - $ref: "#/components/schemas/CreateZoneRequest"
+        - type: object
+          properties:
+            expectedVersion: { type: integer, minimum: 0, description: "Versión que viste por última vez. 0 o ausente = sin control. Si no coincide, responde CONFLICT (409)." }
     Error:
       type: object
       required: [error]
@@ -477,6 +755,11 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     Conflict:
       description: Conflicto con el estado actual
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    UnprocessableEntity:
+      description: La operación no se puede hacer en el estado actual de la zona
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

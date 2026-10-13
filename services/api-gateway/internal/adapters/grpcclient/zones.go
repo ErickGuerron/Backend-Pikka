@@ -18,7 +18,7 @@ type Zones struct {
 	timeout time.Duration
 }
 
-// NewZones crea el envoltorio sobre una conexiÃ³n gRPC.
+// NewZones crea el envoltorio sobre una conexión gRPC.
 func NewZones(conn grpc.ClientConnInterface, timeout time.Duration) *Zones {
 	return &Zones{client: zonesv1.NewZoneServiceClient(conn), health: healthpb.NewHealthClient(conn), timeout: timeout}
 }
@@ -49,6 +49,34 @@ func (z *Zones) GetZone(ctx context.Context, m CallMeta, req *zonesv1.GetZoneReq
 	ctx, cancel := z.outgoing(ctx, m)
 	defer cancel()
 	return z.client.GetZone(ctx, req)
+}
+
+// ListZones devuelve todas las zonas registradas.
+func (z *Zones) ListZones(ctx context.Context, m CallMeta, req *zonesv1.ListZonesRequest) (*zonesv1.ListZonesResponse, error) {
+	ctx, cancel := z.outgoing(ctx, m)
+	defer cancel()
+	return z.client.ListZones(ctx, req)
+}
+
+// UpdateZone redibuja una zona existente.
+func (z *Zones) UpdateZone(ctx context.Context, m CallMeta, req *zonesv1.UpdateZoneRequest) (*zonesv1.UpdateZoneResponse, error) {
+	ctx, cancel := z.outgoing(ctx, m)
+	defer cancel()
+	return z.client.UpdateZone(ctx, req)
+}
+
+// SetZoneStatus activa o desactiva una zona.
+func (z *Zones) SetZoneStatus(ctx context.Context, m CallMeta, req *zonesv1.SetZoneStatusRequest) (*zonesv1.SetZoneStatusResponse, error) {
+	ctx, cancel := z.outgoing(ctx, m)
+	defer cancel()
+	return z.client.SetZoneStatus(ctx, req)
+}
+
+// DeleteZone borra físicamente una zona inactiva.
+func (z *Zones) DeleteZone(ctx context.Context, m CallMeta, req *zonesv1.DeleteZoneRequest) (*zonesv1.DeleteZoneResponse, error) {
+	ctx, cancel := z.outgoing(ctx, m)
+	defer cancel()
+	return z.client.DeleteZone(ctx, req)
 }
 
 // ClassifyPoint devuelve la zona que contiene una coordenada.

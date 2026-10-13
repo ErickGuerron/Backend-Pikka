@@ -1,7 +1,7 @@
 # Sprint 1 de Anthony
 
 Las dos tareas asignadas a Anthony están implementadas en ramas de funcionalidad.
-Las PR están en borrador; la revisión por otro integrante y la integración
+Las PR están preparadas para revisión; la revisión por otro integrante y la integración
 en `develop` quedan como pasos de cierre del equipo. Esta evidencia corresponde
 a la implementación y validación local del 11 de octubre de 2026.
 
@@ -75,3 +75,16 @@ se volvió a ejecutar el análisis de seguridad en modo independiente. Referenci
 
 Los escaneos OWASP y k6 del cierre global del sprint son actividades distintas
 de estas dos tareas y no se presentan como ejecutados en esta entrega.
+
+## Actualización para revisión del 13 de octubre de 2026
+
+Las ramas incorporan los cambios actuales de `develop`, incluidos Customer
+Service y las actualizaciones de zonas. Se conserva `000001_create_customers`;
+las migraciones de pedidos pasan a `000002_create_orders` y
+`000003_limit_delivery_date`. La prueba de reversibilidad comprueba además que
+las filas de clientes sobreviven a las migraciones de pedidos.
+
+El error de estado de pedidos se llama `ErrInvalidOrderStatus` para conservar el
+error `ErrInvalidStatus` de clientes. Hay un solo aplicador de migraciones,
+compartido con el arranque existente del servicio. La PR 17 se integra primero;
+la PR 18 mantiene como base la rama de contrato hasta esa integración.

@@ -164,9 +164,15 @@ func TestOrderMigrations(t *testing.T) {
 	t.Run("down and up scripts are reversible", func(t *testing.T) {
 		// DDL is transactional: rollback restores all preexisting rows and tables.
 		tx := testTx(t, ctx, pool)
+		var customerID string
+		if err := tx.QueryRow(ctx, `INSERT INTO customers (user_id, full_name, email)
+			VALUES (gen_random_uuid(), 'Migration test', gen_random_uuid()::text || '@example.com')
+			RETURNING id::text`).Scan(&customerID); err != nil {
+			t.Fatal(err)
+		}
 		for _, file := range []string{
-			"000002_limit_delivery_date.down.sql", "000001_create_orders.down.sql",
-			"000001_create_orders.up.sql", "000002_limit_delivery_date.up.sql",
+			"000003_limit_delivery_date.down.sql", "000002_create_orders.down.sql",
+			"000002_create_orders.up.sql", "000003_limit_delivery_date.up.sql",
 		} {
 			sql, err := migrations.FS.ReadFile(file)
 			if err != nil {
@@ -175,6 +181,10 @@ func TestOrderMigrations(t *testing.T) {
 			if _, err := tx.Exec(ctx, string(sql)); err != nil {
 				t.Fatalf("%s: %v", file, err)
 			}
+		}
+		var customerCount int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM customers WHERE id = $1`, customerID).Scan(&customerCount); err != nil || customerCount != 1 {
+			t.Fatalf("orders migrations must preserve customers: count=%d err=%v", customerCount, err)
 		}
 		if _, err := tx.Exec(ctx, insertSQL, "Avenida Amazonas 123", 0, 0, "2030-04-12", "09:00", "12:00", "PENDING", []string{}, 1); err != nil {
 			t.Fatalf("insert after down/up: %v", err)

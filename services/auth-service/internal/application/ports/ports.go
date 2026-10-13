@@ -14,6 +14,7 @@ type UserRepository interface {
 	FindByEmail(ctx context.Context, email string) (domain.User, error)
 	FindByID(ctx context.Context, id string) (domain.User, error)
 	Count(ctx context.Context) (int, error)
+	List(ctx context.Context) ([]domain.User, error)
 }
 
 // PasswordHasher calcula y verifica hashes de contraseñas.

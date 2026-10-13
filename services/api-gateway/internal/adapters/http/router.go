@@ -16,16 +16,21 @@ import (
 
 // Options configura las políticas HTTP transversales.
 type Options struct {
-	CORSAllowedOrigins []string
-	RateLimitPerSecond float64
-	RateLimitBurst     int
-	LoginRatePerMinute float64
-	RequestTimeout     time.Duration
-	BodyLimit          string
-	TrustProxy         bool
-	EnableHSTS         bool
+	CORSAllowedOrigins  []string
+	RateLimitPerSecond  float64
+	RateLimitBurst      int
+	LoginRatePerMinute  float64
+	SignupRatePerMinute float64
+	RequestTimeout      time.Duration
+	BodyLimit           string
+	TrustProxy          bool
+	EnableHSTS          bool
 	// EnableDocs publica /docs (Scalar) y /openapi.yaml.
 	EnableDocs bool
+	// Customers, si no es nil, recibe CreateCustomer tras un signup exitoso.
+	Customers CustomerClient
+	// CustomerQueries, si no es nil, habilita GET /customers y GET /customers/:id (ADMIN).
+	CustomerQueries CustomerQueryClient
 }
 
 // Readiness informa si una dependencia está lista.
@@ -92,18 +97,40 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 	}
 
 	api := e.Group("/api/v1", rateLimiter(rate.Limit(opts.RateLimitPerSecond), opts.RateLimitBurst))
-	h := &authHandlers{auth: auth}
+	h := &authHandlers{auth: auth, customers: opts.Customers}
 
 	loginLimit := rateLimiter(rate.Limit(opts.LoginRatePerMinute/60), max(1, int(opts.LoginRatePerMinute/2)))
 	api.POST("/auth/login", h.login, loginLimit)
+	// signup tiene bucket dedicado: comparte la política (mismo valor por defecto)
+	// sin compartir el almacenamiento, para que el abuso de uno no vacíe el otro.
+	signupPerMinute := opts.SignupRatePerMinute
+	if signupPerMinute <= 0 {
+		signupPerMinute = opts.LoginRatePerMinute
+	}
+	signupLimit := rateLimiter(rate.Limit(signupPerMinute/60), max(1, int(signupPerMinute/2)))
+	api.POST("/auth/signup", h.signup, signupLimit)
 
 	authed := api.Group("", Authenticate(verifier))
 	authed.GET("/auth/me", h.me)
 	authed.POST("/users", h.createUser)
 	authed.GET("/users/:id", h.getUser)
 
+	// Subgrupo adminOnly: 403 antes de tocar el handler ni el servicio interno
+	// para cualquier rol distinto de ADMIN (ADR 0008 §3).
+	adminOnly := authed.Group("", AdminOnly())
+	adminOnly.GET("/users", h.listUsers)
+	if opts.CustomerQueries != nil {
+		ch := &customerHandlers{customers: opts.CustomerQueries}
+		adminOnly.GET("/customers", ch.list)
+		adminOnly.GET("/customers/:id", ch.get)
+	}
+
 	z := &zonesHandlers{zones: zones}
 	authed.POST("/zones", z.create)
+	authed.GET("/zones", z.list)
+	authed.PUT("/zones/:id", z.update)
+	authed.PATCH("/zones/:id/status", z.setStatus)
+	authed.DELETE("/zones/:id", z.remove)
 	authed.GET("/zones/classify", z.classify)
 	authed.GET("/zones/:id", z.get)
 
