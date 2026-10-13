@@ -1,0 +1,132 @@
+package postgres
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/application/ports"
+	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/domain"
+)
+
+const (
+	pgUniqueViolation = "23505"
+	pgInvalidText     = "22P02" // uuid o número con formato inválido
+)
+
+// DriverRepository guarda repartidores en el esquema drivers.
+//
+// Save es un UPDATE condicionado a la versión: la base descarta la escritura si otro
+// cambio se aplicó antes. Esa comparación ocurre dentro de la sentencia, así que dos
+// reservas concurrentes no pueden ganar a la vez.
+type DriverRepository struct {
+	pool *pgxpool.Pool
+}
+
+// NewDriverRepository crea el repositorio sobre un pool ya abierto.
+func NewDriverRepository(pool *pgxpool.Pool) *DriverRepository {
+	return &DriverRepository{pool: pool}
+}
+
+// Create inserta un repartidor nuevo.
+func (r *DriverRepository) Create(ctx context.Context, d *domain.Driver) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO drivers (id, user_id, full_name, phone, active, status, route_id, version, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		d.ID, d.UserID, d.FullName, d.Phone, d.Active, string(d.Status), d.RouteID, d.Version, d.CreatedAt, d.UpdatedAt,
+	)
+	if isPgError(err, pgUniqueViolation) {
+		return ports.ErrDriverExists
+	}
+	return err
+}
+
+// Get devuelve el repartidor con ese ID.
+func (r *DriverRepository) Get(ctx context.Context, id string) (*domain.Driver, error) {
+	row := r.pool.QueryRow(ctx, selectColumns+` WHERE id = $1`, id)
+	d, err := scanDriver(row)
+	if errors.Is(err, pgx.ErrNoRows) || isPgError(err, pgInvalidText) {
+		return nil, ports.ErrDriverNotFound
+	}
+	return d, err
+}
+
+// Save escribe el repartidor solo si la versión guardada es expectedVersion.
+func (r *DriverRepository) Save(ctx context.Context, d *domain.Driver, expectedVersion int) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE drivers
+		SET full_name = $2, phone = $3, active = $4, status = $5, route_id = $6,
+		    version = $7, updated_at = $8
+		WHERE id = $1 AND version = $9`,
+		d.ID, d.FullName, d.Phone, d.Active, string(d.Status), d.RouteID,
+		d.Version, d.UpdatedAt, expectedVersion,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 1 {
+		return nil
+	}
+	// Ninguna fila: o no existe, o la versión ya cambió.
+	var exists bool
+	if err := r.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM drivers WHERE id = $1)`, d.ID).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		return ports.ErrDriverNotFound
+	}
+	return ports.ErrVersionConflict
+}
+
+// FindAvailable devuelve hasta limit repartidores activos y AVAILABLE, ordenados por ID.
+func (r *DriverRepository) FindAvailable(ctx context.Context, limit int) ([]*domain.Driver, error) {
+	rows, err := r.pool.Query(ctx, selectColumns+` WHERE active AND status = 'AVAILABLE' ORDER BY id LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]*domain.Driver, 0, limit)
+	for rows.Next() {
+		d, err := scanDriver(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+const selectColumns = `SELECT id::text, user_id::text, full_name, phone, active, status, route_id,
+	version, created_at, updated_at FROM drivers`
+
+type scanner interface {
+	Scan(dest ...any) error
+}
+
+func scanDriver(s scanner) (*domain.Driver, error) {
+	var (
+		d      domain.Driver
+		status string
+		vers   int64
+		create time.Time
+		update time.Time
+	)
+	if err := s.Scan(&d.ID, &d.UserID, &d.FullName, &d.Phone, &d.Active, &status, &d.RouteID,
+		&vers, &create, &update); err != nil {
+		return nil, err
+	}
+	d.Status = domain.Status(status)
+	d.Version = int(vers)
+	d.CreatedAt = create
+	d.UpdatedAt = update
+	return &d, nil
+}
+
+func isPgError(err error, code string) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == code
+}
