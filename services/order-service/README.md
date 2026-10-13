@@ -1,89 +1,106 @@
-# order-service
+# Order Service
 
-Servicio que materializa el dominio de órdenes (esquema `orders`) y, en esta
-primera entrega, la entidad de negocio **Customer** del MVP. Expone HTTP para
-health checks y gRPC para el dominio Customer (BE-T5a); BE-T5b suma los
-endpoints REST del API Gateway que consumen este server gRPC.
+Base del Sprint 1 de Anthony (S1-BE-02): dominio de pedidos, fechas y ventanas
+de entrega, estados y migraciones PostgreSQL. Es un módulo Go independiente
+incluido en `go.work`, `make test`, `make lint` y CI.
 
-## Estado (BE-T5a — CustomerService gRPC)
+El workspace y este módulo recomiendan el toolchain Go 1.26.9 para incluir los
+parches de seguridad de la biblioteca estándar. Go puede descargarlo de forma
+automática; no requiere reemplazar la instalación global.
 
-Este commit publica el `CustomerService` del feature `customer-mvp-backend`
-dentro de `order-service`:
+El job Go de este módulo usa `GOWORK=off` en CI. Así comprueba que las
+dependencias están declaradas en su propio `go.mod`, sin heredar versiones de
+otros servicios a través del workspace.
 
-- Contrato en `contracts/proto/customer/v1/customer.proto` con cuatro rpcs:
-  `CreateCustomer`, `GetByUserID`, `UpdateStatus`, `CanCreateOrders`.
-- Server gRPC en `internal/adapters/grpc/customer_server.go` que solo
-  traduce: parsea entradas, delega en los use cases de `internal/application/customer`
-  y mapea los sentinel errors del dominio a códigos gRPC
-  (`NotFound`, `AlreadyExists`, `InvalidArgument`, `Internal`, etc.).
-- Listener gRPC en `cmd/api/main.go` con `GracefulStop` en el shutdown,
-  configurable vía `ORDER_GRPC_PORT` (default `9091`).
-- Tests unitarios en `internal/adapters/grpc/customer_server_test.go` con un
-  `fakeCustomerRepository` in-memory que cubre happy paths y los errores de
-  cada rpc.
+El contrato `orders.v1` está en `contracts/proto/orders/v1/orders.proto` y su
+correspondencia REST en `docs/contracts/orders-v1.md`. El transporte gRPC de
+pedidos y su consumo desde el Gateway pertenecen al Sprint 2. El servidor
+existente ya publica el dominio Customer y los health checks del servicio.
 
-## Estado previo (BE-T4b — dominio Customer)
+## Clientes del MVP
 
-- Dominio `Customer` con tres estados (`ACTIVO`, `BLOQUEADO_POR_SALDO`,
-  `BLOQUEADO_POR_INCIDENCIAS`) y el acumulador `pending_surcharge`
-  (`NUMERIC(12,2)` → `decimal.Decimal` en Go).
-- Cuatro casos de uso (`CreateCustomer`, `GetByUserID`, `UpdateStatus`,
-  `CanCreateOrders`) con tests unitarios sobre un repositorio in-memory.
-- Repositorio PostgreSQL con `pgxpool`, manejo de `ErrNoRows` y traducción
-  de unique violation a `ErrCustomerAlreadyExists`.
-- Migración `000001_create_customers` con `UNIQUE INDEX` sobre `user_id`
-  (ADR 0003) y CHECK constraints que protegen la integridad a nivel de DB.
+Se conserva la implementación integrada en `develop`: dominio `Customer`,
+casos de uso en `internal/application/customer`, repositorio PostgreSQL y
+`CustomerService` gRPC consumido por el Gateway. Los clientes tienen estados
+`ACTIVO`, `BLOQUEADO_POR_SALDO` y `BLOQUEADO_POR_INCIDENCIAS`, con saldo
+`pending_surcharge` representado por `decimal.Decimal`.
 
-## Estructura
+`cmd/api/main.go` aplica las migraciones del esquema, abre el pool y atiende HTTP
+y gRPC. `HTTP_PORT` vale 8080 y `ORDER_GRPC_PORT` 9091 por defecto. La conexión
+usa `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`,
+`POSTGRES_SCHEMA` y la credencial requerida `POSTGRES_PASSWORD`.
 
-```
-services/order-service/
-├── cmd/api/                    # entrypoint (slog + net/http + grpc)
-├── internal/
-│   ├── adapters/
-│   │   ├── grpc/               # CustomerServiceServer (BE-T5a)
-│   │   ├── http/               # /health, /ready (BE-T4a)
-│   │   └── persistence/        # CustomerRepository (BE-T4b)
-│   ├── application/
-│   │   ├── customer/           # casos de uso + tests (BE-T4b)
-│   │   └── ports/              # CustomerRepository interface
-│   ├── domain/                 # Customer, CustomerStatus, errors (BE-T4b)
-│   └── infrastructure/
-│       ├── config/             # env loader (HTTP_PORT, ORDER_GRPC_PORT)
-│       └── postgres/           # pool + migrador
-└── migrations/
-    ├── 000001_create_customers.up.sql
-    ├── 000001_create_customers.down.sql
-    └── embed.go
-```
+La migración existente `000001_create_customers` se conserva. La creación de
+pedidos usa la versión 2 y el límite de fechas la versión 3, para que las bases
+que ya tienen clientes puedan actualizarse sin colisiones de versión.
 
-## Modelo
+## Reglas del dominio
 
-- Esquema `orders` (creado por `infrastructure/postgres/init/01-schemas-and-users.sh`).
-- Usuario `order_service_user`, dueño del esquema.
-- Tabla `customers` con PK UUID, `UNIQUE INDEX` sobre `user_id`, `email`
-  único, `pending_surcharge NUMERIC(12,2)` y CHECK constraints
-  (status válido, email en minúsculas, saldo no negativo).
+- `NewOrder` recibe datos de entrega y un instante del reloj del servidor en la
+  zona horaria de operación. Guarda `CreatedAt` en UTC y conserva `DeliveryDate`
+  como fecha civil, incluso cuando el día UTC sea distinto del día local.
+- La entrega puede programarse hoy o en el futuro. Se rechazan fechas inexistentes
+  y formatos distintos de `YYYY-MM-DD`.
+- Las ventanas usan `HH:mm`; el fin es posterior al inicio en el mismo día.
+- La dirección se recorta y tiene entre 5 y 300 caracteres Unicode, sin NUL
+  (PostgreSQL no puede almacenar ese carácter en texto). Las coordenadas
+  WGS 84 deben ser finitas y estar dentro de sus rangos.
+- Un pedido nuevo comienza en `PENDING`. El ID y la versión los asigna la base.
+  Las transiciones devuelven una copia y no alteran el pedido original.
 
-## Variables de entorno
+| Estado | Siguientes estados permitidos |
+|---|---|
+| PENDING_REVIEW | PENDING, CANCELLED (rechazo del operador) |
+| PENDING | ROUTE_ASSIGNED, CANCELLED |
+| ROUTE_ASSIGNED | PICKED_UP, CANCELLED |
+| PICKED_UP | IN_TRANSIT |
+| IN_TRANSIT | DELIVERED, NOT_DELIVERED |
+| DELIVERED, NOT_DELIVERED, CANCELLED | Ninguno |
 
-| Variable             | Default | Descripción                                   |
-| -------------------- | ------- | --------------------------------------------- |
-| `HTTP_PORT`          | `8080`  | Puerto HTTP para `/health` y `/ready`.        |
-| `ORDER_GRPC_PORT`    | `9091`  | Puerto gRPC para `CustomerService`.           |
-| `POSTGRES_PASSWORD`  | —       | Requerida. Sin valor por defecto (credencial). |
-| `POSTGRES_HOST`      | `localhost` | Host de PostgreSQL.                       |
-| `POSTGRES_PORT`      | `5432`  | Puerto de PostgreSQL.                         |
-| `POSTGRES_DB`        | `last_mile` | Base de datos.                            |
-| `POSTGRES_USER`      | `order_service_user` | Usuario.                            |
-| `POSTGRES_SCHEMA`    | `orders` | Esquema del servicio.                        |
+`CanCancel` permite la cancelación ordinaria únicamente en `PENDING` y
+`ROUTE_ASSIGNED` (ADR 0007). La autorización, revisión de excepciones, motivos
+de auditoría y resultado de entrega se implementan en sus casos de uso de los
+sprints posteriores. Los estados correspondientes ya son reconocidos.
 
-## Pruebas
+## Persistencia
+
+Las migraciones embebidas crean `orders.orders` con `DATE` para la entrega,
+`TIMESTAMPTZ` para el registro, ventanas `TIME`, estado, motivos de revisión y
+versión positiva. PostgreSQL valida coordenadas, estados, ventanas y coherencia
+entre `PENDING_REVIEW` y sus motivos. Hay índices por fecha y estado, y por
+instante de registro. La migración inversa elimina la tabla y sus índices.
+La migración `000003_limit_delivery_date` limita los años de entrega a 0001–9999, para impedir que
+PostgreSQL acepte fechas anteriores a nuestra era o años de cinco dígitos que el
+contrato `YYYY-MM-DD` no representa. Incluye su propia migración inversa.
+
+`internal/infrastructure/postgres.Migrate` aplica migraciones pendientes con
+`golang-migrate` y acepta una segunda ejecución sin cambios. El DSN debe usar
+`order_service_user` y `search_path=orders,public`. No hay accesos ni claves
+foráneas hacia esquemas de otros servicios. La relación `customer_id` está
+prevista para la migración del Sprint 2.
+
+## Verificación
+
+Desde este directorio:
 
 ```bash
-go test ./...
+go test -coverprofile=coverage.out ./...
+go vet ./...
+golangci-lint run --config ../../.golangci.yml ./...
+
+# Base local inicializada por el compose, usando la contraseña de tu .env.
+export ORDER_TEST_DATABASE_URL="postgres://order_service_user:${ORDER_DB_PASSWORD}@127.0.0.1:5432/last_mile?sslmode=disable&search_path=orders,public"
+go test -race -tags integration -count=1 ./...
 ```
 
-Cobertura de `internal/domain` al 100 %. Los tests de casos de uso y del
-adapter gRPC corren contra fakes in-memory; los tests de integración del
-`CustomerRepository` de PostgreSQL se agregan junto con BE-T5b.
+En PowerShell, asigna la variable con `$env:ORDER_TEST_DATABASE_URL = '...'` y
+usa `go test '-coverprofile=coverage.out' ./...`. `-race` en Windows requiere
+un compilador C; también puede ejecutarse en un contenedor Go de Linux.
+
+Sin `ORDER_TEST_DATABASE_URL`, las pruebas de integración se omiten de forma
+explícita. Con una base disponible verifican aplicación repetida, valores por
+defecto, aislamiento por esquema, restricciones SQL, índices y reversibilidad.
+Las operaciones de prueba se revierten con transacciones, incluidos los scripts
+down y up, para conservar los datos preexistentes.
+
+Evidencia y flujo de revisión: `docs/planning/sprint-1-anthony.md`.
