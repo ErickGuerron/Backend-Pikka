@@ -14,9 +14,9 @@ import (
 )
 
 // placeInReview guarda un pedido en PENDING_REVIEW con productos, como lo hace el alta cuando la zona no cubre.
-func placeInReview(t *testing.T, store *persistence.Store, customer string, p domain.Product, quantity int64) domain.Order {
+func placeInReview(t *testing.T, store *persistence.Store, customer string, p domain.Product, quantity int64, reasonCode string) domain.Order {
 	t.Helper()
-	reason, err := domain.ParseReviewReason("ZONE_NOT_COVERED")
+	reason, err := domain.ParseReviewReason(reasonCode)
 	require.NoError(t, err)
 	order := newOrder(t, customer)
 	order, err = order.ApplyValidation([]domain.ReviewReason{reason})
@@ -32,7 +32,7 @@ func TestRechazarPedidoDevuelveStock(t *testing.T) {
 	ctx := context.Background()
 	customer := newCustomer(t, pool)
 	p := newProduct(t, store, "Manzana", stock(5))
-	placed := placeInReview(t, store, customer, p, 2)
+	placed := placeInReview(t, store, customer, p, 2, "ZONE_NOT_COVERED")
 	orders := persistence.NewOrderRepository(pool)
 
 	got, err := orders.Review(ctx, placed.ID, func(o domain.Order) (domain.Order, *domain.Notification, error) {
@@ -54,7 +54,7 @@ func TestConfirmarPedidoNoDevuelveStock(t *testing.T) {
 	ctx := context.Background()
 	customer := newCustomer(t, pool)
 	p := newProduct(t, store, "Manzana", stock(5))
-	placed := placeInReview(t, store, customer, p, 2)
+	placed := placeInReview(t, store, customer, p, 2, "INVALID_WINDOW")
 	orders := persistence.NewOrderRepository(pool)
 
 	_, err := orders.Review(ctx, placed.ID, func(o domain.Order) (domain.Order, *domain.Notification, error) {
