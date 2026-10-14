@@ -33,6 +33,8 @@ type Options struct {
 	CustomerQueries CustomerQueryClient
 	// Orders, si no es nil, habilita POST /orders y GET /orders/mine para clientes.
 	Orders OrderClient
+	// Catalog, si no es nil, habilita /products (ADR 0009). Los roles los aplica el middleware y el servicio.
+	Catalog CatalogClient
 }
 
 // Readiness informa si una dependencia está lista.
@@ -135,6 +137,19 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 		authed.GET("/orders/exceptions", o.listExceptions)
 		authed.POST("/orders/:id/review", o.review)
 		authed.GET("/notifications/mine", o.notifications)
+	}
+
+	// Catálogo de productos (ADR 0009). Cualquier usuario autenticado lee lo activo; el personal
+	// administra. El servicio decide qué ve cada rol.
+	if opts.Catalog != nil {
+		p := &catalogHandlers{catalog: opts.Catalog}
+		staff := authed.Group("", StaffOnly())
+		authed.GET("/products", p.list)
+		authed.GET("/products/:id", p.get)
+		staff.POST("/products", p.create)
+		staff.PATCH("/products/:id/active", p.setActive)
+		staff.POST("/products/:id/stock-adjustments", p.adjustStock)
+		staff.GET("/products/:id/stock-movements", p.movements)
 	}
 
 	z := &zonesHandlers{zones: zones}

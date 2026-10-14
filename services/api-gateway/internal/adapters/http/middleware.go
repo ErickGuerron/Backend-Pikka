@@ -58,6 +58,23 @@ func AdminOnly() echo.MiddlewareFunc {
 	}
 }
 
+// StaffOnly deja pasar a ADMIN y OPERATOR (ADR 0008). Igual que AdminOnly, corta con 403 antes
+// del handler; las reglas finas del catálogo las aplica el servicio interno.
+func StaffOnly() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			id, ok := identityFrom(c)
+			if !ok {
+				return echo.NewHTTPError(http.StatusUnauthorized, "missing identity")
+			}
+			if !strings.EqualFold(id.Role, "ADMIN") && !strings.EqualFold(id.Role, "OPERATOR") {
+				return echo.NewHTTPError(http.StatusForbidden, "staff role required")
+			}
+			return next(c)
+		}
+	}
+}
+
 func identityFrom(c echo.Context) (jwt.Identity, bool) {
 	id, ok := c.Get(identityKey).(jwt.Identity)
 	return id, ok
