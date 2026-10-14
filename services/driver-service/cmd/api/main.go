@@ -74,7 +74,8 @@ func run(log *slog.Logger) error {
 
 // serveGRPC expone el contrato drivers.v1 hasta que ctx se cancela.
 func serveGRPC(ctx context.Context, log *slog.Logger, port int, svc *driver.Service) error {
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	var lc net.ListenConfig
+	lis, err := lc.Listen(ctx, "tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return fmt.Errorf("grpc listen: %w", err)
 	}
