@@ -29,17 +29,29 @@ Un producto tiene:
 
 El catálogo lo administra el operador (`ADMIN` y `OPERATOR`). El cliente solo lee los productos activos.
 
-### 2. Stock simple
+### 2. Stock con historial de movimientos
 
-- El stock es **global**, no por día ni por zona. Por eso no hay reservas, lotes, bodegas, compras ni
-  historial de movimientos.
-- Al crear un pedido, cada ítem descuenta su cantidad de `stock_quantity` en la misma transacción que el
-  pedido. El descuento es condicional (`UPDATE ... WHERE stock_quantity >= cantidad`), así dos pedidos
+- El stock es **global**, no por día ni por zona. Por eso no hay reservas por lote, bodegas ni compras.
+- Cada cambio de stock queda registrado como un **movimiento**: tipo, cantidad con signo, stock resultante,
+  motivo, usuario, fecha y, si aplica, el pedido. El stock actual es el último resultado del historial.
+  Los movimientos no se editan ni se borran.
+
+Tipos de movimiento:
+
+- `RESTOCK`: entrada de mercadería. Al crear un producto, su stock inicial es una entrada.
+- `ADJUSTMENT`: corrección manual, positiva o negativa, con motivo obligatorio (por ejemplo, producto
+  dañado o conteo físico). No puede dejar el stock en negativo.
+- `SALE`: al crear un pedido, cada ítem descuenta su cantidad. El descuento es condicional
+  (`UPDATE ... WHERE stock_quantity >= cantidad`) en la misma transacción que el pedido, así dos pedidos
   simultáneos no venden más de lo que hay.
+- `RETURN`: al cancelar un pedido en estado `PENDING` o `ROUTE_ASSIGNED` (ADR 0007), el stock se devuelve.
+
+Un pedido que pasa a `DELIVERED`, `NOT_DELIVERED` o `CANCELLED` por otra causa no devuelve stock.
+
+Ejemplo: 4 manzanas; un pedido de 2 deja 2 (`SALE −2`); una entrada de 1 deja 3 (`RESTOCK +1`).
+
 - Si no hay stock suficiente, el pedido se rechaza con un error claro. No entra en la cola de excepciones:
   la cola es para validaciones de logística, no de disponibilidad.
-- Al cancelar un pedido en estado `PENDING` o `ROUTE_ASSIGNED` (ADR 0007), el stock se devuelve.
-- Un pedido que pasa a `DELIVERED`, `NOT_DELIVERED` o `CANCELLED` por otra causa no devuelve stock.
 
 ### 3. Pedido con ítems
 
@@ -51,8 +63,8 @@ El catálogo lo administra el operador (`ADMIN` y `OPERATOR`). El cliente solo l
 
 ### 4. Lo que queda fuera
 
-- Inventario multi-bodega, reposición, proveedores y órdenes de compra.
-- Movimientos de stock y reportes de inventario.
+- Inventario multi-bodega, reposición automática, proveedores y órdenes de compra.
+- Reportes de inventario y costos del producto.
 - Variantes (talla, color), categorías jerárquicas, imágenes y promociones.
 - Stock por día o por zona. Si se necesita, requiere un ADR nuevo.
 
