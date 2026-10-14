@@ -26,10 +26,14 @@ var t0 = time.Date(2026, 10, 13, 8, 0, 0, 0, time.UTC)
 // setup levanta el servidor sobre un listener en memoria y devuelve un cliente y el repositorio.
 func setup(t *testing.T) (driversv1.DriverServiceClient, *memory.DriverRepository) {
 	t.Helper()
-	ctx := context.Background()
 	repo := memory.NewDriverRepository()
-	svc := driver.NewService(repo, func() time.Time { return t0 })
+	return serve(t, driver.NewService(repo, func() time.Time { return t0 })), repo
+}
 
+// serve arranca el servidor gRPC sobre bufconn con el servicio dado y devuelve un cliente.
+func serve(t *testing.T, svc *driver.Service) driversv1.DriverServiceClient {
+	t.Helper()
+	ctx := context.Background()
 	lis := bufconn.Listen(1 << 20)
 	srv := grpc.NewServer()
 	driversv1.RegisterDriverServiceServer(srv, grpcadapter.NewDriverServer(svc))
@@ -42,7 +46,7 @@ func setup(t *testing.T) (driversv1.DriverServiceClient, *memory.DriverRepositor
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
-	return driversv1.NewDriverServiceClient(conn), repo
+	return driversv1.NewDriverServiceClient(conn)
 }
 
 func seedDriver(t *testing.T, repo *memory.DriverRepository, id string) *domain.Driver {
