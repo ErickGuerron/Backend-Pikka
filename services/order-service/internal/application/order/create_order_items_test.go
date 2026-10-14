@@ -2,6 +2,7 @@ package order
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -52,7 +53,7 @@ func TestPedidoSinProductosNoSeGuarda(t *testing.T) {
 
 	_, err := uc.Run(context.Background(), cmd)
 
-	if err != domain.ErrNoItems {
+	if !errors.Is(err, domain.ErrNoItems) {
 		t.Fatalf("err = %v, want ErrNoItems", err)
 	}
 	if len(orders.saved) != 0 {
@@ -77,7 +78,7 @@ func TestProductoDesconocidoOInactivoNoSeGuarda(t *testing.T) {
 
 			_, err := uc.Run(context.Background(), knownPoint())
 
-			if err != tt.want {
+			if !errors.Is(err, tt.want) {
 				t.Fatalf("err = %v, want %v", err, tt.want)
 			}
 			if len(orders.saved) != 0 {
@@ -92,12 +93,12 @@ func TestCantidadInvalidaOProductoRepetidoSeRechaza(t *testing.T) {
 
 	cmd := knownPoint()
 	cmd.Items = []LineRequest{{ProductID: appleID, Quantity: domain.MaxLineQuantity + 1}}
-	if _, err := uc.Run(context.Background(), cmd); err != domain.ErrInvalidQuantity {
+	if _, err := uc.Run(context.Background(), cmd); !errors.Is(err, domain.ErrInvalidQuantity) {
 		t.Fatalf("quantity err = %v, want ErrInvalidQuantity", err)
 	}
 
 	cmd.Items = []LineRequest{{ProductID: appleID, Quantity: 1}, {ProductID: appleID, Quantity: 2}}
-	if _, err := uc.Run(context.Background(), cmd); err != domain.ErrDuplicateLine {
+	if _, err := uc.Run(context.Background(), cmd); !errors.Is(err, domain.ErrDuplicateLine) {
 		t.Fatalf("duplicate err = %v, want ErrDuplicateLine", err)
 	}
 }
