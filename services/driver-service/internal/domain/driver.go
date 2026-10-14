@@ -202,6 +202,37 @@ func (d *Driver) GoOnline(now time.Time) error {
 	return d.transition(StatusAvailable, now)
 }
 
+// Deactivate retira al repartidor del sistema. Es idempotente: sobre un repartidor ya
+// inactivo no cambia nada ni la versión.
+//
+// Un repartidor AVAILABLE pasa a OFFLINE, porque un inactivo nunca queda AVAILABLE. Si
+// tiene una reserva o una ruta en curso, el estado no cambia: la operación termina con
+// Release o CompleteRoute, que lo dejan OFFLINE por finishReservation.
+func (d *Driver) Deactivate(now time.Time) {
+	if !d.Active {
+		return
+	}
+	d.Active = false
+	if d.Status == StatusAvailable {
+		d.apply(StatusOffline, now)
+		return
+	}
+	d.Version++
+	d.UpdatedAt = now
+}
+
+// Activate vuelve a habilitar al repartidor. Es idempotente: sobre uno ya activo no cambia
+// nada ni la versión. El estado no cambia: un repartidor reactivado sigue OFFLINE hasta
+// que él mismo vuelva a conectarse con GoOnline.
+func (d *Driver) Activate(now time.Time) {
+	if d.Active {
+		return
+	}
+	d.Active = true
+	d.Version++
+	d.UpdatedAt = now
+}
+
 // checkReservation valida que routeID no esté en blanco, que el repartidor esté en el
 // estado from y que routeID sea la ruta reservada, en ese orden. No modifica al repartidor.
 func (d *Driver) checkReservation(routeID string, from Status) error {
