@@ -6,6 +6,7 @@ use (
 	./contracts
 	./services/api-gateway
 	./services/auth-service
+	./services/driver-service
 	./services/order-service
 	./services/zone-service
 )
