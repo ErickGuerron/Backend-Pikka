@@ -27,3 +27,12 @@ type DriverRepository interface {
 	// FindAvailable devuelve hasta limit repartidores activos y AVAILABLE, en orden de ID.
 	FindAvailable(ctx context.Context, limit int) ([]*domain.Driver, error)
 }
+
+// ErrDeliveryAlreadyRecorded indica que la parada ya tiene un registro de entrega en esa ruta.
+var ErrDeliveryAlreadyRecorded = errors.New("delivery already recorded for this stop")
+
+// DeliveryRecorder guarda el registro de entrega de una parada. Record rechaza un segundo
+// registro de la misma parada dentro de la misma ruta.
+type DeliveryRecorder interface {
+	Record(ctx context.Context, routeID string, rec domain.DeliveryRecord, arrival domain.ArrivalCheck) error
+}
