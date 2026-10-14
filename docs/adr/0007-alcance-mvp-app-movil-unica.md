@@ -1,6 +1,6 @@
 # ADR 0007: Alcance del MVP con app móvil única y validación automática de pedidos
 
-Estado: aceptada
+Estado: aceptada. Enmendada en lo referente a productos por el ADR 0009 (catálogo con stock simple).
 
 Reemplaza a los ADR 0004 (seguimiento por enlace protegido) y 0005 (cliente
 como entidad sin cuenta). Mantiene el ADR 0006 con las precisiones de cobro
