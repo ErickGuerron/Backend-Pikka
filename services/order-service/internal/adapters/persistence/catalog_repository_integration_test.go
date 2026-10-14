@@ -24,7 +24,7 @@ import (
 
 var now = time.Date(2030, 4, 10, 9, 0, 0, 0, time.UTC)
 
-// setup aplica migraciones, vacía las tablas del catálogo y devuelve el adaptador.
+// setup aplica migraciones, vacía las tablas del catálogo y de pedidos, y devuelve el adaptador.
 func setup(t *testing.T) (*persistence.Store, *pgxpool.Pool) {
 	t.Helper()
 	dsn := os.Getenv("ORDER_TEST_DATABASE_URL")
@@ -36,7 +36,7 @@ func setup(t *testing.T) (*persistence.Store, *pgxpool.Pool) {
 	pool, err := pgxpool.New(ctx, dsn)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	_, err = pool.Exec(ctx, `TRUNCATE order_items, stock_movements, products, orders RESTART IDENTITY CASCADE`)
+	_, err = pool.Exec(ctx, `TRUNCATE customer_notifications, order_items, stock_movements, products, orders, customers RESTART IDENTITY CASCADE`)
 	require.NoError(t, err)
 	return persistence.NewStore(pool), pool
 }
@@ -53,14 +53,26 @@ func newProduct(t *testing.T, store *persistence.Store, name string, initial *in
 	return p
 }
 
-func newOrder(t *testing.T) domain.Order {
+// newCustomer crea un cliente real: el pedido lo referencia por su id.
+func newCustomer(t *testing.T, pool *pgxpool.Pool) string {
+	t.Helper()
+	var id string
+	require.NoError(t, pool.QueryRow(context.Background(), `
+		INSERT INTO customers (user_id, full_name, email)
+		VALUES (gen_random_uuid(), 'Ana Cliente', gen_random_uuid()::text || '@example.com')
+		RETURNING id::text`).Scan(&id))
+	return id
+}
+
+// newOrder arma un pedido válido de un cliente. El id lo asigna la base al guardarlo.
+func newOrder(t *testing.T, customerID string) domain.Order {
 	t.Helper()
 	order, err := domain.NewOrder(domain.NewOrderInput{
 		Address: "Avenida Amazonas 123", Latitude: -0.18, Longitude: -78.48,
 		DeliveryDate: "2030-04-12", WindowStart: "09:00", WindowEnd: "12:00",
 	}, now)
 	require.NoError(t, err)
-	order.ID = uuid.NewString()
+	order.CustomerID = customerID
 	return order
 }
 
@@ -97,7 +109,7 @@ func TestAjustesManualesConMotivoYSinNegativo(t *testing.T) {
 	p := newProduct(t, store, "Manzana", stock(4))
 
 	_, err := store.AdjustStock(ctx, p.ID, domain.MovementAdjustment, -1, "  ", nil, now)
-	assert.ErrorIs(t, err, domain.ErrReasonRequired)
+	assert.ErrorIs(t, err, domain.ErrAdjustmentReasonRequired)
 
 	dañado, err := store.AdjustStock(ctx, p.ID, domain.MovementAdjustment, -1, "producto dañado", nil, now)
 	require.NoError(t, err)
@@ -114,40 +126,45 @@ func TestAjustesManualesConMotivoYSinNegativo(t *testing.T) {
 func TestPedidoDescuentaStockYGuardaLineas(t *testing.T) {
 	store, pool := setup(t)
 	ctx := context.Background()
+	customer := newCustomer(t, pool)
 	p := newProduct(t, store, "Pan", stock(5))
-	order := newOrder(t)
 
-	require.NoError(t, store.PlaceOrder(ctx, order, []domain.OrderLine{lineFor(t, p, 2)}, nil))
+	placed, err := store.PlaceOrder(ctx, newOrder(t, customer), []domain.OrderLine{lineFor(t, p, 2)}, nil)
 
+	require.NoError(t, err)
+	require.NotEmpty(t, placed.ID, "la base asigna el id del pedido")
 	got, err := store.GetProduct(ctx, p.ID)
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), *got.StockQuantity)
-	assert.Equal(t, 1, countRows(t, pool, `SELECT count(*) FROM order_items WHERE order_id = $1`, order.ID))
-	assert.Equal(t, 1, countRows(t, pool, `SELECT count(*) FROM stock_movements WHERE order_id = $1 AND movement_type = 'SALE' AND delta = -2`, order.ID))
+	assert.Equal(t, 1, countRows(t, pool, `SELECT count(*) FROM order_items WHERE order_id = $1`, placed.ID))
+	assert.Equal(t, 1, countRows(t, pool, `SELECT count(*) FROM stock_movements WHERE order_id = $1 AND movement_type = 'SALE' AND delta = -2`, placed.ID))
+	assert.Equal(t, 1, countRows(t, pool, `SELECT count(*) FROM orders WHERE id = $1 AND customer_id = $2`, placed.ID, customer))
 }
 
 // Si un producto de la lista no alcanza, el pedido completo no se guarda y ningún stock cambia.
 func TestPedidoEsAtomico(t *testing.T) {
 	store, pool := setup(t)
 	ctx := context.Background()
+	customer := newCustomer(t, pool)
 	a := newProduct(t, store, "Pan", stock(5))
 	b := newProduct(t, store, "Leche", stock(2))
-	order := newOrder(t)
+	order := newOrder(t, customer)
 
-	err := store.PlaceOrder(ctx, order, []domain.OrderLine{lineFor(t, a, 1), lineFor(t, b, 5)}, nil)
+	_, err := store.PlaceOrder(ctx, order, []domain.OrderLine{lineFor(t, a, 1), lineFor(t, b, 5)}, nil)
 
 	assert.ErrorIs(t, err, domain.ErrInsufficientStock)
 	gotA, err := store.GetProduct(ctx, a.ID)
 	require.NoError(t, err)
 	assert.Equal(t, int64(5), *gotA.StockQuantity, "el primer producto no debe quedar descontado")
-	assert.Equal(t, 0, countRows(t, pool, `SELECT count(*) FROM orders WHERE id = $1`, order.ID))
-	assert.Equal(t, 0, countRows(t, pool, `SELECT count(*) FROM order_items WHERE order_id = $1`, order.ID))
+	assert.Equal(t, 0, countRows(t, pool, `SELECT count(*) FROM orders WHERE customer_id = $1`, customer))
+	assert.Equal(t, 0, countRows(t, pool, `SELECT count(*) FROM order_items`))
 }
 
 // Diez pedidos simultáneos sobre tres unidades: exactamente tres se aceptan y el stock queda en cero.
 func TestPedidosConcurrentesNoVendenDeMas(t *testing.T) {
 	store, pool := setup(t)
 	ctx := context.Background()
+	customer := newCustomer(t, pool)
 	p := newProduct(t, store, "Manzana", stock(3))
 
 	const buyers = 10
@@ -155,7 +172,7 @@ func TestPedidosConcurrentesNoVendenDeMas(t *testing.T) {
 	orders := make([]domain.Order, buyers)
 	lines := make([]domain.OrderLine, buyers)
 	for i := range orders {
-		orders[i] = newOrder(t)
+		orders[i] = newOrder(t, customer)
 		lines[i] = lineFor(t, p, 1)
 	}
 	var (
@@ -169,7 +186,7 @@ func TestPedidosConcurrentesNoVendenDeMas(t *testing.T) {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()
-			err := store.PlaceOrder(ctx, orders[n], []domain.OrderLine{lines[n]}, nil)
+			_, err := store.PlaceOrder(ctx, orders[n], []domain.OrderLine{lines[n]}, nil)
 			mu.Lock()
 			defer mu.Unlock()
 			switch {
@@ -195,13 +212,14 @@ func TestPedidosConcurrentesNoVendenDeMas(t *testing.T) {
 
 // Una línea armada cuando el producto estaba activo no sirve si se desactivó antes de guardar el pedido.
 func TestProductoDesactivadoNoSeVende(t *testing.T) {
-	store, _ := setup(t)
+	store, pool := setup(t)
 	ctx := context.Background()
+	customer := newCustomer(t, pool)
 	p := newProduct(t, store, "Jugo", stock(5))
 	line := lineFor(t, p, 1)
 	require.NoError(t, store.SetActive(ctx, p.ID, false, now))
 
-	err := store.PlaceOrder(ctx, newOrder(t), []domain.OrderLine{line}, nil)
+	_, err := store.PlaceOrder(ctx, newOrder(t, customer), []domain.OrderLine{line}, nil)
 
 	assert.ErrorIs(t, err, domain.ErrProductInactive)
 	got, err := store.GetProduct(ctx, p.ID)

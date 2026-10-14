@@ -23,9 +23,9 @@ type CatalogRepository interface {
 	AdjustStock(ctx context.Context, productID uuid.UUID, kind domain.MovementType, delta int64, reason string, actor *uuid.UUID, now time.Time) (domain.StockMovement, error)
 }
 
-// OrderRepository guarda pedidos con sus líneas y descuenta el stock en la misma transacción.
-type OrderRepository interface {
+// OrderPlacer guarda pedidos con sus líneas y descuenta el stock en la misma transacción.
+type OrderPlacer interface {
 	// PlaceOrder registra el pedido, sus líneas y los movimientos SALE. Si algún producto no tiene
 	// stock suficiente, o no existe o está inactivo, no se guarda nada.
-	PlaceOrder(ctx context.Context, order domain.Order, lines []domain.OrderLine, actor *uuid.UUID) error
+	PlaceOrder(ctx context.Context, order domain.Order, lines []domain.OrderLine, actor *uuid.UUID) (domain.Order, error)
 }

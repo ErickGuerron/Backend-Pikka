@@ -47,7 +47,7 @@ var (
 	ErrStockNotTracked           = errors.New("product does not track stock")
 	ErrInsufficientStock         = errors.New("not enough stock for this order")
 	ErrInvalidMovement           = errors.New("stock movement does not match its type")
-	ErrReasonRequired            = errors.New("a manual stock adjustment needs a reason")
+	ErrAdjustmentReasonRequired  = errors.New("a manual stock adjustment needs a reason")
 	ErrProductInactive           = errors.New("product is not available")
 	ErrInvalidQuantity           = errors.New("quantity must be between 1 and 50")
 	ErrNoItems                   = errors.New("order must contain at least one product")

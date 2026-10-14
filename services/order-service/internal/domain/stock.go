@@ -52,7 +52,7 @@ func validateMovement(movementType MovementType, delta int64, reason string) err
 			return ErrInvalidMovement
 		}
 		if strings.TrimSpace(reason) == "" {
-			return ErrReasonRequired
+			return ErrAdjustmentReasonRequired
 		}
 	default:
 		return ErrInvalidMovement

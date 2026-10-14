@@ -28,7 +28,7 @@ func NewStore(pool *pgxpool.Pool) *Store {
 
 var (
 	_ ports.CatalogRepository = (*Store)(nil)
-	_ ports.OrderRepository   = (*Store)(nil)
+	_ ports.OrderPlacer       = (*Store)(nil)
 )
 
 func (s *Store) CreateProduct(ctx context.Context, p domain.Product, initial *domain.StockMovement) error {
@@ -108,33 +108,29 @@ func (s *Store) AdjustStock(ctx context.Context, productID uuid.UUID, kind domai
 	return movement, err
 }
 
-// PlaceOrder inserta el pedido y sus líneas, y descuenta el stock de cada producto controlado.
-// El descuento es condicional: la base no deja bajar de cero aunque dos pedidos lleguen a la vez.
-// Los productos se bloquean en orden de id para evitar esperas circulares entre pedidos.
-func (s *Store) PlaceOrder(ctx context.Context, order domain.Order, lines []domain.OrderLine, actor *uuid.UUID) error {
+// PlaceOrder inserta el pedido y sus líneas, y descuenta el stock de cada producto controlado,
+// todo en una transacción. El descuento es condicional: la base no deja bajar de cero aunque dos
+// pedidos lleguen a la vez. Los productos se bloquean en orden de id para evitar esperas circulares.
+// El id del pedido lo asigna la base; el pedido devuelto ya lo trae.
+func (s *Store) PlaceOrder(ctx context.Context, order domain.Order, lines []domain.OrderLine, actor *uuid.UUID) (domain.Order, error) {
 	if len(lines) == 0 {
-		return domain.ErrNoItems
+		return domain.Order{}, domain.ErrNoItems
 	}
 	ordered := append([]domain.OrderLine(nil), lines...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].ProductID.String() < ordered[j].ProductID.String() })
 
-	return s.inTx(ctx, func(tx pgx.Tx) error {
-		orderID, err := uuid.Parse(order.ID)
+	var placed domain.Order
+	err := s.inTx(ctx, func(tx pgx.Tx) error {
+		out, err := insertOrder(ctx, tx, order)
+		if err != nil {
+			return err
+		}
+		orderID, err := uuid.Parse(out.ID)
 		if err != nil {
 			return fmt.Errorf("order id: %w", err)
 		}
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO orders (id, address, latitude, longitude, delivery_date, window_start, window_end,
-			                    status, review_reasons, version, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5::date, $6::time, $7::time, $8, '{}', 1, $9, $9)`,
-			orderID, order.Address, order.Latitude, order.Longitude, order.DeliveryDate.String(),
-			order.Window.Start(), order.Window.End(), string(order.Status), order.CreatedAt,
-		); err != nil {
-			return err
-		}
-
 		for _, line := range ordered {
-			if err := s.takeStock(ctx, tx, line, orderID, actor, order.CreatedAt); err != nil {
+			if err := s.takeStock(ctx, tx, line, orderID, actor, out.CreatedAt); err != nil {
 				return err
 			}
 			if _, err := tx.Exec(ctx, `
@@ -145,8 +141,10 @@ func (s *Store) PlaceOrder(ctx context.Context, order domain.Order, lines []doma
 				return err
 			}
 		}
+		placed = out
 		return nil
 	})
+	return placed, err
 }
 
 // takeStock descuenta una línea. Un producto sin control de stock solo se valida y no genera movimiento.
@@ -191,10 +189,6 @@ func (s *Store) takeStock(ctx context.Context, tx pgx.Tx, line domain.OrderLine,
 }
 
 const productColumns = `SELECT id, name, description, unit_price, active, stock_quantity, created_at, updated_at FROM products`
-
-type rowScanner interface {
-	Scan(dest ...any) error
-}
 
 func scanProduct(row rowScanner) (domain.Product, error) {
 	var p domain.Product

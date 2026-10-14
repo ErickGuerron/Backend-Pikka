@@ -93,7 +93,7 @@ func TestAjusteManualPideMotivoYPuedeRestar(t *testing.T) {
 	p, _ := newApple(t, stock(3))
 
 	_, err := p.ApplyMovement(domain.MovementAdjustment, -1, "  ", nil, nil, now)
-	assert.ErrorIs(t, err, domain.ErrReasonRequired)
+	assert.ErrorIs(t, err, domain.ErrAdjustmentReasonRequired)
 
 	adjust, err := p.ApplyMovement(domain.MovementAdjustment, -1, "producto dañado", nil, nil, now)
 	require.NoError(t, err)
