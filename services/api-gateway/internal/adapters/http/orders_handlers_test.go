@@ -18,6 +18,7 @@ import (
 
 type fakeOrderClient struct {
 	createReq *ordersv1.CreateOrderRequest
+	createRes *ordersv1.CreateOrderResponse
 	reviewReq *ordersv1.ReviewOrderRequest
 	meta      grpcclient.CallMeta
 	err       error
@@ -27,6 +28,9 @@ func (f *fakeOrderClient) CreateOrder(_ context.Context, m grpcclient.CallMeta, 
 	f.createReq, f.meta = req, m
 	if f.err != nil {
 		return nil, f.err
+	}
+	if f.createRes != nil {
+		return f.createRes, nil
 	}
 	return &ordersv1.CreateOrderResponse{Order: &ordersv1.Order{
 		Id:            "o-1",
@@ -92,6 +96,39 @@ func TestCreateOrder_AddressOnlyIsAccepted_CoordinatesStayAbsent(t *testing.T) {
 	assert.Equal(t, "CUSTOMER", fake.meta.Role, "la identidad del JWT se propaga al servicio")
 	assert.Nil(t, fake.createReq.Latitude, "sin punto en el mapa el backend geocodifica")
 	assert.Nil(t, fake.createReq.Longitude)
+}
+
+func TestCreateOrder_ReturnsProductsAndTotal(t *testing.T) {
+	fake := &fakeOrderClient{createRes: &ordersv1.CreateOrderResponse{
+		Order: &ordersv1.Order{Id: "o-2", Status: ordersv1.OrderStatus_ORDER_STATUS_PENDING},
+		Items: []*ordersv1.OrderLine{{ProductId: "p-1", Name: "Manzana", UnitPrice: "1.50", Quantity: 2}},
+		Total: "3.00",
+	}}
+	body := `{"address":"Avenida Amazonas 123","deliveryDate":"2030-04-12","windowStart":"09:00","windowEnd":"12:00",` +
+		`"items":[{"productId":"11111111-1111-1111-1111-111111111111","quantity":2}]}`
+	rec := do(ordersRouter(fake), http.MethodPost, "/api/v1/orders", body, authHdr(t, "CUSTOMER"))
+
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	require.Len(t, fake.createReq.GetItems(), 1, "los productos llegan al servicio")
+	assert.Equal(t, int64(2), fake.createReq.GetItems()[0].GetQuantity())
+	var got struct {
+		ID    string `json:"id"`
+		Total string `json:"total"`
+		Items []struct {
+			ProductID string `json:"productId"`
+			Name      string `json:"name"`
+			UnitPrice string `json:"unitPrice"`
+			Quantity  int64  `json:"quantity"`
+		} `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	assert.Equal(t, "o-2", got.ID, "los campos del pedido siguen en la raíz")
+	assert.Equal(t, "3.00", got.Total)
+	require.Len(t, got.Items, 1)
+	assert.Equal(t, "p-1", got.Items[0].ProductID)
+	assert.Equal(t, "Manzana", got.Items[0].Name)
+	assert.Equal(t, "1.50", got.Items[0].UnitPrice)
+	assert.Equal(t, int64(2), got.Items[0].Quantity)
 }
 
 func TestCreateOrder_WithMapPointKeepsCoordinates(t *testing.T) {

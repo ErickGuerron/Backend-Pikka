@@ -88,10 +88,32 @@ message CreateOrderRequest {
   string delivery_date = 4;
   string window_start = 5;
   string window_end = 6;
+  // Productos del pedido (ADR 0009). Obligatorio: al menos uno, sin repetir producto.
+  // Cada producto debe estar activo y tener stock suficiente; si no, el pedido no se guarda.
+  repeated OrderItemRequest items = 7;
+}
+
+// Un producto del catálogo y la cantidad pedida. El precio lo fija el servidor, no el cliente.
+message OrderItemRequest {
+  string product_id = 1;
+  // Entre 1 y 50.
+  int64 quantity = 2;
 }
 
 message CreateOrderResponse {
   Order order = 1;
+  // Productos guardados con el pedido, con el precio del momento.
+  repeated OrderLine items = 2;
+  // Suma de los subtotales, como texto decimal con dos decimales.
+  string total = 3;
+}
+
+// Un producto del pedido tal como quedó guardado: nombre y precio del momento del pedido.
+message OrderLine {
+  string product_id = 1;
+  string name = 2;
+  string unit_price = 3;
+  int64 quantity = 4;
 }
 
 message GetOrderRequest {

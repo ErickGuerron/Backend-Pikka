@@ -35,6 +35,30 @@ func NewOrderRepository(pool *pgxpool.Pool) *OrderRepository {
 // Create inserta el pedido y, si hay notificación, la guarda en la misma transacción.
 // Las restricciones de la tabla garantizan la coherencia de estado y motivos.
 func (r *OrderRepository) Create(ctx context.Context, order domain.Order, notice *domain.Notification) (domain.Order, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return domain.Order{}, fmt.Errorf("create order: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	out, err := insertOrder(ctx, tx, order)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	if notice != nil {
+		if err := insertNotification(ctx, tx, out.CustomerID, out.ID, *notice); err != nil {
+			return domain.Order{}, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return domain.Order{}, fmt.Errorf("create order: commit: %w", err)
+	}
+	return out, nil
+}
+
+// insertOrder inserta la fila del pedido dentro de una transacción ya abierta y devuelve la fila
+// tal como quedó guardada (con el id que asigna la base). Lo comparten Create y el descuento de stock.
+func insertOrder(ctx context.Context, tx pgx.Tx, order domain.Order) (domain.Order, error) {
 	customerID, err := uuid.Parse(order.CustomerID)
 	if err != nil {
 		return domain.Order{}, fmt.Errorf("create order: customer id: %w", err)
@@ -43,13 +67,6 @@ func (r *OrderRepository) Create(ctx context.Context, order domain.Order, notice
 	if err != nil {
 		return domain.Order{}, fmt.Errorf("create order: zone id: %w", err)
 	}
-
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return domain.Order{}, fmt.Errorf("create order: begin: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
 	out, err := scanOrder(tx.QueryRow(ctx,
 		`INSERT INTO orders (customer_id, zone_id, address, latitude, longitude, delivery_date,
 		                     window_start, window_end, status, review_reasons)
@@ -61,14 +78,6 @@ func (r *OrderRepository) Create(ctx context.Context, order domain.Order, notice
 	))
 	if err != nil {
 		return domain.Order{}, fmt.Errorf("create order: %w", err)
-	}
-	if notice != nil {
-		if err := insertNotification(ctx, tx, out.CustomerID, out.ID, *notice); err != nil {
-			return domain.Order{}, err
-		}
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return domain.Order{}, fmt.Errorf("create order: commit: %w", err)
 	}
 	return out, nil
 }
@@ -127,6 +136,12 @@ func (r *OrderRepository) Review(ctx context.Context, orderID string, decide fun
 	))
 	if err != nil {
 		return domain.Order{}, fmt.Errorf("review order: update: %w", err)
+	}
+	// Un rechazo cancela un pedido que ya reservó stock al crearse: el stock vuelve en la misma transacción.
+	if current.Status != domain.StatusCancelled && out.Status == domain.StatusCancelled {
+		if err := returnStock(ctx, tx, id, time.Now().UTC()); err != nil {
+			return domain.Order{}, err
+		}
 	}
 	if notice != nil {
 		if err := insertNotification(ctx, tx, out.CustomerID, out.ID, *notice); err != nil {

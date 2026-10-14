@@ -35,6 +35,13 @@ type createOrderRequest struct {
 	DeliveryDate string   `json:"deliveryDate"`
 	WindowStart  string   `json:"windowStart"`
 	WindowEnd    string   `json:"windowEnd"`
+	// Items son los productos del pedido (ADR 0009). Al menos uno; el precio lo fija el servidor.
+	Items []orderItemRequest `json:"items"`
+}
+
+type orderItemRequest struct {
+	ProductID string `json:"productId"`
+	Quantity  int64  `json:"quantity"`
 }
 
 // reviewOrderRequest es la decisión del operador. El motivo es obligatorio.
@@ -65,6 +72,20 @@ type orderDTO struct {
 	CreatedAt     string   `json:"createdAt"`
 }
 
+// createdOrderDTO es la respuesta del alta: el pedido más sus productos y su total (ADR 0009).
+type createdOrderDTO struct {
+	orderDTO
+	Items []orderLineDTO `json:"items"`
+	Total string         `json:"total"`
+}
+
+type orderLineDTO struct {
+	ProductID string `json:"productId"`
+	Name      string `json:"name"`
+	UnitPrice string `json:"unitPrice"`
+	Quantity  int64  `json:"quantity"`
+}
+
 type notificationDTO struct {
 	ID        string `json:"id"`
 	OrderID   string `json:"orderId"`
@@ -87,6 +108,10 @@ func (h *ordersHandlers) create(c echo.Context) error {
 	if err := bindJSON(c, &req); err != nil {
 		return err
 	}
+	items := make([]*ordersv1.OrderItemRequest, 0, len(req.Items))
+	for _, item := range req.Items {
+		items = append(items, &ordersv1.OrderItemRequest{ProductId: item.ProductID, Quantity: item.Quantity})
+	}
 	res, err := h.orders.CreateOrder(c.Request().Context(), callMeta(c), &ordersv1.CreateOrderRequest{
 		Address:      req.Address,
 		Latitude:     req.Latitude,
@@ -94,11 +119,25 @@ func (h *ordersHandlers) create(c echo.Context) error {
 		DeliveryDate: req.DeliveryDate,
 		WindowStart:  req.WindowStart,
 		WindowEnd:    req.WindowEnd,
+		Items:        items,
 	})
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusCreated, toOrderDTO(res.GetOrder()))
+	lines := make([]orderLineDTO, 0, len(res.GetItems()))
+	for _, l := range res.GetItems() {
+		lines = append(lines, orderLineDTO{
+			ProductID: l.GetProductId(),
+			Name:      l.GetName(),
+			UnitPrice: l.GetUnitPrice(),
+			Quantity:  l.GetQuantity(),
+		})
+	}
+	return c.JSON(http.StatusCreated, createdOrderDTO{
+		orderDTO: toOrderDTO(res.GetOrder()),
+		Items:    lines,
+		Total:    res.GetTotal(),
+	})
 }
 
 func (h *ordersHandlers) listMine(c echo.Context) error {

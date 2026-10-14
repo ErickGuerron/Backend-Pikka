@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	catalogv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/catalog/v1"
 	customerv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/customer/v1"
 	ordersv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/orders/v1"
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/adapters/geocoding"
@@ -26,6 +27,7 @@ import (
 	httpx "github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/adapters/http"
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/adapters/persistence"
 	zonesclient "github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/adapters/zones"
+	catalogcase "github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/application/catalog"
 	customercase "github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/application/customer"
 	orderapp "github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/application/order"
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/infrastructure/config"
@@ -91,7 +93,8 @@ func run(log *slog.Logger) error {
 	notificationRepo := persistence.NewNotificationRepository(pool)
 	zoneClassifier := zonesclient.NewClassifier(zoneConn, cfg.ZoneTimeout)
 	geocoder := geocoding.NewPhoton(cfg.PhotonURL, cfg.PhotonBBox, cfg.GeocoderTimeout)
-	createOrder := orderapp.NewCreateOrder(customerRepo, zoneClassifier, geocoder, orderRepo, location)
+	catalogStore := persistence.NewStore(pool)
+	createOrder := orderapp.NewCreateOrder(customerRepo, zoneClassifier, geocoder, catalogStore, catalogStore, location)
 	listMyOrders := orderapp.NewListMyOrders(customerRepo, orderRepo)
 	reviewOrder := orderapp.NewReviewOrder(customerRepo, zoneClassifier, geocoder, orderRepo, location)
 	listExceptions := orderapp.NewListExceptions(orderRepo)
@@ -108,6 +111,10 @@ func run(log *slog.Logger) error {
 		Review:        reviewOrder,
 		Notifications: listMyNotifications,
 	}))
+	// Catálogo de productos (ADR 0009): el operador administra, el cliente lee lo activo.
+	catalogv1.RegisterCatalogServiceServer(grpcServer, grpcadapter.NewCatalogServer(
+		catalogcase.NewService(catalogStore, time.Now),
+	))
 	customerv1.RegisterCustomerServiceServer(grpcServer, grpcadapter.NewCustomerServer(grpcadapter.UseCases{
 		Create:          createCustomer,
 		GetByID:         getCustomerByID,
