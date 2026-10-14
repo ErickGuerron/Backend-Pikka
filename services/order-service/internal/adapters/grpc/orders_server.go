@@ -51,6 +51,10 @@ func (s *OrderServer) CreateOrder(ctx context.Context, req *ordersv1.CreateOrder
 	if err != nil {
 		return nil, err
 	}
+	items, err := lineRequestsFromProto(req.GetItems())
+	if err != nil {
+		return nil, err
+	}
 	order, err := s.useCases.Create.Run(ctx, orderapp.Command{
 		UserID:       userID,
 		Role:         role,
@@ -60,6 +64,7 @@ func (s *OrderServer) CreateOrder(ctx context.Context, req *ordersv1.CreateOrder
 		DeliveryDate: req.GetDeliveryDate(),
 		WindowStart:  req.GetWindowStart(),
 		WindowEnd:    req.GetWindowEnd(),
+		Items:        items,
 	})
 	if err != nil {
 		return nil, mapOrderError(err)
@@ -161,6 +166,19 @@ func identityFrom(ctx context.Context) (uuid.UUID, string, error) {
 	return id, roles[0], nil
 }
 
+// lineRequestsFromProto convierte los productos del pedido. Un id que no es UUID es un error de entrada.
+func lineRequestsFromProto(items []*ordersv1.OrderItemRequest) ([]orderapp.LineRequest, error) {
+	out := make([]orderapp.LineRequest, 0, len(items))
+	for _, item := range items {
+		id, err := uuid.Parse(item.GetProductId())
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "product_id must be a UUID")
+		}
+		out = append(out, orderapp.LineRequest{ProductID: id, Quantity: item.GetQuantity()})
+	}
+	return out, nil
+}
+
 func reviewActionFromProto(action ordersv1.ReviewAction) (string, error) {
 	switch action {
 	case ordersv1.ReviewAction_REVIEW_ACTION_CONFIRM:
@@ -201,6 +219,12 @@ func mapOrderError(err error) error {
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, domain.ErrZonesUnavailable), errors.Is(err, domain.ErrGeocoderUnavailable):
 		return status.Error(codes.Unavailable, "validación de dirección no disponible, intente más tarde")
+	case errors.Is(err, domain.ErrNoItems), errors.Is(err, domain.ErrInvalidQuantity), errors.Is(err, domain.ErrDuplicateLine):
+		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, domain.ErrProductNotFound):
+		return status.Error(codes.NotFound, "producto no encontrado")
+	case errors.Is(err, domain.ErrProductInactive), errors.Is(err, domain.ErrInsufficientStock):
+		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, domain.ErrReasonRequired),
 		errors.Is(err, orderapp.ErrUnknownAction),
 		errors.Is(err, orderapp.ErrNothingToCorrect),

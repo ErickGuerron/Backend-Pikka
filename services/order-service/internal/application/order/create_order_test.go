@@ -101,12 +101,43 @@ func (f *fakeOrders) Review(_ context.Context, _ string, _ func(domain.Order) (d
 	return domain.Order{}, errors.New("not used by create tests")
 }
 
+// fakeCatalog devuelve los productos de muestra por id, como el catálogo de la base.
+type fakeCatalog struct {
+	ports.CatalogRepository
+	products map[uuid.UUID]domain.Product
+}
+
+func (f *fakeCatalog) GetProduct(_ context.Context, id uuid.UUID) (domain.Product, error) {
+	p, ok := f.products[id]
+	if !ok {
+		return domain.Product{}, domain.ErrProductNotFound
+	}
+	return p, nil
+}
+
+// fakePlacer guarda el pedido como la base: en la tabla de fakeOrders, y registra sus líneas.
+type fakePlacer struct {
+	orders *fakeOrders
+	lines  [][]domain.OrderLine
+}
+
+func (f *fakePlacer) PlaceOrder(ctx context.Context, order domain.Order, lines []domain.OrderLine, notice *domain.Notification, _ *uuid.UUID) (domain.Order, error) {
+	f.lines = append(f.lines, lines)
+	return f.orders.Create(ctx, order, notice)
+}
+
 var (
 	customerUser = uuid.New()
 	customerID   = uuid.New()
 	zoneUUID     = uuid.NewString()
 	localZone    = time.FixedZone("operating", -5*60*60)
+	appleID      = uuid.New()
 )
+
+// appleProduct es un producto activo del catálogo de muestra, a 0.50 USD.
+func appleProduct() domain.Product {
+	return domain.Product{ID: appleID, Name: "Manzana", UnitPrice: decimal.RequireFromString("0.50"), Active: true}
+}
 
 func activeCustomer() domain.Customer {
 	return domain.Customer{ID: customerID, UserID: customerUser, Status: domain.StatusActive, PendingSurcharge: decimal.Zero}
@@ -126,6 +157,7 @@ func addressCommand() Command {
 		DeliveryDate: "2030-04-12",
 		WindowStart:  "09:00",
 		WindowEnd:    "12:00",
+		Items:        []LineRequest{{ProductID: appleID, Quantity: 2}},
 	}
 }
 
@@ -146,7 +178,8 @@ type createFixture struct {
 func newCreate(customer domain.Customer, zones *fakeZones, geocoder *fakeGeocoder) createFixture {
 	orders := &fakeOrders{}
 	customers := &fakeCustomers{byUser: map[uuid.UUID]domain.Customer{customer.UserID: customer}}
-	uc := NewCreateOrder(customers, zones, geocoder, orders, localZone)
+	catalog := &fakeCatalog{products: map[uuid.UUID]domain.Product{appleID: appleProduct()}}
+	uc := NewCreateOrder(customers, zones, geocoder, catalog, &fakePlacer{orders: orders}, localZone)
 	uc.clock = func() time.Time { return time.Date(2030, 4, 10, 10, 0, 0, 0, time.UTC) }
 	return createFixture{uc: uc, orders: orders, zones: zones, geocoder: geocoder}
 }

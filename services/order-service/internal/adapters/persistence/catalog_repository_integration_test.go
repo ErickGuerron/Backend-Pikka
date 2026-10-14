@@ -129,7 +129,7 @@ func TestPedidoDescuentaStockYGuardaLineas(t *testing.T) {
 	customer := newCustomer(t, pool)
 	p := newProduct(t, store, "Pan", stock(5))
 
-	placed, err := store.PlaceOrder(ctx, newOrder(t, customer), []domain.OrderLine{lineFor(t, p, 2)}, nil)
+	placed, err := store.PlaceOrder(ctx, newOrder(t, customer), []domain.OrderLine{lineFor(t, p, 2)}, nil, nil)
 
 	require.NoError(t, err)
 	require.NotEmpty(t, placed.ID, "la base asigna el id del pedido")
@@ -150,7 +150,7 @@ func TestPedidoEsAtomico(t *testing.T) {
 	b := newProduct(t, store, "Leche", stock(2))
 	order := newOrder(t, customer)
 
-	_, err := store.PlaceOrder(ctx, order, []domain.OrderLine{lineFor(t, a, 1), lineFor(t, b, 5)}, nil)
+	_, err := store.PlaceOrder(ctx, order, []domain.OrderLine{lineFor(t, a, 1), lineFor(t, b, 5)}, nil, nil)
 
 	assert.ErrorIs(t, err, domain.ErrInsufficientStock)
 	gotA, err := store.GetProduct(ctx, a.ID)
@@ -186,7 +186,7 @@ func TestPedidosConcurrentesNoVendenDeMas(t *testing.T) {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()
-			_, err := store.PlaceOrder(ctx, orders[n], []domain.OrderLine{lines[n]}, nil)
+			_, err := store.PlaceOrder(ctx, orders[n], []domain.OrderLine{lines[n]}, nil, nil)
 			mu.Lock()
 			defer mu.Unlock()
 			switch {
@@ -219,10 +219,24 @@ func TestProductoDesactivadoNoSeVende(t *testing.T) {
 	line := lineFor(t, p, 1)
 	require.NoError(t, store.SetActive(ctx, p.ID, false, now))
 
-	_, err := store.PlaceOrder(ctx, newOrder(t, customer), []domain.OrderLine{line}, nil)
+	_, err := store.PlaceOrder(ctx, newOrder(t, customer), []domain.OrderLine{line}, nil, nil)
 
 	assert.ErrorIs(t, err, domain.ErrProductInactive)
 	got, err := store.GetProduct(ctx, p.ID)
 	require.NoError(t, err)
 	assert.Equal(t, int64(5), *got.StockQuantity)
+}
+
+// El aviso al cliente se guarda en la misma transacción que el pedido y sus productos.
+func TestPedidoConAvisoGuardaNotificacion(t *testing.T) {
+	store, pool := setup(t)
+	ctx := context.Background()
+	customer := newCustomer(t, pool)
+	p := newProduct(t, store, "Pan", stock(5))
+	notice := domain.NewNotification(customer, "", domain.NotificationInReview, "revisión")
+
+	placed, err := store.PlaceOrder(ctx, newOrder(t, customer), []domain.OrderLine{lineFor(t, p, 1)}, &notice, nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, countRows(t, pool, `SELECT count(*) FROM customer_notifications WHERE order_id = $1`, placed.ID))
 }

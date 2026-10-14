@@ -29,7 +29,8 @@ type CatalogRepository interface {
 
 // OrderPlacer guarda pedidos con sus líneas y descuenta el stock en la misma transacción.
 type OrderPlacer interface {
-	// PlaceOrder registra el pedido, sus líneas y los movimientos SALE. Si algún producto no tiene
-	// stock suficiente, o no existe o está inactivo, no se guarda nada.
-	PlaceOrder(ctx context.Context, order domain.Order, lines []domain.OrderLine, actor *uuid.UUID) (domain.Order, error)
+	// PlaceOrder registra el pedido, sus líneas, los movimientos SALE y, si hay, el aviso al cliente,
+	// todo en una transacción. Si algún producto no tiene stock suficiente, o no existe o está
+	// inactivo, no se guarda nada.
+	PlaceOrder(ctx context.Context, order domain.Order, lines []domain.OrderLine, notice *domain.Notification, actor *uuid.UUID) (domain.Order, error)
 }

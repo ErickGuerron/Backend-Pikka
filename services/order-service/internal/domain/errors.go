@@ -52,4 +52,5 @@ var (
 	ErrInvalidQuantity           = errors.New("quantity must be between 1 and 50")
 	ErrNoItems                   = errors.New("order must contain at least one product")
 	ErrProductNotFound           = errors.New("product not found")
+	ErrDuplicateLine             = errors.New("the same product cannot appear twice in an order")
 )

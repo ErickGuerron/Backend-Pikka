@@ -141,7 +141,7 @@ func (s *Store) AdjustStock(ctx context.Context, productID uuid.UUID, kind domai
 // todo en una transacción. El descuento es condicional: la base no deja bajar de cero aunque dos
 // pedidos lleguen a la vez. Los productos se bloquean en orden de id para evitar esperas circulares.
 // El id del pedido lo asigna la base; el pedido devuelto ya lo trae.
-func (s *Store) PlaceOrder(ctx context.Context, order domain.Order, lines []domain.OrderLine, actor *uuid.UUID) (domain.Order, error) {
+func (s *Store) PlaceOrder(ctx context.Context, order domain.Order, lines []domain.OrderLine, notice *domain.Notification, actor *uuid.UUID) (domain.Order, error) {
 	if len(lines) == 0 {
 		return domain.Order{}, domain.ErrNoItems
 	}
@@ -153,6 +153,11 @@ func (s *Store) PlaceOrder(ctx context.Context, order domain.Order, lines []doma
 		out, err := insertOrder(ctx, tx, order)
 		if err != nil {
 			return err
+		}
+		if notice != nil {
+			if err := insertNotification(ctx, tx, out.CustomerID, out.ID, *notice); err != nil {
+				return err
+			}
 		}
 		orderID, err := uuid.Parse(out.ID)
 		if err != nil {
