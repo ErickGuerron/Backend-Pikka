@@ -14,14 +14,20 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // zona horaria operativa disponible sin depender del sistema operativo
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	customerv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/customer/v1"
+	ordersv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/orders/v1"
+	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/adapters/geocoding"
 	grpcadapter "github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/adapters/grpc"
 	httpx "github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/adapters/http"
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/adapters/persistence"
+	zonesclient "github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/adapters/zones"
 	customercase "github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/application/customer"
+	orderapp "github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/application/order"
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/infrastructure/config"
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/infrastructure/postgres"
 )
@@ -71,10 +77,37 @@ func run(log *slog.Logger) error {
 		"canCreateOrders", canCreateOrders != nil,
 	)
 
-	// gRPC server para el dominio Customer. BE-T5b va a sumar interceptores
-	// de autenticación/autorización (ADR 0008 §3) cuando el gateway exponga
-	// los endpoints REST; por ahora el server solo traduce.
+	// Pedidos (ADR 0007): validación automática con Zone Service y cliente registrado.
+	location, err := time.LoadLocation(cfg.OperatingTimezone)
+	if err != nil {
+		return fmt.Errorf("operating timezone: %w", err)
+	}
+	zoneConn, err := grpc.NewClient(cfg.ZoneServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return fmt.Errorf("dial zone service: %w", err)
+	}
+	defer func() { _ = zoneConn.Close() }()
+	orderRepo := persistence.NewOrderRepository(pool)
+	notificationRepo := persistence.NewNotificationRepository(pool)
+	zoneClassifier := zonesclient.NewClassifier(zoneConn, cfg.ZoneTimeout)
+	geocoder := geocoding.NewPhoton(cfg.PhotonURL, cfg.PhotonBBox, cfg.GeocoderTimeout)
+	createOrder := orderapp.NewCreateOrder(customerRepo, zoneClassifier, geocoder, orderRepo, location)
+	listMyOrders := orderapp.NewListMyOrders(customerRepo, orderRepo)
+	reviewOrder := orderapp.NewReviewOrder(customerRepo, zoneClassifier, geocoder, orderRepo, location)
+	listExceptions := orderapp.NewListExceptions(orderRepo)
+	listMyNotifications := orderapp.NewListMyNotifications(customerRepo, notificationRepo)
+	log.Info("order use cases wired", "create", createOrder != nil, "review", reviewOrder != nil)
+
+	// gRPC server para Customer y Order. La autorización por rol se aplica en
+	// los casos de uso; el Gateway solo propaga la identidad del JWT.
 	grpcServer := grpc.NewServer()
+	ordersv1.RegisterOrderServiceServer(grpcServer, grpcadapter.NewOrderServer(grpcadapter.OrderUseCases{
+		Create:        createOrder,
+		ListMine:      listMyOrders,
+		Exceptions:    listExceptions,
+		Review:        reviewOrder,
+		Notifications: listMyNotifications,
+	}))
 	customerv1.RegisterCustomerServiceServer(grpcServer, grpcadapter.NewCustomerServer(grpcadapter.UseCases{
 		Create:          createCustomer,
 		GetByID:         getCustomerByID,

@@ -1,0 +1,295 @@
+package grpc
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+
+	ordersv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/orders/v1"
+	orderapp "github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/application/order"
+	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/domain"
+)
+
+// Metadata que el Gateway propaga tras validar el JWT (ADR 0002).
+const (
+	metadataUserID   = "x-user-id"
+	metadataUserRole = "x-user-role"
+)
+
+// OrderUseCases agrupa los casos de uso de pedidos que expone el adaptador gRPC.
+type OrderUseCases struct {
+	Create        *orderapp.CreateOrder
+	ListMine      *orderapp.ListMyOrders
+	Exceptions    *orderapp.ListExceptions
+	Review        *orderapp.ReviewOrder
+	Notifications *orderapp.ListMyNotifications
+}
+
+// OrderServer implementa ordersv1.OrderServiceServer. Solo traduce: la regla de
+// negocio vive en internal/application/order y en el dominio.
+type OrderServer struct {
+	ordersv1.UnimplementedOrderServiceServer
+	useCases OrderUseCases
+}
+
+// NewOrderServer inyecta los casos de uso.
+func NewOrderServer(uc OrderUseCases) *OrderServer {
+	return &OrderServer{useCases: uc}
+}
+
+// CreateOrder registra un pedido del cliente autenticado. Las coordenadas son opcionales.
+func (s *OrderServer) CreateOrder(ctx context.Context, req *ordersv1.CreateOrderRequest) (*ordersv1.CreateOrderResponse, error) {
+	if s.useCases.Create == nil {
+		return nil, status.Error(codes.Unimplemented, "create order is not wired")
+	}
+	userID, role, err := identityFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	order, err := s.useCases.Create.Run(ctx, orderapp.Command{
+		UserID:       userID,
+		Role:         role,
+		Address:      req.GetAddress(),
+		Latitude:     req.Latitude,
+		Longitude:    req.Longitude,
+		DeliveryDate: req.GetDeliveryDate(),
+		WindowStart:  req.GetWindowStart(),
+		WindowEnd:    req.GetWindowEnd(),
+	})
+	if err != nil {
+		return nil, mapOrderError(err)
+	}
+	return &ordersv1.CreateOrderResponse{Order: orderToProto(order)}, nil
+}
+
+// ListMyOrders devuelve los pedidos del cliente autenticado.
+func (s *OrderServer) ListMyOrders(ctx context.Context, _ *ordersv1.ListMyOrdersRequest) (*ordersv1.ListMyOrdersResponse, error) {
+	if s.useCases.ListMine == nil {
+		return nil, status.Error(codes.Unimplemented, "list my orders is not wired")
+	}
+	userID, role, err := identityFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orders, err := s.useCases.ListMine.Run(ctx, orderapp.Command{UserID: userID, Role: role})
+	if err != nil {
+		return nil, mapOrderError(err)
+	}
+	return &ordersv1.ListMyOrdersResponse{Orders: ordersToProto(orders)}, nil
+}
+
+// ListMyNotifications devuelve los avisos del cliente autenticado.
+func (s *OrderServer) ListMyNotifications(ctx context.Context, _ *ordersv1.ListMyNotificationsRequest) (*ordersv1.ListMyNotificationsResponse, error) {
+	if s.useCases.Notifications == nil {
+		return nil, status.Error(codes.Unimplemented, "list notifications is not wired")
+	}
+	userID, role, err := identityFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	list, err := s.useCases.Notifications.Run(ctx, orderapp.Command{UserID: userID, Role: role})
+	if err != nil {
+		return nil, mapOrderError(err)
+	}
+	out := make([]*ordersv1.Notification, 0, len(list))
+	for _, n := range list {
+		out = append(out, notificationToProto(n))
+	}
+	return &ordersv1.ListMyNotificationsResponse{Notifications: out}, nil
+}
+
+// ListOrderExceptions devuelve la cola de excepciones (solo ADMIN y OPERATOR).
+func (s *OrderServer) ListOrderExceptions(ctx context.Context, _ *ordersv1.ListOrderExceptionsRequest) (*ordersv1.ListOrderExceptionsResponse, error) {
+	if s.useCases.Exceptions == nil {
+		return nil, status.Error(codes.Unimplemented, "list order exceptions is not wired")
+	}
+	_, role, err := identityFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orders, err := s.useCases.Exceptions.Run(ctx, role)
+	if err != nil {
+		return nil, mapOrderError(err)
+	}
+	return &ordersv1.ListOrderExceptionsResponse{Orders: ordersToProto(orders)}, nil
+}
+
+// ReviewOrder aplica la decisión del operador sobre un pedido en revisión.
+func (s *OrderServer) ReviewOrder(ctx context.Context, req *ordersv1.ReviewOrderRequest) (*ordersv1.ReviewOrderResponse, error) {
+	if s.useCases.Review == nil {
+		return nil, status.Error(codes.Unimplemented, "review order is not wired")
+	}
+	_, role, err := identityFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	action, err := reviewActionFromProto(req.GetAction())
+	if err != nil {
+		return nil, err
+	}
+	order, err := s.useCases.Review.Run(ctx, orderapp.ReviewCommand{
+		Role:       role,
+		OrderID:    req.GetId(),
+		Action:     action,
+		Reason:     req.GetReason(),
+		Correction: correctionFromProto(req.GetCorrection()),
+	})
+	if err != nil {
+		return nil, mapOrderError(err)
+	}
+	return &ordersv1.ReviewOrderResponse{Order: orderToProto(order)}, nil
+}
+
+// identityFrom lee la identidad propagada por el Gateway. Sin ella no hay
+// alcance posible, así que la petición se rechaza antes de tocar casos de uso.
+func identityFrom(ctx context.Context) (uuid.UUID, string, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	ids := md.Get(metadataUserID)
+	roles := md.Get(metadataUserRole)
+	if len(ids) == 0 || ids[0] == "" || len(roles) == 0 || roles[0] == "" {
+		return uuid.Nil, "", status.Error(codes.Unauthenticated, "missing identity")
+	}
+	id, err := uuid.Parse(ids[0])
+	if err != nil {
+		return uuid.Nil, "", status.Error(codes.Unauthenticated, "invalid user identity")
+	}
+	return id, roles[0], nil
+}
+
+func reviewActionFromProto(action ordersv1.ReviewAction) (string, error) {
+	switch action {
+	case ordersv1.ReviewAction_REVIEW_ACTION_CONFIRM:
+		return orderapp.ActionConfirm, nil
+	case ordersv1.ReviewAction_REVIEW_ACTION_CORRECT:
+		return orderapp.ActionCorrect, nil
+	case ordersv1.ReviewAction_REVIEW_ACTION_REJECT:
+		return orderapp.ActionReject, nil
+	default:
+		return "", status.Error(codes.InvalidArgument, "action must be CONFIRM, CORRECT or REJECT")
+	}
+}
+
+func correctionFromProto(c *ordersv1.OrderCorrection) *orderapp.Correction {
+	if c == nil {
+		return nil
+	}
+	return &orderapp.Correction{
+		Address:      c.Address,
+		DeliveryDate: c.DeliveryDate,
+		WindowStart:  c.WindowStart,
+		WindowEnd:    c.WindowEnd,
+	}
+}
+
+// mapOrderError traduce errores de dominio y de caso de uso a códigos gRPC.
+// Los mensajes de validación del dominio son seguros para el cliente.
+func mapOrderError(err error) error {
+	switch {
+	case errors.Is(err, domain.ErrNotCustomer), errors.Is(err, domain.ErrNotOperator):
+		return status.Error(codes.PermissionDenied, err.Error())
+	case errors.Is(err, domain.ErrOrderNotFound):
+		return status.Error(codes.NotFound, "pedido no encontrado")
+	case errors.Is(err, domain.ErrOrderNotInReview):
+		// El contrato responde ABORTED (HTTP 409) cuando el pedido no está en revisión.
+		return status.Error(codes.Aborted, err.Error())
+	case errors.Is(err, domain.ErrSpatialReasonNotOverridable):
+		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, domain.ErrZonesUnavailable), errors.Is(err, domain.ErrGeocoderUnavailable):
+		return status.Error(codes.Unavailable, "validación de dirección no disponible, intente más tarde")
+	case errors.Is(err, domain.ErrReasonRequired),
+		errors.Is(err, orderapp.ErrUnknownAction),
+		errors.Is(err, orderapp.ErrNothingToCorrect),
+		errors.Is(err, domain.ErrInvalidAddress),
+		errors.Is(err, domain.ErrInvalidCoordinate),
+		errors.Is(err, domain.ErrInvalidDate),
+		errors.Is(err, domain.ErrPastDeliveryDate),
+		errors.Is(err, domain.ErrInvalidWindow):
+		return status.Error(codes.InvalidArgument, err.Error())
+	default:
+		return mapError(err)
+	}
+}
+
+func ordersToProto(orders []domain.Order) []*ordersv1.Order {
+	out := make([]*ordersv1.Order, 0, len(orders))
+	for _, order := range orders {
+		out = append(out, orderToProto(order))
+	}
+	return out
+}
+
+// orderToProto traduce el dominio al mensaje del contrato.
+func orderToProto(o domain.Order) *ordersv1.Order {
+	reasons := make([]ordersv1.ReviewReason, 0, len(o.ReviewReasons))
+	for _, reason := range o.ReviewReasons {
+		reasons = append(reasons, reviewReasonToProto(reason))
+	}
+	return &ordersv1.Order{
+		Id:            o.ID,
+		Address:       o.Address,
+		Latitude:      o.Latitude,
+		Longitude:     o.Longitude,
+		DeliveryDate:  o.DeliveryDate.String(),
+		WindowStart:   o.Window.Start(),
+		WindowEnd:     o.Window.End(),
+		Status:        statusToProto(o.Status),
+		ReviewReasons: reasons,
+		CreatedAt:     o.CreatedAt.UTC().Format(time.RFC3339),
+	}
+}
+
+func notificationToProto(n domain.Notification) *ordersv1.Notification {
+	return &ordersv1.Notification{
+		Id:        n.ID,
+		OrderId:   n.OrderID,
+		Kind:      string(n.Kind),
+		Detail:    n.Detail,
+		CreatedAt: n.CreatedAt.UTC().Format(time.RFC3339),
+		Read:      n.Read,
+	}
+}
+
+func statusToProto(s domain.Status) ordersv1.OrderStatus {
+	switch s {
+	case domain.StatusPending:
+		return ordersv1.OrderStatus_ORDER_STATUS_PENDING
+	case domain.StatusPendingReview:
+		return ordersv1.OrderStatus_ORDER_STATUS_PENDING_REVIEW
+	case domain.StatusRouteAssigned:
+		return ordersv1.OrderStatus_ORDER_STATUS_ROUTE_ASSIGNED
+	case domain.StatusPickedUp:
+		return ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP
+	case domain.StatusInTransit:
+		return ordersv1.OrderStatus_ORDER_STATUS_IN_TRANSIT
+	case domain.StatusDelivered:
+		return ordersv1.OrderStatus_ORDER_STATUS_DELIVERED
+	case domain.StatusNotDelivered:
+		return ordersv1.OrderStatus_ORDER_STATUS_NOT_DELIVERED
+	case domain.StatusCancelled:
+		return ordersv1.OrderStatus_ORDER_STATUS_CANCELLED
+	default:
+		return ordersv1.OrderStatus_ORDER_STATUS_UNSPECIFIED
+	}
+}
+
+func reviewReasonToProto(r domain.ReviewReason) ordersv1.ReviewReason {
+	switch r {
+	case domain.ReviewZoneNotCovered:
+		return ordersv1.ReviewReason_REVIEW_REASON_ZONE_NOT_COVERED
+	case domain.ReviewInvalidWindow:
+		return ordersv1.ReviewReason_REVIEW_REASON_INVALID_WINDOW
+	case domain.ReviewCapacityExceeded:
+		return ordersv1.ReviewReason_REVIEW_REASON_CAPACITY_EXCEEDED
+	case domain.ReviewCustomerBlocked:
+		return ordersv1.ReviewReason_REVIEW_REASON_CUSTOMER_BLOCKED
+	case domain.ReviewAddressNotLocated:
+		return ordersv1.ReviewReason_REVIEW_REASON_ADDRESS_NOT_LOCATED
+	default:
+		return ordersv1.ReviewReason_REVIEW_REASON_UNSPECIFIED
+	}
+}

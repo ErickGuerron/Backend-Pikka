@@ -58,6 +58,7 @@ func run(log *slog.Logger) error {
 	}
 	defer func() { _ = orderConn.Close() }()
 	customers := grpcclient.NewCustomer(orderConn, cfg.GRPCTimeout)
+	orders := grpcclient.NewOrders(orderConn, cfg.GRPCTimeout)
 
 	e := httpapi.NewRouter(log, httpapi.Options{
 		CORSAllowedOrigins:  cfg.CORSAllowedOrigins,
@@ -72,6 +73,7 @@ func run(log *slog.Logger) error {
 		EnableDocs:          cfg.EnableDocs,
 		Customers:           customers,
 		CustomerQueries:     customers,
+		Orders:              orders,
 	}, jwt.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer), auth, zones, func(ctx context.Context) bool {
 		// El gateway solo está listo si puede llegar a sus dependencias gRPC.
 		return auth.Ready(ctx) && zones.Ready(ctx)

@@ -12,14 +12,18 @@ import (
 // ID and version are assigned by persistence in the next sprint.
 type Order struct {
 	ID           string
+	CustomerID   string
+	ZoneID       string
 	Address      string
 	Latitude     float64
 	Longitude    float64
 	DeliveryDate DeliveryDate
 	Window       DeliveryWindow
 	Status       Status
-	CreatedAt    time.Time
-	Version      int64
+	// ReviewReasons is non-empty only while Status is PENDING_REVIEW (ADR 0007).
+	ReviewReasons []ReviewReason
+	CreatedAt     time.Time
+	Version       int64
 }
 
 // NewOrderInput contains only caller-controlled delivery data.

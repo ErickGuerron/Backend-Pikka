@@ -31,6 +31,8 @@ type Options struct {
 	Customers CustomerClient
 	// CustomerQueries, si no es nil, habilita GET /customers y GET /customers/:id (ADMIN).
 	CustomerQueries CustomerQueryClient
+	// Orders, si no es nil, habilita POST /orders y GET /orders/mine para clientes.
+	Orders OrderClient
 }
 
 // Readiness informa si una dependencia está lista.
@@ -123,6 +125,16 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 		ch := &customerHandlers{customers: opts.CustomerQueries}
 		adminOnly.GET("/customers", ch.list)
 		adminOnly.GET("/customers/:id", ch.get)
+	}
+
+	// Pedidos del cliente (ADR 0007). La autorización por rol la aplica Order Service.
+	if opts.Orders != nil {
+		o := &ordersHandlers{orders: opts.Orders}
+		authed.POST("/orders", o.create)
+		authed.GET("/orders/mine", o.listMine)
+		authed.GET("/orders/exceptions", o.listExceptions)
+		authed.POST("/orders/:id/review", o.review)
+		authed.GET("/notifications/mine", o.notifications)
 	}
 
 	z := &zonesHandlers{zones: zones}
