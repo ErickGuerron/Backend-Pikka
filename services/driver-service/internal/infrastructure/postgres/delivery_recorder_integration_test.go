@@ -27,8 +27,7 @@ func openRecorder(t *testing.T) (*postgres.DeliveryRecorder, *pgxpool.Pool) {
 	pool, err := pgxpool.New(ctx, dsn)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	_, err = pool.Exec(ctx, `CREATE SCHEMA IF NOT EXISTS drivers`)
-	require.NoError(t, err)
+	// El esquema drivers lo crea el script de inicialización; el usuario de servicio no puede crearlo.
 	require.NoError(t, postgres.Migrate(dsn))
 	_, err = pool.Exec(ctx, `TRUNCATE deliveries`)
 	require.NoError(t, err)
