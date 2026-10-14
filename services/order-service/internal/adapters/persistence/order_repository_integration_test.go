@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/domain"
+	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/infrastructure/postgres"
 )
 
 // Requiere ORDER_TEST_DATABASE_URL apuntando al esquema orders (ver README del servicio).
@@ -23,6 +24,8 @@ func TestOrderRepositoryPersistsAndListsByCustomer(t *testing.T) {
 	if dsn == "" {
 		t.Skip("ORDER_TEST_DATABASE_URL is not set")
 	}
+	// Esta prueba corre antes que las del paquete persistence_test: crea el esquema por su cuenta.
+	require.NoError(t, postgres.Migrate(dsn))
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, dsn)
 	require.NoError(t, err)
