@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/domain"
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/infrastructure/config"
 )
 
@@ -15,7 +16,7 @@ func TestLoadUsaDefectoSinVariable(t *testing.T) {
 	cfg, err := config.Load()
 
 	require.NoError(t, err)
-	assert.Equal(t, float64(config.DefaultArrivalRadiusMeters), cfg.ArrivalRadiusMeters)
+	assert.Equal(t, domain.DefaultArrivalRadiusMeters, cfg.ArrivalRadiusMeters)
 }
 
 func TestLoadLeeRadioEnMetros(t *testing.T) {

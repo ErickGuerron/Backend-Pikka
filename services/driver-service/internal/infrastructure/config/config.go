@@ -6,11 +6,9 @@ import (
 	"math"
 	"os"
 	"strconv"
-)
 
-// DefaultArrivalRadiusMeters es el radio de llegada por defecto. Es un valor propuesto,
-// no definido en los documentos: se puede cambiar con DRIVER_ARRIVAL_RADIUS_METERS.
-const DefaultArrivalRadiusMeters = 50
+	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/domain"
+)
 
 // Config agrupa la configuración del proceso.
 type Config struct {
@@ -24,7 +22,7 @@ type Config struct {
 func Load() (Config, error) {
 	raw := os.Getenv("DRIVER_ARRIVAL_RADIUS_METERS")
 	if raw == "" {
-		return Config{ArrivalRadiusMeters: DefaultArrivalRadiusMeters}, nil
+		return Config{ArrivalRadiusMeters: domain.DefaultArrivalRadiusMeters}, nil
 	}
 	radius, err := ParseRadius(raw)
 	if err != nil {

@@ -93,6 +93,10 @@ func NewDeliveryRecord(stopID string, outcome Outcome, reason NotDeliveredReason
 	return DeliveryRecord{StopID: stopID, Outcome: outcome, Reason: reason, At: at, Location: loc, PhotoURL: photoURL}, nil
 }
 
+// DefaultArrivalRadiusMeters es el radio de llegada por defecto. Es un valor propuesto, no
+// definido en los documentos: se cambia con DRIVER_ARRIVAL_RADIUS_METERS.
+const DefaultArrivalRadiusMeters float64 = 50
+
 // ArrivalWindow es la franja horaria de la parada, en la misma zona horaria que At.
 type ArrivalWindow struct {
 	Start time.Time
