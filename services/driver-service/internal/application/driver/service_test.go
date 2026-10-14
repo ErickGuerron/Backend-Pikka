@@ -184,8 +184,11 @@ func TestFindAvailableDriversLimite(t *testing.T) {
 
 	_, err = svc.FindAvailableDrivers(ctx, -1)
 	assert.ErrorIs(t, err, driver.ErrInvalidLimit)
-	_, err = svc.FindAvailableDrivers(ctx, 101)
-	assert.ErrorIs(t, err, driver.ErrInvalidLimit)
+
+	// Mayor que el máximo no es error: el contrato lo recorta a 100.
+	got, err = svc.FindAvailableDrivers(ctx, 500)
+	require.NoError(t, err)
+	assert.Len(t, got, 3)
 }
 
 func TestRepositorioDevuelveNoEncontrado(t *testing.T) {

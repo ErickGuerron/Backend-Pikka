@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,7 +16,11 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"google.golang.org/grpc"
 
+	driversv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/drivers/v1"
+	grpcadapter "github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/adapters/grpc"
+	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/application/driver"
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/infrastructure/config"
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/infrastructure/postgres"
 )
@@ -47,11 +52,46 @@ func run(log *slog.Logger) error {
 	}
 	defer pool.Close()
 
-	// Los casos de uso aún no se exponen por HTTP; se cablean cuando existan las rutas de
-	// repartidores. Aquí solo se registra el radio con el que arranca el proceso.
-	log.Info("driver service ready to wire use cases", "arrivalRadiusMeters", cfg.ArrivalRadiusMeters)
+	drivers := driver.NewService(postgres.NewDriverRepository(pool), time.Now)
+	log.Info("driver service wired", "arrivalRadiusMeters", cfg.ArrivalRadiusMeters)
 
-	return serve(ctx, log, cfg.HTTPPort, pool)
+	// Si gRPC falla, se cancela el proceso entero: un servicio a medias no debe seguir sirviendo.
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	grpcErr := make(chan error, 1)
+	go func() {
+		err := serveGRPC(runCtx, log, cfg.GRPCPort, drivers)
+		if err != nil {
+			cancel()
+		}
+		grpcErr <- err
+	}()
+
+	httpErr := serve(runCtx, log, cfg.HTTPPort, pool)
+	cancel()
+	return errors.Join(httpErr, <-grpcErr)
+}
+
+// serveGRPC expone el contrato drivers.v1 hasta que ctx se cancela.
+func serveGRPC(ctx context.Context, log *slog.Logger, port int, svc *driver.Service) error {
+	var lc net.ListenConfig
+	lis, err := lc.Listen(ctx, "tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return fmt.Errorf("grpc listen: %w", err)
+	}
+	srv := grpc.NewServer()
+	driversv1.RegisterDriverServiceServer(srv, grpcadapter.NewDriverServer(svc))
+	log.Info("grpc listening", "port", port)
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(lis) }()
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+		srv.GracefulStop()
+		return nil
+	}
 }
 
 func serve(ctx context.Context, log *slog.Logger, port int, pool *pgxpool.Pool) error {

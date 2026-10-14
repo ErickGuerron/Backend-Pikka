@@ -19,8 +19,8 @@ const (
 	maxAttempts = 5
 )
 
-// ErrInvalidLimit indica un límite fuera de rango para FindAvailableDrivers.
-var ErrInvalidLimit = errors.New("limit must be between 1 and 100")
+// ErrInvalidLimit indica un límite negativo para FindAvailableDrivers.
+var ErrInvalidLimit = errors.New("limit must not be negative")
 
 // Service coordina los cambios de estado de los repartidores.
 type Service struct {
@@ -68,13 +68,16 @@ func (s *Service) ReserveDriver(ctx context.Context, id, routeID string) (*domai
 }
 
 // FindAvailableDrivers devuelve repartidores activos y disponibles. limit 0 usa el valor
-// por defecto (50); fuera de 1..100 se rechaza.
+// por defecto (50), un valor mayor que 100 se recorta a 100 y un negativo se rechaza. Así
+// lo define el contrato drivers.v1.
 func (s *Service) FindAvailableDrivers(ctx context.Context, limit int) ([]*domain.Driver, error) {
 	switch {
+	case limit < 0:
+		return nil, ErrInvalidLimit
 	case limit == 0:
 		limit = defaultLimit
-	case limit < 1 || limit > maxLimit:
-		return nil, ErrInvalidLimit
+	case limit > maxLimit:
+		limit = maxLimit
 	}
 	return s.repo.FindAvailable(ctx, limit)
 }
