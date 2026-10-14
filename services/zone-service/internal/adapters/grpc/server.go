@@ -118,9 +118,10 @@ func (s *Server) GetZone(ctx context.Context, req *zonesv1.GetZoneRequest) (*zon
 	return &zonesv1.GetZoneResponse{Zone: toProtoZone(zone)}, nil
 }
 
-// ClassifyPoint devuelve la zona que contiene la coordenada.
+// ClassifyPoint devuelve la zona que contiene la coordenada. Lo usan los
+// operadores y, para validar pedidos, el Order Service con identidad de servicio.
 func (s *Server) ClassifyPoint(ctx context.Context, req *zonesv1.ClassifyPointRequest) (*zonesv1.ClassifyPointResponse, error) {
-	if err := requireRole(ctx, roleAdmin, roleOperator); err != nil {
+	if err := requireRole(ctx, roleAdmin, roleOperator, roleService); err != nil {
 		return nil, err
 	}
 	point := req.GetPoint()

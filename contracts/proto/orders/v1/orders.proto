@@ -22,6 +22,12 @@ service OrderService {
   // ReviewOrder only accepts PENDING_REVIEW; another state returns
   // ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
   rpc ReviewOrder(ReviewOrderRequest) returns (ReviewOrderResponse);
+  // ListMyOrders returns the orders of the customer identified by the
+  // propagated user metadata. Only the CUSTOMER role can call it.
+  rpc ListMyOrders(ListMyOrdersRequest) returns (ListMyOrdersResponse);
+  // ListMyNotifications returns the notices the customer received about the
+  // review of their orders, newest first. Only the CUSTOMER role can call it.
+  rpc ListMyNotifications(ListMyNotificationsRequest) returns (ListMyNotificationsResponse);
 }
 
 enum OrderStatus {
@@ -42,6 +48,8 @@ enum ReviewReason {
   REVIEW_REASON_INVALID_WINDOW = 2;
   REVIEW_REASON_CAPACITY_EXCEEDED = 3;
   REVIEW_REASON_CUSTOMER_BLOCKED = 4;
+  // La dirección no pudo localizarse en el mapa (geocodificación sin resultado).
+  REVIEW_REASON_ADDRESS_NOT_LOCATED = 5;
 }
 
 enum ReviewAction {
@@ -141,4 +149,31 @@ message ReviewOrderRequest {
 
 message ReviewOrderResponse {
   Order order = 1;
+}
+
+message ListMyOrdersRequest {}
+
+message ListMyOrdersResponse {
+  // Ordered by created_at descending, then id ascending for ties.
+  repeated Order orders = 1;
+}
+
+message ListMyNotificationsRequest {}
+
+message ListMyNotificationsResponse {
+  // Newest first, then id ascending for ties.
+  repeated Notification notifications = 1;
+}
+
+// Notice sent to the customer when the automatic validation or an operator review changes an order.
+message Notification {
+  string id = 1;
+  string order_id = 2;
+  // ORDER_IN_REVIEW, ORDER_CONFIRMED, ORDER_CORRECTED or ORDER_REJECTED.
+  string kind = 3;
+  // Review reasons (ORDER_IN_REVIEW) or the operator's audit reason (other kinds).
+  string detail = 4;
+  // RFC 3339, UTC.
+  string created_at = 5;
+  bool read = 6;
 }

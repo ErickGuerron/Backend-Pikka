@@ -25,6 +25,8 @@ const (
 	OrderService_GetPendingOrders_FullMethodName    = "/orders.v1.OrderService/GetPendingOrders"
 	OrderService_ListOrderExceptions_FullMethodName = "/orders.v1.OrderService/ListOrderExceptions"
 	OrderService_ReviewOrder_FullMethodName         = "/orders.v1.OrderService/ReviewOrder"
+	OrderService_ListMyOrders_FullMethodName        = "/orders.v1.OrderService/ListMyOrders"
+	OrderService_ListMyNotifications_FullMethodName = "/orders.v1.OrderService/ListMyNotifications"
 )
 
 // OrderServiceClient is the client API for OrderService service.
@@ -49,6 +51,12 @@ type OrderServiceClient interface {
 	// ReviewOrder only accepts PENDING_REVIEW; another state returns
 	// ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
 	ReviewOrder(ctx context.Context, in *ReviewOrderRequest, opts ...grpc.CallOption) (*ReviewOrderResponse, error)
+	// ListMyOrders returns the orders of the customer identified by the
+	// propagated user metadata. Only the CUSTOMER role can call it.
+	ListMyOrders(ctx context.Context, in *ListMyOrdersRequest, opts ...grpc.CallOption) (*ListMyOrdersResponse, error)
+	// ListMyNotifications returns the notices the customer received about the
+	// review of their orders, newest first. Only the CUSTOMER role can call it.
+	ListMyNotifications(ctx context.Context, in *ListMyNotificationsRequest, opts ...grpc.CallOption) (*ListMyNotificationsResponse, error)
 }
 
 type orderServiceClient struct {
@@ -119,6 +127,26 @@ func (c *orderServiceClient) ReviewOrder(ctx context.Context, in *ReviewOrderReq
 	return out, nil
 }
 
+func (c *orderServiceClient) ListMyOrders(ctx context.Context, in *ListMyOrdersRequest, opts ...grpc.CallOption) (*ListMyOrdersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMyOrdersResponse)
+	err := c.cc.Invoke(ctx, OrderService_ListMyOrders_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *orderServiceClient) ListMyNotifications(ctx context.Context, in *ListMyNotificationsRequest, opts ...grpc.CallOption) (*ListMyNotificationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMyNotificationsResponse)
+	err := c.cc.Invoke(ctx, OrderService_ListMyNotifications_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // OrderServiceServer is the server API for OrderService service.
 // All implementations must embed UnimplementedOrderServiceServer
 // for forward compatibility.
@@ -141,6 +169,12 @@ type OrderServiceServer interface {
 	// ReviewOrder only accepts PENDING_REVIEW; another state returns
 	// ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
 	ReviewOrder(context.Context, *ReviewOrderRequest) (*ReviewOrderResponse, error)
+	// ListMyOrders returns the orders of the customer identified by the
+	// propagated user metadata. Only the CUSTOMER role can call it.
+	ListMyOrders(context.Context, *ListMyOrdersRequest) (*ListMyOrdersResponse, error)
+	// ListMyNotifications returns the notices the customer received about the
+	// review of their orders, newest first. Only the CUSTOMER role can call it.
+	ListMyNotifications(context.Context, *ListMyNotificationsRequest) (*ListMyNotificationsResponse, error)
 	mustEmbedUnimplementedOrderServiceServer()
 }
 
@@ -168,6 +202,12 @@ func (UnimplementedOrderServiceServer) ListOrderExceptions(context.Context, *Lis
 }
 func (UnimplementedOrderServiceServer) ReviewOrder(context.Context, *ReviewOrderRequest) (*ReviewOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReviewOrder not implemented")
+}
+func (UnimplementedOrderServiceServer) ListMyOrders(context.Context, *ListMyOrdersRequest) (*ListMyOrdersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListMyOrders not implemented")
+}
+func (UnimplementedOrderServiceServer) ListMyNotifications(context.Context, *ListMyNotificationsRequest) (*ListMyNotificationsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListMyNotifications not implemented")
 }
 func (UnimplementedOrderServiceServer) mustEmbedUnimplementedOrderServiceServer() {}
 func (UnimplementedOrderServiceServer) testEmbeddedByValue()                      {}
@@ -298,6 +338,42 @@ func _OrderService_ReviewOrder_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _OrderService_ListMyOrders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMyOrdersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).ListMyOrders(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_ListMyOrders_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).ListMyOrders(ctx, req.(*ListMyOrdersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OrderService_ListMyNotifications_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMyNotificationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).ListMyNotifications(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_ListMyNotifications_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).ListMyNotifications(ctx, req.(*ListMyNotificationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // OrderService_ServiceDesc is the grpc.ServiceDesc for OrderService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -328,6 +404,14 @@ var OrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReviewOrder",
 			Handler:    _OrderService_ReviewOrder_Handler,
+		},
+		{
+			MethodName: "ListMyOrders",
+			Handler:    _OrderService_ListMyOrders_Handler,
+		},
+		{
+			MethodName: "ListMyNotifications",
+			Handler:    _OrderService_ListMyNotifications_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

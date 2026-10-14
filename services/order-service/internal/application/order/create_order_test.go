@@ -1,0 +1,317 @@
+package order
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
+
+	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/application/ports"
+	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/domain"
+)
+
+// fakeCustomers solo implementa las lecturas que usan los casos de uso.
+type fakeCustomers struct {
+	ports.CustomerRepository
+	byUser map[uuid.UUID]domain.Customer
+	byID   map[uuid.UUID]domain.Customer
+}
+
+func (f *fakeCustomers) GetByUserID(_ context.Context, userID uuid.UUID) (domain.Customer, error) {
+	c, ok := f.byUser[userID]
+	if !ok {
+		return domain.Customer{}, domain.ErrCustomerNotFound
+	}
+	return c, nil
+}
+
+func (f *fakeCustomers) GetByID(_ context.Context, id uuid.UUID) (domain.Customer, error) {
+	c, ok := f.byID[id]
+	if !ok {
+		return domain.Customer{}, domain.ErrCustomerNotFound
+	}
+	return c, nil
+}
+
+// fakeZones cuenta las llamadas para verificar cuándo no se consulta la zona.
+type fakeZones struct {
+	zoneID string
+	err    error
+	calls  int
+}
+
+func (f *fakeZones) ClassifyPoint(_ context.Context, _, _ float64) (string, error) {
+	f.calls++
+	return f.zoneID, f.err
+}
+
+type fakeGeocoder struct {
+	found bool
+	err   error
+	calls int
+}
+
+func (f *fakeGeocoder) Locate(_ context.Context, _ string) (float64, float64, bool, error) {
+	f.calls++
+	if f.err != nil {
+		return 0, 0, false, f.err
+	}
+	return -0.18, -78.48, f.found, nil
+}
+
+// fakeOrders guarda en memoria, como la tabla: pedidos y avisos.
+type fakeOrders struct {
+	saved   []domain.Order
+	notices []domain.Notification
+}
+
+func (f *fakeOrders) Create(_ context.Context, o domain.Order, notice *domain.Notification) (domain.Order, error) {
+	o.ID = uuid.NewString()
+	f.saved = append(f.saved, o)
+	if notice != nil {
+		f.notices = append(f.notices, *notice)
+	}
+	return o, nil
+}
+
+func (f *fakeOrders) ListByCustomer(_ context.Context, customerID uuid.UUID) ([]domain.Order, error) {
+	var out []domain.Order
+	for _, o := range f.saved {
+		if o.CustomerID == customerID.String() {
+			out = append(out, o)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeOrders) ListExceptions(_ context.Context) ([]domain.Order, error) {
+	var out []domain.Order
+	for _, o := range f.saved {
+		if o.Status == domain.StatusPendingReview {
+			out = append(out, o)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeOrders) Review(_ context.Context, _ string, _ func(domain.Order) (domain.Order, *domain.Notification, error)) (domain.Order, error) {
+	return domain.Order{}, errors.New("not used by create tests")
+}
+
+var (
+	customerUser = uuid.New()
+	customerID   = uuid.New()
+	zoneUUID     = uuid.NewString()
+	localZone    = time.FixedZone("operating", -5*60*60)
+)
+
+func activeCustomer() domain.Customer {
+	return domain.Customer{ID: customerID, UserID: customerUser, Status: domain.StatusActive, PendingSurcharge: decimal.Zero}
+}
+
+func blockedCustomer() domain.Customer {
+	c := activeCustomer()
+	c.Status = domain.StatusBlockedSurcharge
+	return c
+}
+
+func addressCommand() Command {
+	return Command{
+		UserID:       customerUser,
+		Role:         RoleCustomer,
+		Address:      "Avenida Amazonas 123, Quito",
+		DeliveryDate: "2030-04-12",
+		WindowStart:  "09:00",
+		WindowEnd:    "12:00",
+	}
+}
+
+func knownPoint() Command {
+	cmd := addressCommand()
+	lat, lng := -0.18, -78.48
+	cmd.Latitude, cmd.Longitude = &lat, &lng
+	return cmd
+}
+
+type createFixture struct {
+	uc       *CreateOrder
+	orders   *fakeOrders
+	zones    *fakeZones
+	geocoder *fakeGeocoder
+}
+
+func newCreate(customer domain.Customer, zones *fakeZones, geocoder *fakeGeocoder) createFixture {
+	orders := &fakeOrders{}
+	customers := &fakeCustomers{byUser: map[uuid.UUID]domain.Customer{customer.UserID: customer}}
+	uc := NewCreateOrder(customers, zones, geocoder, orders, localZone)
+	uc.clock = func() time.Time { return time.Date(2030, 4, 10, 10, 0, 0, 0, time.UTC) }
+	return createFixture{uc: uc, orders: orders, zones: zones, geocoder: geocoder}
+}
+
+func TestCreateOrderCoveredActiveCustomerIsPlannable(t *testing.T) {
+	f := newCreate(activeCustomer(), &fakeZones{zoneID: zoneUUID}, &fakeGeocoder{found: true})
+
+	got, err := f.uc.Run(context.Background(), knownPoint())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.Status != domain.StatusPending || len(got.ReviewReasons) != 0 {
+		t.Fatalf("status = %s reasons = %v, want PENDING without reasons", got.Status, got.ReviewReasons)
+	}
+	if got.ZoneID != zoneUUID || got.CustomerID != customerID.String() {
+		t.Fatalf("zone = %q customer = %q", got.ZoneID, got.CustomerID)
+	}
+	if f.geocoder.calls != 0 {
+		t.Fatal("el punto del mapa no debe geocodificarse de nuevo")
+	}
+	if len(f.orders.notices) != 0 {
+		t.Fatal("un pedido sin revisión no genera aviso")
+	}
+}
+
+func TestCreateOrderGeocodesAddressWhenNoPointIsGiven(t *testing.T) {
+	f := newCreate(activeCustomer(), &fakeZones{zoneID: zoneUUID}, &fakeGeocoder{found: true})
+
+	got, err := f.uc.Run(context.Background(), addressCommand())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if f.geocoder.calls != 1 {
+		t.Fatalf("geocoder calls = %d, want 1", f.geocoder.calls)
+	}
+	if got.Status != domain.StatusPending || got.Latitude == 0 {
+		t.Fatalf("status = %s lat = %v, want PENDING with the geocoded point", got.Status, got.Latitude)
+	}
+}
+
+func TestCreateOrderUnlocatedAddressGoesToReviewWithoutZoneCheck(t *testing.T) {
+	zones := &fakeZones{zoneID: zoneUUID}
+	f := newCreate(activeCustomer(), zones, &fakeGeocoder{found: false})
+
+	got, err := f.uc.Run(context.Background(), addressCommand())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.Status != domain.StatusPendingReview || len(got.ReviewReasons) != 1 || got.ReviewReasons[0] != domain.ReviewAddressNotLocated {
+		t.Fatalf("status = %s reasons = %v, want PENDING_REVIEW [ADDRESS_NOT_LOCATED]", got.Status, got.ReviewReasons)
+	}
+	if zones.calls != 0 {
+		t.Fatal("sin coordenadas no se consulta la zona")
+	}
+	if len(f.orders.notices) != 1 || f.orders.notices[0].Kind != domain.NotificationInReview {
+		t.Fatalf("notices = %v, want one ORDER_IN_REVIEW", f.orders.notices)
+	}
+}
+
+func TestCreateOrderOutsideZoneGoesToReviewAndNotifiesCustomer(t *testing.T) {
+	f := newCreate(activeCustomer(), &fakeZones{err: domain.ErrZoneNotCovered}, &fakeGeocoder{found: true})
+
+	got, err := f.uc.Run(context.Background(), addressCommand())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.Status != domain.StatusPendingReview || len(got.ReviewReasons) != 1 || got.ReviewReasons[0] != domain.ReviewZoneNotCovered {
+		t.Fatalf("status = %s reasons = %v, want PENDING_REVIEW [ZONE_NOT_COVERED]", got.Status, got.ReviewReasons)
+	}
+	if got.ZoneID != "" {
+		t.Fatalf("zone id = %q, want empty outside every zone", got.ZoneID)
+	}
+	if len(f.orders.notices) != 1 || f.orders.notices[0].Detail != "ZONE_NOT_COVERED" {
+		t.Fatalf("notices = %v, want the review reason as detail", f.orders.notices)
+	}
+}
+
+func TestCreateOrderBlockedCustomerGoesToReviewEvenInsideZone(t *testing.T) {
+	f := newCreate(blockedCustomer(), &fakeZones{zoneID: zoneUUID}, &fakeGeocoder{found: true})
+
+	got, err := f.uc.Run(context.Background(), knownPoint())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.Status != domain.StatusPendingReview || len(got.ReviewReasons) != 1 || got.ReviewReasons[0] != domain.ReviewCustomerBlocked {
+		t.Fatalf("status = %s reasons = %v, want PENDING_REVIEW [CUSTOMER_BLOCKED]", got.Status, got.ReviewReasons)
+	}
+}
+
+func TestCreateOrderBlockedCustomerOutsideZoneKeepsBothReasons(t *testing.T) {
+	f := newCreate(blockedCustomer(), &fakeZones{err: domain.ErrZoneNotCovered}, &fakeGeocoder{found: true})
+
+	got, err := f.uc.Run(context.Background(), knownPoint())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(got.ReviewReasons) != 2 {
+		t.Fatalf("reasons = %v, want both CUSTOMER_BLOCKED and ZONE_NOT_COVERED", got.ReviewReasons)
+	}
+}
+
+func TestCreateOrderFailsWithoutSavingWhenZoneServiceIsDown(t *testing.T) {
+	f := newCreate(activeCustomer(), &fakeZones{err: domain.ErrZonesUnavailable}, &fakeGeocoder{found: true})
+
+	_, err := f.uc.Run(context.Background(), knownPoint())
+	if !errors.Is(err, domain.ErrZonesUnavailable) {
+		t.Fatalf("err = %v, want ErrZonesUnavailable", err)
+	}
+	if len(f.orders.saved) != 0 {
+		t.Fatalf("saved %d orders while validation was unavailable", len(f.orders.saved))
+	}
+}
+
+func TestCreateOrderFailsWithoutSavingWhenGeocoderIsDown(t *testing.T) {
+	f := newCreate(activeCustomer(), &fakeZones{zoneID: zoneUUID}, &fakeGeocoder{err: domain.ErrGeocoderUnavailable})
+
+	_, err := f.uc.Run(context.Background(), addressCommand())
+	if !errors.Is(err, domain.ErrGeocoderUnavailable) {
+		t.Fatalf("err = %v, want ErrGeocoderUnavailable", err)
+	}
+	if len(f.orders.saved) != 0 {
+		t.Fatal("an order was saved while the address could not be validated")
+	}
+}
+
+func TestCreateOrderRejectsNonCustomerRole(t *testing.T) {
+	f := newCreate(activeCustomer(), &fakeZones{zoneID: zoneUUID}, &fakeGeocoder{found: true})
+
+	cmd := knownPoint()
+	cmd.Role = "ADMIN"
+	_, err := f.uc.Run(context.Background(), cmd)
+	if !errors.Is(err, domain.ErrNotCustomer) {
+		t.Fatalf("err = %v, want ErrNotCustomer", err)
+	}
+	if len(f.orders.saved) != 0 {
+		t.Fatal("a non-customer order was saved")
+	}
+}
+
+func TestCreateOrderRequiresRegisteredCustomer(t *testing.T) {
+	f := newCreate(activeCustomer(), &fakeZones{zoneID: zoneUUID}, &fakeGeocoder{found: true})
+
+	cmd := knownPoint()
+	cmd.UserID = uuid.New()
+	_, err := f.uc.Run(context.Background(), cmd)
+	if !errors.Is(err, domain.ErrCustomerNotFound) {
+		t.Fatalf("err = %v, want ErrCustomerNotFound", err)
+	}
+}
+
+func TestListMyOrdersReturnsOnlyTheCallersOrders(t *testing.T) {
+	f := newCreate(activeCustomer(), &fakeZones{zoneID: zoneUUID}, &fakeGeocoder{found: true})
+	if _, err := f.uc.Run(context.Background(), knownPoint()); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	// Pedido de otro cliente: no debe aparecer en la lista del primero.
+	f.orders.saved = append(f.orders.saved, domain.Order{CustomerID: uuid.NewString(), Status: domain.StatusPending})
+
+	customers := &fakeCustomers{byUser: map[uuid.UUID]domain.Customer{customerUser: activeCustomer()}}
+	list := NewListMyOrders(customers, f.orders)
+	got, err := list.Run(context.Background(), Command{UserID: customerUser, Role: RoleCustomer})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(got) != 1 || got[0].CustomerID != customerID.String() {
+		t.Fatalf("got %d orders, want only the caller's one", len(got))
+	}
+}

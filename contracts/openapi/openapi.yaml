@@ -259,13 +259,15 @@ paths:
     post:
       tags: [orders]
       operationId: createOrder
-      summary: Registra un pedido (ADMIN u OPERATOR)
+      summary: Registra un pedido del cliente autenticado (solo CUSTOMER)
       description: |
-        Contrato de Sprint 1; transporte implementado en Sprint 2.
-        El servidor asigna id, createdAt y el estado. La base del Sprint 1 inicia
-        en PENDING; la validación automática posterior puede enviarlo a revisión.
+        El servidor asigna id, createdAt y el estado. La validación automática (ADR 0007)
+        consulta la zona de la dirección y el estado del cliente. Si alguna regla no se
+        cumple, el pedido queda en PENDING_REVIEW con reviewReasons; si no, en PENDING.
+        Una dirección fuera de zona no es un error: el pedido entra a la cola de excepciones.
         La fecha de entrega debe ser hoy o posterior en la zona horaria de operación.
         La ventana no cruza medianoche: windowEnd debe ser posterior a windowStart.
+        Si Zone Service no responde, no se registra el pedido y se devuelve 503.
       requestBody:
         required: true
         content:
@@ -278,6 +280,33 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Order" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503":
+          description: Zone Service no disponible; el pedido no se registró
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/orders/mine:
+    get:
+      tags: [orders]
+      operationId: listMyOrders
+      summary: Lista los pedidos del cliente autenticado (solo CUSTOMER)
+      description: |
+        Solo devuelve pedidos del cliente de la sesión; nunca de otros clientes (BOLA, ADR 0007).
+        Orden descendente por createdAt y ascendente por id en empates. Sin pedidos devuelve un arreglo vacío.
+      responses:
+        "200":
+          description: Pedidos del cliente
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [orders]
+                properties:
+                  orders:
+                    type: array
+                    items: { $ref: "#/components/schemas/Order" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
   /api/v1/orders/{id}:
@@ -301,6 +330,28 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/notifications/mine:
+    get:
+      tags: [orders]
+      operationId: listMyNotifications
+      summary: Lista los avisos del cliente autenticado (solo CUSTOMER)
+      description: |
+        Avisos sobre la revisión de sus pedidos (ADR 0007, sección 3): pedido en revisión, confirmado,
+        corregido o rechazado. Del más reciente al más antiguo. Solo devuelve avisos de la sesión.
+      responses:
+        "200":
+          description: Avisos del cliente
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [notifications]
+                properties:
+                  notifications:
+                    type: array
+                    items: { $ref: "#/components/schemas/Notification" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /api/v1/orders/exceptions:
     get:
       tags: [orders]
@@ -583,7 +634,7 @@ components:
     ReviewReason:
       type: string
       description: Regla de la validación automática que no se cumplió (ADR 0007, sección 3).
-      enum: [ZONE_NOT_COVERED, INVALID_WINDOW, CAPACITY_EXCEEDED, CUSTOMER_BLOCKED]
+      enum: [ZONE_NOT_COVERED, INVALID_WINDOW, CAPACITY_EXCEEDED, CUSTOMER_BLOCKED, ADDRESS_NOT_LOCATED]
     OrderReviewAction:
       type: string
       enum: [CONFIRM, CORRECT, REJECT]
@@ -606,11 +657,11 @@ components:
         createdAt: { type: string, format: date-time, description: Instante de registro asignado por el servidor en RFC 3339 UTC }
     CreateOrderRequest:
       type: object
-      required: [address, latitude, longitude, deliveryDate, windowStart, windowEnd]
+      required: [address, deliveryDate, windowStart, windowEnd]
       properties:
-        address: { type: string, minLength: 5, maxLength: 300 }
-        latitude: { type: number, minimum: -90, maximum: 90, description: Latitud WGS 84 elegida en el mapa }
-        longitude: { type: number, minimum: -180, maximum: 180, description: Longitud WGS 84 elegida en el mapa }
+        address: { type: string, minLength: 5, maxLength: 300, description: "Dirección escrita por el cliente. El backend la localiza y valida la zona" }
+        latitude: { type: number, minimum: -90, maximum: 90, description: "Opcional. Punto WGS 84 elegido en el mapa; si falta, el backend geocodifica la dirección" }
+        longitude: { type: number, minimum: -180, maximum: 180, description: "Opcional. Punto WGS 84 elegido en el mapa; debe enviarse junto con latitude" }
         deliveryDate: { type: string, format: date }
         windowStart: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$" }
         windowEnd: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$", description: Debe ser posterior a windowStart }
@@ -622,6 +673,16 @@ components:
         deliveryDate: { type: string, format: date }
         windowStart: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$" }
         windowEnd: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$" }
+    Notification:
+      type: object
+      required: [id, orderId, kind, detail, createdAt, read]
+      properties:
+        id: { type: string, format: uuid }
+        orderId: { type: string, format: uuid }
+        kind: { type: string, enum: [ORDER_IN_REVIEW, ORDER_CONFIRMED, ORDER_CORRECTED, ORDER_REJECTED] }
+        detail: { type: string, maxLength: 300, description: Motivos del aviso o motivo de auditoría del operador }
+        createdAt: { type: string, format: date-time }
+        read: { type: boolean }
     OrderReviewRequest:
       type: object
       required: [action, reason]

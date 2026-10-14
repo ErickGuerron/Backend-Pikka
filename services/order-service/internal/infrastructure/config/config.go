@@ -6,15 +6,27 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"time"
 )
 
 // Config agrupa la configuración del proceso.
 type Config struct {
 	HTTPPort int
-	// GRPCPort expone el dominio Customer al API Gateway y a otros
-	// servicios internos. BE-T5b lo suma al docker-compose.
+	// GRPCPort expone el dominio Customer y Order al API Gateway.
 	GRPCPort int
-	Postgres PostgresConfig
+	// ZoneServiceAddr es el destino gRPC de Zone Service (validación de zona).
+	ZoneServiceAddr string
+	// ZoneTimeout acota cada llamada a Zone Service.
+	ZoneTimeout time.Duration
+	// OperatingTimezone fija el día local de registro de pedidos (IANA).
+	OperatingTimezone string
+	// PhotonURL es el geocodificador (Photon). En producción, una instancia propia con datos de Ecuador.
+	PhotonURL string
+	// PhotonBBox acota la búsqueda: minLon,minLat,maxLon,maxLat.
+	PhotonBBox string
+	// GeocoderTimeout acota cada geocodificación.
+	GeocoderTimeout time.Duration
+	Postgres        PostgresConfig
 }
 
 // PostgresConfig describe la conexión del usuario del servicio a su esquema.
@@ -38,6 +50,14 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	zoneTimeoutMs, err := intEnv("ZONE_GRPC_TIMEOUT_MS", 2000)
+	if err != nil {
+		return Config{}, err
+	}
+	geocoderTimeoutMs, err := intEnv("GEOCODER_TIMEOUT_MS", 5000)
+	if err != nil {
+		return Config{}, err
+	}
 
 	password := os.Getenv("POSTGRES_PASSWORD")
 	if password == "" {
@@ -45,8 +65,15 @@ func Load() (Config, error) {
 	}
 
 	return Config{
-		HTTPPort: httpPort,
-		GRPCPort: grpcPort,
+		HTTPPort:          httpPort,
+		GRPCPort:          grpcPort,
+		ZoneServiceAddr:   getEnv("ZONE_SERVICE_ADDR", "localhost:9090"),
+		ZoneTimeout:       time.Duration(zoneTimeoutMs) * time.Millisecond,
+		OperatingTimezone: getEnv("OPERATING_TIMEZONE", "America/Guayaquil"),
+		PhotonURL:         getEnv("PHOTON_URL", "https://photon.komoot.io"),
+		// Caja aproximada de Ecuador continental y Galápagos; ajustar con datos reales.
+		PhotonBBox:      getEnv("PHOTON_BBOX", "-92.1,-5.1,-75.1,1.7"),
+		GeocoderTimeout: time.Duration(geocoderTimeoutMs) * time.Millisecond,
 		Postgres: PostgresConfig{
 			Host:     getEnv("POSTGRES_HOST", "localhost"),
 			Port:     getEnv("POSTGRES_PORT", "5432"),
