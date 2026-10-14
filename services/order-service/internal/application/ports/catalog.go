@@ -17,6 +17,10 @@ type CatalogRepository interface {
 	GetProduct(ctx context.Context, id uuid.UUID) (domain.Product, error)
 	// ListActiveProducts devuelve los productos que el cliente puede pedir, ordenados por nombre.
 	ListActiveProducts(ctx context.Context) ([]domain.Product, error)
+	// ListAllProducts devuelve todos los productos, activos o no, para el personal.
+	ListAllProducts(ctx context.Context) ([]domain.Product, error)
+	// ListMovements devuelve el historial de un producto, del más reciente al más antiguo.
+	ListMovements(ctx context.Context, productID uuid.UUID) ([]domain.StockMovement, error)
 	// SetActive oferta o retira el producto al cliente. No cambia pedidos anteriores.
 	SetActive(ctx context.Context, id uuid.UUID, active bool, now time.Time) error
 	// AdjustStock aplica una entrada o un ajuste manual y lo registra en el historial.

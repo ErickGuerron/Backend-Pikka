@@ -1,0 +1,130 @@
+syntax = "proto3";
+
+package catalog.v1;
+
+option go_package = "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/catalog/v1;catalogv1";
+
+// CatalogService administra los productos y su stock (ADR 0009). Vive en el Order Service.
+// La autorización se aplica en el servicio con la metadata del usuario propagada por el Gateway:
+// ADMIN y OPERATOR administran; CUSTOMER solo lee productos activos.
+service CatalogService {
+  // ListProducts devuelve los productos. Para CUSTOMER solo los activos; include_inactive
+  // solo lo acepta el personal.
+  rpc ListProducts(ListProductsRequest) returns (ListProductsResponse);
+
+  // GetProduct devuelve un producto por id. CUSTOMER no ve productos inactivos.
+  rpc GetProduct(GetProductRequest) returns (GetProductResponse);
+
+  // CreateProduct crea un producto activo. initial_stock es opcional: si falta, el producto no controla stock.
+  rpc CreateProduct(CreateProductRequest) returns (CreateProductResponse);
+
+  // SetProductActive oferta o retira un producto. No cambia pedidos anteriores.
+  rpc SetProductActive(SetProductActiveRequest) returns (SetProductActiveResponse);
+
+  // AdjustStock registra una entrada (RESTOCK) o un ajuste manual con motivo (ADJUSTMENT).
+  // Un ajuste no puede dejar el stock en negativo.
+  rpc AdjustStock(AdjustStockRequest) returns (AdjustStockResponse);
+
+  // ListStockMovements devuelve el historial de un producto, del más reciente al más antiguo.
+  rpc ListStockMovements(ListStockMovementsRequest) returns (ListStockMovementsResponse);
+}
+
+enum StockMovementType {
+  STOCK_MOVEMENT_TYPE_UNSPECIFIED = 0;
+  STOCK_MOVEMENT_TYPE_RESTOCK = 1;
+  STOCK_MOVEMENT_TYPE_ADJUSTMENT = 2;
+  // Los tipos siguientes los genera el servicio al crear o cancelar pedidos; el cliente no los envía.
+  STOCK_MOVEMENT_TYPE_SALE = 3;
+  STOCK_MOVEMENT_TYPE_RETURN = 4;
+}
+
+message Product {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  // Precio unitario en USD con dos decimales como máximo, por ejemplo "2.50".
+  string unit_price = 4;
+  bool active = 5;
+  // Ausente cuando el producto no controla stock.
+  optional int64 stock_quantity = 6;
+  // RFC 3339, UTC.
+  string created_at = 7;
+  string updated_at = 8;
+}
+
+message StockMovement {
+  string id = 1;
+  string product_id = 2;
+  StockMovementType type = 3;
+  // Variación con signo: positiva suma, negativa resta.
+  int64 delta = 4;
+  // Stock después de aplicar el movimiento.
+  int64 resulting_stock = 5;
+  string reason = 6;
+  // Pedido relacionado, solo en movimientos SALE y RETURN.
+  string order_id = 7;
+  // RFC 3339, UTC.
+  string created_at = 8;
+}
+
+message ListProductsRequest {
+  bool include_inactive = 1;
+}
+
+message ListProductsResponse {
+  repeated Product products = 1;
+}
+
+message GetProductRequest {
+  string id = 1;
+}
+
+message GetProductResponse {
+  Product product = 1;
+}
+
+message CreateProductRequest {
+  // Obligatorio; 1 a 120 caracteres.
+  string name = 1;
+  // Opcional; hasta 500 caracteres.
+  string description = 2;
+  // Obligatorio; positivo con dos decimales como máximo.
+  string unit_price = 3;
+  // Opcional; no negativo. Ausente: sin control de stock.
+  optional int64 initial_stock = 4;
+}
+
+message CreateProductResponse {
+  Product product = 1;
+}
+
+message SetProductActiveRequest {
+  string id = 1;
+  bool active = 2;
+}
+
+message SetProductActiveResponse {
+  Product product = 1;
+}
+
+message AdjustStockRequest {
+  string product_id = 1;
+  // Solo RESTOCK o ADJUSTMENT; los demás tipos los genera el servicio.
+  StockMovementType type = 2;
+  // RESTOCK exige delta positivo. ADJUSTMENT admite positivo o negativo, distinto de cero.
+  int64 delta = 3;
+  // Obligatorio para ADJUSTMENT.
+  string reason = 4;
+}
+
+message AdjustStockResponse {
+  StockMovement movement = 1;
+}
+
+message ListStockMovementsRequest {
+  string product_id = 1;
+}
+
+message ListStockMovementsResponse {
+  repeated StockMovement movements = 1;
+}

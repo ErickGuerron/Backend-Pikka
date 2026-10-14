@@ -57,7 +57,15 @@ func (s *Store) GetProduct(ctx context.Context, id uuid.UUID) (domain.Product, e
 }
 
 func (s *Store) ListActiveProducts(ctx context.Context) ([]domain.Product, error) {
-	rows, err := s.pool.Query(ctx, productColumns+` WHERE active ORDER BY name, id`)
+	return s.queryProducts(ctx, productColumns+` WHERE active ORDER BY name, id`)
+}
+
+func (s *Store) ListAllProducts(ctx context.Context) ([]domain.Product, error) {
+	return s.queryProducts(ctx, productColumns+` ORDER BY name, id`)
+}
+
+func (s *Store) queryProducts(ctx context.Context, sql string) ([]domain.Product, error) {
+	rows, err := s.pool.Query(ctx, sql)
 	if err != nil {
 		return nil, err
 	}
@@ -69,6 +77,27 @@ func (s *Store) ListActiveProducts(ctx context.Context) ([]domain.Product, error
 			return nil, err
 		}
 		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) ListMovements(ctx context.Context, productID uuid.UUID) ([]domain.StockMovement, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, product_id, movement_type, delta, resulting_stock, reason, order_id, actor_user_id, created_at
+		FROM stock_movements WHERE product_id = $1 ORDER BY created_at DESC, id DESC`, productID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.StockMovement
+	for rows.Next() {
+		var m domain.StockMovement
+		var kind string
+		if err := rows.Scan(&m.ID, &m.ProductID, &kind, &m.Delta, &m.ResultingStock, &m.Reason, &m.OrderID, &m.ActorUserID, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		m.Type = domain.MovementType(kind)
+		out = append(out, m)
 	}
 	return out, rows.Err()
 }
