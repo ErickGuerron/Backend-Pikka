@@ -138,6 +138,8 @@ jobs:
         run: docker build -f services/api-gateway/Dockerfile -t lastmile/api-gateway:ci .
       - name: Build zone-service
         run: docker build -f services/zone-service/Dockerfile -t lastmile/zone-service:ci .
+      - name: Build driver-service
+        run: docker build -f services/driver-service/Dockerfile -t lastmile/driver-service:ci .
       - name: Build order-service
         run: docker build -f services/order-service/Dockerfile -t lastmile/order-service:ci .
 
