@@ -14,6 +14,8 @@ import (
 // Config agrupa la configuración del proceso.
 type Config struct {
 	HTTPPort int
+	// GRPCPort expone el contrato drivers.v1 al Routing Service (tráfico interno).
+	GRPCPort int
 	// ArrivalRadiusMeters es la distancia máxima, en metros, entre el GPS del repartidor y
 	// la dirección de la parada para que la llegada cuente como válida.
 	ArrivalRadiusMeters float64
@@ -37,6 +39,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	grpcPort, err := intEnv("DRIVER_GRPC_PORT", 9092)
+	if err != nil {
+		return Config{}, err
+	}
 	radius, err := radiusEnv()
 	if err != nil {
 		return Config{}, err
@@ -47,6 +53,7 @@ func Load() (Config, error) {
 	}
 	return Config{
 		HTTPPort:            httpPort,
+		GRPCPort:            grpcPort,
 		ArrivalRadiusMeters: radius,
 		Postgres: PostgresConfig{
 			Host:     getEnv("POSTGRES_HOST", "localhost"),
