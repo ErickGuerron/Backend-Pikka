@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/application/ports"
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/domain"
@@ -62,17 +63,17 @@ func NewCreateOrder(customers ports.CustomerRepository, zones ports.ZoneClassifi
 }
 
 // Run valida el pedido y lo persiste.
-func (uc *CreateOrder) Run(ctx context.Context, cmd Command) (domain.Order, error) {
+func (uc *CreateOrder) Place(ctx context.Context, cmd Command) (Placed, error) {
 	if cmd.Role != RoleCustomer {
-		return domain.Order{}, domain.ErrNotCustomer
+		return Placed{}, domain.ErrNotCustomer
 	}
 	customer, err := uc.customers.GetByUserID(ctx, cmd.UserID)
 	if err != nil {
-		return domain.Order{}, err
+		return Placed{}, err
 	}
 	lines, err := uc.resolveLines(ctx, cmd.Items)
 	if err != nil {
-		return domain.Order{}, err
+		return Placed{}, err
 	}
 
 	var known *coordinates
@@ -81,7 +82,7 @@ func (uc *CreateOrder) Run(ctx context.Context, cmd Command) (domain.Order, erro
 	}
 	point, located, err := uc.place.locate(ctx, cmd.Address, known)
 	if err != nil {
-		return domain.Order{}, err
+		return Placed{}, err
 	}
 
 	order, err := domain.NewOrder(domain.NewOrderInput{
@@ -93,18 +94,18 @@ func (uc *CreateOrder) Run(ctx context.Context, cmd Command) (domain.Order, erro
 		WindowEnd:    cmd.WindowEnd,
 	}, uc.clock().In(uc.location))
 	if err != nil {
-		return domain.Order{}, err
+		return Placed{}, err
 	}
 
 	reasons, zoneID, err := uc.place.reasons(ctx, point, located, !customer.CanCreateOrders())
 	if err != nil {
-		return domain.Order{}, err
+		return Placed{}, err
 	}
 	order.CustomerID = customer.ID.String()
 	order.ZoneID = zoneID
 	order, err = order.ApplyValidation(reasons)
 	if err != nil {
-		return domain.Order{}, err
+		return Placed{}, err
 	}
 
 	var notice *domain.Notification
@@ -113,7 +114,28 @@ func (uc *CreateOrder) Run(ctx context.Context, cmd Command) (domain.Order, erro
 		notice = &n
 	}
 	actor := cmd.UserID
-	return uc.placer.PlaceOrder(ctx, order, lines, notice, &actor)
+	saved, err := uc.placer.PlaceOrder(ctx, order, lines, notice, &actor)
+	if err != nil {
+		return Placed{}, err
+	}
+	total, err := domain.OrderTotal(lines)
+	if err != nil {
+		return Placed{}, err
+	}
+	return Placed{Order: saved, Lines: lines, Total: total}, nil
+}
+
+// Run registra el pedido y devuelve solo el pedido guardado. Place devuelve además sus productos y total.
+func (uc *CreateOrder) Run(ctx context.Context, cmd Command) (domain.Order, error) {
+	placed, err := uc.Place(ctx, cmd)
+	return placed.Order, err
+}
+
+// Placed es el pedido guardado con sus productos y su total, para la respuesta del alta.
+type Placed struct {
+	Order domain.Order
+	Lines []domain.OrderLine
+	Total decimal.Decimal
 }
 
 // resolveLines toma cada producto del catálogo y valida la cantidad y que esté activo. Un pedido

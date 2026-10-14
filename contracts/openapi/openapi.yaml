@@ -280,7 +280,7 @@ paths:
           description: Pedido registrado
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Order" }
+              schema: { $ref: "#/components/schemas/CreatedOrder" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -976,6 +976,24 @@ components:
       properties:
         productId: { type: string, format: uuid }
         quantity: { type: integer, format: int64, minimum: 1, maximum: 50 }
+    OrderLine:
+      type: object
+      required: [productId, name, unitPrice, quantity]
+      properties:
+        productId: { type: string, format: uuid }
+        name: { type: string }
+        unitPrice: { type: string, description: "Precio del momento del pedido, con dos decimales" }
+        quantity: { type: integer, format: int64, minimum: 1, maximum: 50 }
+    CreatedOrder:
+      allOf:
+        - $ref: "#/components/schemas/Order"
+        - type: object
+          required: [items, total]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/OrderLine" }
+            total: { type: string, description: "Suma de los subtotales, con dos decimales" }
     Error:
       type: object
       required: [error]

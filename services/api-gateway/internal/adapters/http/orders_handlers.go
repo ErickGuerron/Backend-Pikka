@@ -72,6 +72,20 @@ type orderDTO struct {
 	CreatedAt     string   `json:"createdAt"`
 }
 
+// createdOrderDTO es la respuesta del alta: el pedido más sus productos y su total (ADR 0009).
+type createdOrderDTO struct {
+	orderDTO
+	Items []orderLineDTO `json:"items"`
+	Total string         `json:"total"`
+}
+
+type orderLineDTO struct {
+	ProductID string `json:"productId"`
+	Name      string `json:"name"`
+	UnitPrice string `json:"unitPrice"`
+	Quantity  int64  `json:"quantity"`
+}
+
 type notificationDTO struct {
 	ID        string `json:"id"`
 	OrderID   string `json:"orderId"`
@@ -110,7 +124,20 @@ func (h *ordersHandlers) create(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusCreated, toOrderDTO(res.GetOrder()))
+	lines := make([]orderLineDTO, 0, len(res.GetItems()))
+	for _, l := range res.GetItems() {
+		lines = append(lines, orderLineDTO{
+			ProductID: l.GetProductId(),
+			Name:      l.GetName(),
+			UnitPrice: l.GetUnitPrice(),
+			Quantity:  l.GetQuantity(),
+		})
+	}
+	return c.JSON(http.StatusCreated, createdOrderDTO{
+		orderDTO: toOrderDTO(res.GetOrder()),
+		Items:    lines,
+		Total:    res.GetTotal(),
+	})
 }
 
 func (h *ordersHandlers) listMine(c echo.Context) error {

@@ -55,7 +55,7 @@ func (s *OrderServer) CreateOrder(ctx context.Context, req *ordersv1.CreateOrder
 	if err != nil {
 		return nil, err
 	}
-	order, err := s.useCases.Create.Run(ctx, orderapp.Command{
+	placed, err := s.useCases.Create.Place(ctx, orderapp.Command{
 		UserID:       userID,
 		Role:         role,
 		Address:      req.GetAddress(),
@@ -69,7 +69,25 @@ func (s *OrderServer) CreateOrder(ctx context.Context, req *ordersv1.CreateOrder
 	if err != nil {
 		return nil, mapOrderError(err)
 	}
-	return &ordersv1.CreateOrderResponse{Order: orderToProto(order)}, nil
+	return &ordersv1.CreateOrderResponse{
+		Order: orderToProto(placed.Order),
+		Items: orderLinesToProto(placed.Lines),
+		Total: placed.Total.StringFixed(2),
+	}, nil
+}
+
+// orderLinesToProto convierte los productos guardados del pedido al contrato gRPC.
+func orderLinesToProto(lines []domain.OrderLine) []*ordersv1.OrderLine {
+	out := make([]*ordersv1.OrderLine, 0, len(lines))
+	for _, line := range lines {
+		out = append(out, &ordersv1.OrderLine{
+			ProductId: line.ProductID.String(),
+			Name:      line.Name,
+			UnitPrice: line.UnitPrice.StringFixed(2),
+			Quantity:  line.Quantity,
+		})
+	}
+	return out
 }
 
 // ListMyOrders devuelve los pedidos del cliente autenticado.
