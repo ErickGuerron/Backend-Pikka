@@ -137,6 +137,12 @@ func (r *OrderRepository) Review(ctx context.Context, orderID string, decide fun
 	if err != nil {
 		return domain.Order{}, fmt.Errorf("review order: update: %w", err)
 	}
+	// Un rechazo cancela un pedido que ya reservó stock al crearse: el stock vuelve en la misma transacción.
+	if current.Status != domain.StatusCancelled && out.Status == domain.StatusCancelled {
+		if err := returnStock(ctx, tx, id, time.Now().UTC()); err != nil {
+			return domain.Order{}, err
+		}
+	}
 	if notice != nil {
 		if err := insertNotification(ctx, tx, out.CustomerID, out.ID, *notice); err != nil {
 			return domain.Order{}, err
