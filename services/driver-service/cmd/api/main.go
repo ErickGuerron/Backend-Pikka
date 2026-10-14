@@ -85,7 +85,8 @@ func serve(ctx context.Context, log *slog.Logger, port int, pool *pgxpool.Pool) 
 		}
 		return err
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		// El contexto ya está cancelado; WithoutCancel conserva los valores y da tiempo al apagado.
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
 	}
