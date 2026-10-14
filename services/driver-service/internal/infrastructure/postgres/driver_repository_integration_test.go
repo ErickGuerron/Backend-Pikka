@@ -41,8 +41,7 @@ func openRepo(t *testing.T) (*postgres.DriverRepository, *pgxpool.Pool) {
 	admin, err := pgxpool.New(ctx, dsn)
 	require.NoError(t, err)
 	t.Cleanup(admin.Close)
-	_, err = admin.Exec(ctx, `CREATE SCHEMA IF NOT EXISTS drivers`)
-	require.NoError(t, err)
+	// El esquema drivers lo crea el script de inicialización; el usuario de servicio no puede crearlo.
 	require.NoError(t, postgres.Migrate(dsn))
 	_, err = admin.Exec(ctx, `TRUNCATE drivers`)
 	require.NoError(t, err)
