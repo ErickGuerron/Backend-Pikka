@@ -37,3 +37,19 @@ var (
 	// tiene saldo pendiente.
 	ErrPendingSurcharge = errors.New("customer has pending surcharge")
 )
+
+// Errores del catálogo y del stock (ADR 0009).
+var (
+	ErrInvalidProductName        = errors.New("product name must have 1 to 120 characters")
+	ErrInvalidProductDescription = errors.New("product description must have at most 500 characters")
+	ErrInvalidPrice              = errors.New("price must be positive with at most two decimals")
+	ErrInvalidStock              = errors.New("stock cannot be negative")
+	ErrStockNotTracked           = errors.New("product does not track stock")
+	ErrInsufficientStock         = errors.New("not enough stock for this order")
+	ErrInvalidMovement           = errors.New("stock movement does not match its type")
+	ErrReasonRequired            = errors.New("a manual stock adjustment needs a reason")
+	ErrProductInactive           = errors.New("product is not available")
+	ErrInvalidQuantity           = errors.New("quantity must be between 1 and 50")
+	ErrNoItems                   = errors.New("order must contain at least one product")
+	ErrProductNotFound           = errors.New("product not found")
+)

@@ -172,10 +172,12 @@ func TestOrderMigrations(t *testing.T) {
 		}
 		// Las migraciones posteriores dependen de orders: se revierten en orden inverso y se reaplican.
 		for _, file := range []string{
+			"000008_create_order_items.down.sql", "000007_create_stock_movements.down.sql",
 			"000005_review_address_and_notifications.down.sql", "000004_order_customer_and_zone.down.sql",
 			"000003_limit_delivery_date.down.sql", "000002_create_orders.down.sql",
 			"000002_create_orders.up.sql", "000003_limit_delivery_date.up.sql",
 			"000004_order_customer_and_zone.up.sql", "000005_review_address_and_notifications.up.sql",
+			"000007_create_stock_movements.up.sql", "000008_create_order_items.up.sql",
 		} {
 			sql, err := migrations.FS.ReadFile(file)
 			if err != nil {
