@@ -184,6 +184,64 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [users]
+      operationId: updateUser
+      summary: Edita nombre y/o rol de un usuario (solo ADMIN)
+      description: |
+        Los campos ausentes no cambian. Reglas: el rol CUSTOMER es inmutable y no se asigna
+        por esta vía; el último ADMIN activo no puede dejar de serlo.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateUserRequest" }
+      responses:
+        "200":
+          description: Usuario actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: Regla de negocio incumplida (p. ej. dejar sin ADMIN activo o cambiar un CUSTOMER)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      tags: [users]
+      operationId: deactivateUser
+      summary: Desactiva un usuario (borrado lógico, solo ADMIN)
+      description: |
+        Marca active=false y devuelve el usuario. Idempotente. Un ADMIN no puede desactivarse
+        a sí mismo ni dejar el sistema sin ADMIN activo.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Usuario desactivado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: Regla de negocio incumplida (auto-desactivación o último ADMIN activo)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /api/v1/customers:
     get:
       tags: [customers]
@@ -913,6 +971,12 @@ components:
         password: { type: string, format: password, minLength: 8, maxLength: 72 }
         fullName: { type: string, maxLength: 120 }
         role: { $ref: "#/components/schemas/Role" }
+    UpdateUserRequest:
+      type: object
+      description: Campos opcionales; ausente significa no cambiar.
+      properties:
+        fullName: { type: string, minLength: 1, maxLength: 120 }
+        role: { type: string, enum: [ADMIN, OPERATOR, DRIVER] }
     OrderStatus:
       type: string
       enum: [PENDING, PENDING_REVIEW, ROUTE_ASSIGNED, PICKED_UP, IN_TRANSIT, DELIVERED, NOT_DELIVERED, CANCELLED]
