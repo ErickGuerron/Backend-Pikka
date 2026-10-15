@@ -21,6 +21,8 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	DriverService_FindAvailableDrivers_FullMethodName = "/drivers.v1.DriverService/FindAvailableDrivers"
 	DriverService_ReserveDriver_FullMethodName        = "/drivers.v1.DriverService/ReserveDriver"
+	DriverService_GetDriverByUserID_FullMethodName    = "/drivers.v1.DriverService/GetDriverByUserID"
+	DriverService_RegisterDelivery_FullMethodName     = "/drivers.v1.DriverService/RegisterDelivery"
 )
 
 // DriverServiceClient is the client API for DriverService service.
@@ -64,6 +66,30 @@ type DriverServiceClient interface {
 	// En FAILED_PRECONDITION el mensaje del error distingue cuál de las tres causas
 	// ocurrió.
 	ReserveDriver(ctx context.Context, in *ReserveDriverRequest, opts ...grpc.CallOption) (*ReserveDriverResponse, error)
+	// GetDriverByUserID devuelve el repartidor asociado a un user_id de Auth Service. Lo usa el
+	// Gateway para resolver GET /drivers/me.
+	//
+	// Códigos de estado gRPC que el servidor debe devolver:
+	//
+	//   - INVALID_ARGUMENT: user_id en blanco.
+	//   - NOT_FOUND: ningún repartidor tiene ese user_id.
+	GetDriverByUserID(ctx context.Context, in *GetDriverByUserIDRequest, opts ...grpc.CallOption) (*GetDriverByUserIDResponse, error)
+	// RegisterDelivery guarda el resultado de una parada (ADR 0007, sección 4) y su verificación
+	// de llegada. El repartidor debe estar ON_ROUTE en route_id.
+	//
+	// La dirección y la ventana de la parada NO las envía el llamador: el servidor las obtiene de
+	// la fuente de paradas del Routing Service. Mientras esa fuente no esté configurada, responde
+	// UNIMPLEMENTED. Así el cliente no puede declarar una ubicación de parada y falsear la llegada.
+	//
+	// Códigos de estado gRPC que el servidor debe devolver:
+	//
+	//   - INVALID_ARGUMENT: campos obligatorios en blanco, outcome o reason fuera de la lista,
+	//     coordenadas fuera de rango o recorded_at que no es RFC 3339.
+	//   - NOT_FOUND: el repartidor o la parada no existen.
+	//   - FAILED_PRECONDITION: el repartidor no está ON_ROUTE en esa ruta.
+	//   - ALREADY_EXISTS: la parada ya tiene un registro en esa ruta.
+	//   - UNIMPLEMENTED: la fuente de paradas aún no existe.
+	RegisterDelivery(ctx context.Context, in *RegisterDeliveryRequest, opts ...grpc.CallOption) (*RegisterDeliveryResponse, error)
 }
 
 type driverServiceClient struct {
@@ -88,6 +114,26 @@ func (c *driverServiceClient) ReserveDriver(ctx context.Context, in *ReserveDriv
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReserveDriverResponse)
 	err := c.cc.Invoke(ctx, DriverService_ReserveDriver_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *driverServiceClient) GetDriverByUserID(ctx context.Context, in *GetDriverByUserIDRequest, opts ...grpc.CallOption) (*GetDriverByUserIDResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetDriverByUserIDResponse)
+	err := c.cc.Invoke(ctx, DriverService_GetDriverByUserID_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *driverServiceClient) RegisterDelivery(ctx context.Context, in *RegisterDeliveryRequest, opts ...grpc.CallOption) (*RegisterDeliveryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RegisterDeliveryResponse)
+	err := c.cc.Invoke(ctx, DriverService_RegisterDelivery_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -135,6 +181,30 @@ type DriverServiceServer interface {
 	// En FAILED_PRECONDITION el mensaje del error distingue cuál de las tres causas
 	// ocurrió.
 	ReserveDriver(context.Context, *ReserveDriverRequest) (*ReserveDriverResponse, error)
+	// GetDriverByUserID devuelve el repartidor asociado a un user_id de Auth Service. Lo usa el
+	// Gateway para resolver GET /drivers/me.
+	//
+	// Códigos de estado gRPC que el servidor debe devolver:
+	//
+	//   - INVALID_ARGUMENT: user_id en blanco.
+	//   - NOT_FOUND: ningún repartidor tiene ese user_id.
+	GetDriverByUserID(context.Context, *GetDriverByUserIDRequest) (*GetDriverByUserIDResponse, error)
+	// RegisterDelivery guarda el resultado de una parada (ADR 0007, sección 4) y su verificación
+	// de llegada. El repartidor debe estar ON_ROUTE en route_id.
+	//
+	// La dirección y la ventana de la parada NO las envía el llamador: el servidor las obtiene de
+	// la fuente de paradas del Routing Service. Mientras esa fuente no esté configurada, responde
+	// UNIMPLEMENTED. Así el cliente no puede declarar una ubicación de parada y falsear la llegada.
+	//
+	// Códigos de estado gRPC que el servidor debe devolver:
+	//
+	//   - INVALID_ARGUMENT: campos obligatorios en blanco, outcome o reason fuera de la lista,
+	//     coordenadas fuera de rango o recorded_at que no es RFC 3339.
+	//   - NOT_FOUND: el repartidor o la parada no existen.
+	//   - FAILED_PRECONDITION: el repartidor no está ON_ROUTE en esa ruta.
+	//   - ALREADY_EXISTS: la parada ya tiene un registro en esa ruta.
+	//   - UNIMPLEMENTED: la fuente de paradas aún no existe.
+	RegisterDelivery(context.Context, *RegisterDeliveryRequest) (*RegisterDeliveryResponse, error)
 	mustEmbedUnimplementedDriverServiceServer()
 }
 
@@ -150,6 +220,12 @@ func (UnimplementedDriverServiceServer) FindAvailableDrivers(context.Context, *F
 }
 func (UnimplementedDriverServiceServer) ReserveDriver(context.Context, *ReserveDriverRequest) (*ReserveDriverResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReserveDriver not implemented")
+}
+func (UnimplementedDriverServiceServer) GetDriverByUserID(context.Context, *GetDriverByUserIDRequest) (*GetDriverByUserIDResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetDriverByUserID not implemented")
+}
+func (UnimplementedDriverServiceServer) RegisterDelivery(context.Context, *RegisterDeliveryRequest) (*RegisterDeliveryResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RegisterDelivery not implemented")
 }
 func (UnimplementedDriverServiceServer) mustEmbedUnimplementedDriverServiceServer() {}
 func (UnimplementedDriverServiceServer) testEmbeddedByValue()                       {}
@@ -208,6 +284,42 @@ func _DriverService_ReserveDriver_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DriverService_GetDriverByUserID_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDriverByUserIDRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DriverServiceServer).GetDriverByUserID(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DriverService_GetDriverByUserID_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DriverServiceServer).GetDriverByUserID(ctx, req.(*GetDriverByUserIDRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DriverService_RegisterDelivery_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RegisterDeliveryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DriverServiceServer).RegisterDelivery(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DriverService_RegisterDelivery_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DriverServiceServer).RegisterDelivery(ctx, req.(*RegisterDeliveryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DriverService_ServiceDesc is the grpc.ServiceDesc for DriverService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -222,6 +334,14 @@ var DriverService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReserveDriver",
 			Handler:    _DriverService_ReserveDriver_Handler,
+		},
+		{
+			MethodName: "GetDriverByUserID",
+			Handler:    _DriverService_GetDriverByUserID_Handler,
+		},
+		{
+			MethodName: "RegisterDelivery",
+			Handler:    _DriverService_RegisterDelivery_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
