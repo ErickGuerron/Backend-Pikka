@@ -29,6 +29,8 @@ type OrderUseCases struct {
 	Review        *orderapp.ReviewOrder
 	Notifications *orderapp.ListMyNotifications
 	Cancel        *orderapp.CancelOrder
+	// RouteAssignment atiende a Routing: pedidos pendientes por fecha y asignación a ruta.
+	RouteAssignment *orderapp.RouteAssignment
 }
 
 // OrderServer implementa ordersv1.OrderServiceServer. Solo traduce: la regla de
@@ -251,7 +253,7 @@ func mapOrderError(err error) error {
 		return status.Error(codes.PermissionDenied, err.Error())
 	case errors.Is(err, domain.ErrOrderNotFound):
 		return status.Error(codes.NotFound, "pedido no encontrado")
-	case errors.Is(err, domain.ErrOrderNotInReview), errors.Is(err, domain.ErrOrderNotCancellable):
+	case errors.Is(err, domain.ErrOrderNotInReview), errors.Is(err, domain.ErrOrderNotCancellable), errors.Is(err, domain.ErrOrderNotPending):
 		// El contrato responde ABORTED (HTTP 409) cuando el estado del pedido no admite la acción.
 		return status.Error(codes.Aborted, err.Error())
 	case errors.Is(err, domain.ErrSpatialReasonNotOverridable):
@@ -271,7 +273,11 @@ func mapOrderError(err error) error {
 		errors.Is(err, domain.ErrInvalidCoordinate),
 		errors.Is(err, domain.ErrInvalidDate),
 		errors.Is(err, domain.ErrPastDeliveryDate),
-		errors.Is(err, domain.ErrInvalidWindow):
+		errors.Is(err, domain.ErrInvalidWindow),
+		errors.Is(err, domain.ErrInvalidRouteID),
+		errors.Is(err, domain.ErrNoOrdersToAssign),
+		errors.Is(err, domain.ErrDuplicateOrderID),
+		errors.Is(err, domain.ErrInvalidOrderID):
 		return status.Error(codes.InvalidArgument, err.Error())
 	default:
 		return mapError(err)
@@ -303,6 +309,7 @@ func orderToProto(o domain.Order) *ordersv1.Order {
 		Status:        statusToProto(o.Status),
 		ReviewReasons: reasons,
 		CreatedAt:     o.CreatedAt.UTC().Format(time.RFC3339),
+		ZoneId:        o.ZoneID,
 	}
 }
 

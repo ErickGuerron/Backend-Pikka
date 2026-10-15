@@ -18,7 +18,7 @@ import (
 // se devuelven como texto con el formato del contrato (YYYY-MM-DD y HH:mm).
 const orderColumns = `id::text, COALESCE(customer_id::text, ''), COALESCE(zone_id::text, ''), address, latitude, longitude,
 	to_char(delivery_date, 'YYYY-MM-DD'), to_char(window_start, 'HH24:MI'), to_char(window_end, 'HH24:MI'),
-	status, review_reasons, version, created_at`
+	status, review_reasons, version, created_at, COALESCE(route_id, '')`
 
 // OrderRepository es la implementación PostgreSQL de ports.OrderRepository.
 type OrderRepository struct {
@@ -267,11 +267,12 @@ func scanOrder(row rowScanner) (domain.Order, error) {
 		id, customerID, zoneID, address, deliveryDate, windowStart, windowEnd, status string
 		latitude, longitude                                                           float64
 		reasons                                                                       []string
+		routeID                                                                       string
 		version                                                                       int64
 		createdAt                                                                     time.Time
 	)
 	if err := row.Scan(&id, &customerID, &zoneID, &address, &latitude, &longitude,
-		&deliveryDate, &windowStart, &windowEnd, &status, &reasons, &version, &createdAt); err != nil {
+		&deliveryDate, &windowStart, &windowEnd, &status, &reasons, &version, &createdAt, &routeID); err != nil {
 		return domain.Order{}, err
 	}
 	date, err := domain.ParseDeliveryDate(deliveryDate)
@@ -298,6 +299,7 @@ func scanOrder(row rowScanner) (domain.Order, error) {
 		ID:            id,
 		CustomerID:    customerID,
 		ZoneID:        zoneID,
+		RouteID:       routeID,
 		Address:       address,
 		Latitude:      latitude,
 		Longitude:     longitude,
