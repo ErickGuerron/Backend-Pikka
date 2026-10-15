@@ -31,6 +31,11 @@ service OrderService {
   // CancelOrder cancels an order of the authenticated CUSTOMER. Only PENDING or ROUTE_ASSIGNED can be
   // cancelled; another state returns ABORTED (HTTP 409). An order of another customer returns NOT_FOUND.
   rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse);
+  // AssignOrdersToRoute moves every listed order from PENDING to ROUTE_ASSIGNED
+  // in one transaction. Internal, called by Routing. Blank route_id or empty
+  // order_ids returns INVALID_ARGUMENT; an unknown ID returns NOT_FOUND; any
+  // order not in PENDING returns ABORTED (HTTP 409) and none is changed.
+  rpc AssignOrdersToRoute(AssignOrdersToRouteRequest) returns (AssignOrdersToRouteResponse);
 }
 
 enum OrderStatus {
@@ -79,6 +84,9 @@ message Order {
   repeated ReviewReason review_reasons = 9;
   // Registration instant in RFC 3339, UTC. Independent of delivery_date.
   string created_at = 10;
+  // Zone resolved when the order was registered. Empty when the order has no zone
+  // (for example PENDING_REVIEW with ZONE_NOT_COVERED). Used by Routing for capacity.
+  string zone_id = 11;
 }
 
 message CreateOrderRequest {
@@ -210,4 +218,16 @@ message CancelOrderRequest {
 
 message CancelOrderResponse {
   Order order = 1;
+}
+
+message AssignOrdersToRouteRequest {
+  // Required route identifier chosen by Routing.
+  string route_id = 1;
+  // Required, non-empty list of order UUIDs, all PENDING.
+  repeated string order_ids = 2;
+}
+
+message AssignOrdersToRouteResponse {
+  // The orders in the request, now ROUTE_ASSIGNED.
+  repeated Order orders = 1;
 }

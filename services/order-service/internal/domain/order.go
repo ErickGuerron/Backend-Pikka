@@ -11,9 +11,11 @@ import (
 // Order keeps the registration instant separate from the planned delivery day.
 // ID and version are assigned by persistence in the next sprint.
 type Order struct {
-	ID           string
-	CustomerID   string
-	ZoneID       string
+	ID         string
+	CustomerID string
+	ZoneID     string
+	// RouteID is set when the order is assigned to a route (ROUTE_ASSIGNED).
+	RouteID      string
 	Address      string
 	Latitude     float64
 	Longitude    float64
