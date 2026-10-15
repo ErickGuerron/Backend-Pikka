@@ -25,6 +25,7 @@ const (
 	CatalogService_SetProductActive_FullMethodName   = "/catalog.v1.CatalogService/SetProductActive"
 	CatalogService_AdjustStock_FullMethodName        = "/catalog.v1.CatalogService/AdjustStock"
 	CatalogService_ListStockMovements_FullMethodName = "/catalog.v1.CatalogService/ListStockMovements"
+	CatalogService_ListPublicProducts_FullMethodName = "/catalog.v1.CatalogService/ListPublicProducts"
 )
 
 // CatalogServiceClient is the client API for CatalogService service.
@@ -49,6 +50,9 @@ type CatalogServiceClient interface {
 	AdjustStock(ctx context.Context, in *AdjustStockRequest, opts ...grpc.CallOption) (*AdjustStockResponse, error)
 	// ListStockMovements devuelve el historial de un producto, del más reciente al más antiguo.
 	ListStockMovements(ctx context.Context, in *ListStockMovementsRequest, opts ...grpc.CallOption) (*ListStockMovementsResponse, error)
+	// ListPublicProducts devuelve solo los productos activos, sin identidad ni stock, para la landing.
+	// Es el único RPC del catálogo que acepta llamadas sin metadata de usuario.
+	ListPublicProducts(ctx context.Context, in *ListPublicProductsRequest, opts ...grpc.CallOption) (*ListPublicProductsResponse, error)
 }
 
 type catalogServiceClient struct {
@@ -119,6 +123,16 @@ func (c *catalogServiceClient) ListStockMovements(ctx context.Context, in *ListS
 	return out, nil
 }
 
+func (c *catalogServiceClient) ListPublicProducts(ctx context.Context, in *ListPublicProductsRequest, opts ...grpc.CallOption) (*ListPublicProductsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPublicProductsResponse)
+	err := c.cc.Invoke(ctx, CatalogService_ListPublicProducts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CatalogServiceServer is the server API for CatalogService service.
 // All implementations must embed UnimplementedCatalogServiceServer
 // for forward compatibility.
@@ -141,6 +155,9 @@ type CatalogServiceServer interface {
 	AdjustStock(context.Context, *AdjustStockRequest) (*AdjustStockResponse, error)
 	// ListStockMovements devuelve el historial de un producto, del más reciente al más antiguo.
 	ListStockMovements(context.Context, *ListStockMovementsRequest) (*ListStockMovementsResponse, error)
+	// ListPublicProducts devuelve solo los productos activos, sin identidad ni stock, para la landing.
+	// Es el único RPC del catálogo que acepta llamadas sin metadata de usuario.
+	ListPublicProducts(context.Context, *ListPublicProductsRequest) (*ListPublicProductsResponse, error)
 	mustEmbedUnimplementedCatalogServiceServer()
 }
 
@@ -168,6 +185,9 @@ func (UnimplementedCatalogServiceServer) AdjustStock(context.Context, *AdjustSto
 }
 func (UnimplementedCatalogServiceServer) ListStockMovements(context.Context, *ListStockMovementsRequest) (*ListStockMovementsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListStockMovements not implemented")
+}
+func (UnimplementedCatalogServiceServer) ListPublicProducts(context.Context, *ListPublicProductsRequest) (*ListPublicProductsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListPublicProducts not implemented")
 }
 func (UnimplementedCatalogServiceServer) mustEmbedUnimplementedCatalogServiceServer() {}
 func (UnimplementedCatalogServiceServer) testEmbeddedByValue()                        {}
@@ -298,6 +318,24 @@ func _CatalogService_ListStockMovements_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CatalogService_ListPublicProducts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPublicProductsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CatalogServiceServer).ListPublicProducts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CatalogService_ListPublicProducts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CatalogServiceServer).ListPublicProducts(ctx, req.(*ListPublicProductsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CatalogService_ServiceDesc is the grpc.ServiceDesc for CatalogService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -328,6 +366,10 @@ var CatalogService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListStockMovements",
 			Handler:    _CatalogService_ListStockMovements_Handler,
+		},
+		{
+			MethodName: "ListPublicProducts",
+			Handler:    _CatalogService_ListPublicProducts_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
