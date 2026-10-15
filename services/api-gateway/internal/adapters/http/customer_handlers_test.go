@@ -16,10 +16,21 @@ import (
 )
 
 type fakeCustomerQueries struct {
-	getReq  *customerv1.GetByIDRequest
-	listReq *customerv1.ListCustomersRequest
-	err     error
-	meta    grpcclient.CallMeta
+	getReq    *customerv1.GetByIDRequest
+	listReq   *customerv1.ListCustomersRequest
+	statusReq *customerv1.UpdateStatusRequest
+	err       error
+	meta      grpcclient.CallMeta
+}
+
+func (f *fakeCustomerQueries) UpdateStatus(_ context.Context, m grpcclient.CallMeta, req *customerv1.UpdateStatusRequest) (*customerv1.UpdateStatusResponse, error) {
+	f.statusReq, f.meta = req, m
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &customerv1.UpdateStatusResponse{Customer: &customerv1.Customer{
+		Id: req.GetId(), UserId: "u-1", FullName: "Ada", Status: req.GetStatus(),
+	}}, nil
 }
 
 func (f *fakeCustomerQueries) GetByID(_ context.Context, m grpcclient.CallMeta, req *customerv1.GetByIDRequest) (*customerv1.GetByIDResponse, error) {
@@ -104,6 +115,28 @@ func TestGetCustomer_NotFound_Returns404(t *testing.T) {
 	q := &fakeCustomerQueries{err: status.Error(codes.NotFound, "cliente no encontrado")}
 	rec := do(customersRouter(q), http.MethodGet, "/api/v1/customers/abc", "", authHdr(t, "ADMIN"))
 	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestSetCustomerStatus_AsAdmin_Returns200AndForwardsStatus(t *testing.T) {
+	q := &fakeCustomerQueries{}
+	rec := do(customersRouter(q), http.MethodPatch, "/api/v1/customers/abc/status", `{"status":"BLOQUEADO_POR_SALDO"}`, authHdr(t, "ADMIN"))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, "abc", q.statusReq.GetId())
+	assert.Equal(t, "BLOQUEADO_POR_SALDO", q.statusReq.GetStatus())
+	assert.Contains(t, rec.Body.String(), `"status":"BLOQUEADO_POR_SALDO"`)
+}
+
+func TestSetCustomerStatus_AsOperator_Returns403(t *testing.T) {
+	q := &fakeCustomerQueries{}
+	rec := do(customersRouter(q), http.MethodPatch, "/api/v1/customers/abc/status", `{"status":"ACTIVO"}`, authHdr(t, "OPERATOR"))
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Nil(t, q.statusReq, "OPERATOR no llega al servicio")
+}
+
+func TestSetCustomerStatus_InvalidStatus_Returns400(t *testing.T) {
+	q := &fakeCustomerQueries{err: status.Error(codes.InvalidArgument, "status inválido")}
+	rec := do(customersRouter(q), http.MethodPatch, "/api/v1/customers/abc/status", `{"status":"NOPE"}`, authHdr(t, "ADMIN"))
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
 func TestGetCustomer_AsCustomer_Returns403(t *testing.T) {

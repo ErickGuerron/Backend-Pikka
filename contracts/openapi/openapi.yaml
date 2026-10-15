@@ -229,6 +229,35 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/customers/{id}/status:
+    patch:
+      tags: [customers]
+      operationId: setCustomerStatus
+      summary: Cambia el estado de un cliente (solo ADMIN)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [ACTIVO, BLOQUEADO_POR_SALDO, BLOQUEADO_POR_INCIDENCIAS] }
+      responses:
+        "200":
+          description: Cliente con el nuevo estado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Customer" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/orders:
     get:
       tags: [orders]
