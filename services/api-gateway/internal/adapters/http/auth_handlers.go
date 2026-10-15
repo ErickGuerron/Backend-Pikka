@@ -21,6 +21,8 @@ type AuthClient interface {
 	GetUser(ctx context.Context, m grpcclient.CallMeta, req *authv1.GetUserRequest) (*authv1.GetUserResponse, error)
 	SignupCustomer(ctx context.Context, m grpcclient.CallMeta, req *authv1.SignupCustomerRequest) (*authv1.SignupCustomerResponse, error)
 	ListUsers(ctx context.Context, m grpcclient.CallMeta, req *authv1.ListUsersRequest) (*authv1.ListUsersResponse, error)
+	UpdateUser(ctx context.Context, m grpcclient.CallMeta, req *authv1.UpdateUserRequest) (*authv1.UpdateUserResponse, error)
+	DeactivateUser(ctx context.Context, m grpcclient.CallMeta, req *authv1.DeactivateUserRequest) (*authv1.DeactivateUserResponse, error)
 }
 
 // Los handlers solo traducen REST <-> gRPC. La autorización y las reglas viven en los servicios.
@@ -64,6 +66,13 @@ type signupResponse struct {
 	TokenType   string  `json:"tokenType"`
 	ExpiresIn   int64   `json:"expiresIn"`
 	User        userDTO `json:"user"`
+}
+
+// updateUserRequest: los campos ausentes (nil) no cambian. Un rol inválido o
+// CUSTOMER llega como ROLE_UNSPECIFIED y auth-service lo rechaza con 400.
+type updateUserRequest struct {
+	FullName *string `json:"fullName"`
+	Role     *string `json:"role"`
 }
 
 type listUsersResponse struct {
@@ -196,6 +205,33 @@ func (h *authHandlers) listUsers(c echo.Context) error {
 		out.Users = append(out.Users, toUserDTO(u))
 	}
 	return c.JSON(http.StatusOK, out)
+}
+
+// updateUser edita nombre y/o rol de un usuario (solo ADMIN, filtrado por adminOnly).
+func (h *authHandlers) updateUser(c echo.Context) error {
+	var req updateUserRequest
+	if err := bindJSON(c, &req); err != nil {
+		return err
+	}
+	in := &authv1.UpdateUserRequest{Id: c.Param("id"), FullName: req.FullName}
+	if req.Role != nil {
+		role := roleToProto(*req.Role)
+		in.Role = &role
+	}
+	res, err := h.auth.UpdateUser(c.Request().Context(), callMeta(c), in)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, toUserDTO(res.GetUser()))
+}
+
+// deactivateUser hace borrado lógico (active=false) y devuelve el usuario (solo ADMIN).
+func (h *authHandlers) deactivateUser(c echo.Context) error {
+	res, err := h.auth.DeactivateUser(c.Request().Context(), callMeta(c), &authv1.DeactivateUserRequest{Id: c.Param("id")})
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, toUserDTO(res.GetUser()))
 }
 
 func bindJSON(c echo.Context, dst any) error {

@@ -125,6 +125,8 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 	// para cualquier rol distinto de ADMIN (ADR 0008 §3).
 	adminOnly := authed.Group("", AdminOnly())
 	adminOnly.GET("/users", h.listUsers)
+	adminOnly.PATCH("/users/:id", h.updateUser)
+	adminOnly.DELETE("/users/:id", h.deactivateUser)
 	if opts.CustomerQueries != nil {
 		ch := &customerHandlers{customers: opts.CustomerQueries}
 		adminOnly.GET("/customers", ch.list)
