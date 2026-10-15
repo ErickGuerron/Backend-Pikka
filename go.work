@@ -8,5 +8,6 @@ use (
 	./services/auth-service
 	./services/driver-service
 	./services/order-service
+	./services/routing-service
 	./services/zone-service
 )
