@@ -55,6 +55,16 @@ func (r *DriverRepository) Get(ctx context.Context, id string) (*domain.Driver, 
 	return d, err
 }
 
+// FindByUserID devuelve el repartidor asociado al usuario de Auth Service.
+func (r *DriverRepository) FindByUserID(ctx context.Context, userID string) (*domain.Driver, error) {
+	row := r.pool.QueryRow(ctx, selectColumns+` WHERE user_id = $1`, userID)
+	d, err := scanDriver(row)
+	if errors.Is(err, pgx.ErrNoRows) || isPgError(err, pgInvalidText) {
+		return nil, ports.ErrDriverNotFound
+	}
+	return d, err
+}
+
 // Save escribe el repartidor solo si la versión guardada es expectedVersion.
 func (r *DriverRepository) Save(ctx context.Context, d *domain.Driver, expectedVersion int) error {
 	tag, err := r.pool.Exec(ctx, `

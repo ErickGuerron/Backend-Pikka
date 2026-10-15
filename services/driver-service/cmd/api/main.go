@@ -52,7 +52,11 @@ func run(log *slog.Logger) error {
 	}
 	defer pool.Close()
 
-	drivers := driver.NewService(postgres.NewDriverRepository(pool), time.Now)
+	repo := postgres.NewDriverRepository(pool)
+	drivers := driver.NewService(repo, time.Now)
+	// La fuente de paradas la aporta el Routing Service, que aún no existe: sin ella RegisterDelivery
+	// responde UNIMPLEMENTED en lugar de aceptar una ubicación de parada del llamador.
+	deliveries := driver.NewDeliveries(repo, postgres.NewDeliveryRecorder(pool), cfg.ArrivalRadiusMeters)
 	log.Info("driver service wired", "arrivalRadiusMeters", cfg.ArrivalRadiusMeters)
 
 	// Si gRPC falla, se cancela el proceso entero: un servicio a medias no debe seguir sirviendo.
@@ -60,7 +64,7 @@ func run(log *slog.Logger) error {
 	defer cancel()
 	grpcErr := make(chan error, 1)
 	go func() {
-		err := serveGRPC(runCtx, log, cfg.GRPCPort, drivers)
+		err := serveGRPC(runCtx, log, cfg.GRPCPort, drivers, deliveries)
 		if err != nil {
 			cancel()
 		}
@@ -73,14 +77,14 @@ func run(log *slog.Logger) error {
 }
 
 // serveGRPC expone el contrato drivers.v1 hasta que ctx se cancela.
-func serveGRPC(ctx context.Context, log *slog.Logger, port int, svc *driver.Service) error {
+func serveGRPC(ctx context.Context, log *slog.Logger, port int, svc *driver.Service, deliveries *driver.Deliveries) error {
 	var lc net.ListenConfig
 	lis, err := lc.Listen(ctx, "tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return fmt.Errorf("grpc listen: %w", err)
 	}
 	srv := grpc.NewServer()
-	driversv1.RegisterDriverServiceServer(srv, grpcadapter.NewDriverServer(svc))
+	driversv1.RegisterDriverServiceServer(srv, grpcadapter.NewDriverServer(svc).WithDeliveries(deliveries, nil))
 	log.Info("grpc listening", "port", port)
 
 	errCh := make(chan error, 1)

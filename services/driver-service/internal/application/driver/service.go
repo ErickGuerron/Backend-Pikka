@@ -67,6 +67,11 @@ func (s *Service) ReserveDriver(ctx context.Context, id, routeID string) (*domai
 	})
 }
 
+// FindByUserID devuelve el repartidor asociado a un usuario de Auth Service.
+func (s *Service) FindByUserID(ctx context.Context, userID string) (*domain.Driver, error) {
+	return s.repo.FindByUserID(ctx, userID)
+}
+
 // FindAvailableDrivers devuelve repartidores activos y disponibles. limit 0 usa el valor
 // por defecto (50), un valor mayor que 100 se recorta a 100 y un negativo se rechaza. Así
 // lo define el contrato drivers.v1.

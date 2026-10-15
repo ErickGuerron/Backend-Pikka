@@ -45,6 +45,18 @@ func (r *DriverRepository) Get(_ context.Context, id string) (*domain.Driver, er
 	return &d, nil
 }
 
+// FindByUserID devuelve una copia del repartidor cuyo user_id coincide.
+func (r *DriverRepository) FindByUserID(_ context.Context, userID string) (*domain.Driver, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, d := range r.drivers {
+		if d.UserID == userID {
+			return &d, nil
+		}
+	}
+	return nil, ports.ErrDriverNotFound
+}
+
 // Save reemplaza el repartidor solo si la versión almacenada es expectedVersion.
 func (r *DriverRepository) Save(_ context.Context, d *domain.Driver, expectedVersion int) error {
 	r.mu.Lock()
