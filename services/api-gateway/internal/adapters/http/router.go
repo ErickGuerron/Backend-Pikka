@@ -127,6 +127,7 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 		ch := &customerHandlers{customers: opts.CustomerQueries}
 		adminOnly.GET("/customers", ch.list)
 		adminOnly.GET("/customers/:id", ch.get)
+		adminOnly.PATCH("/customers/:id/status", ch.setStatus)
 	}
 
 	// Pedidos del cliente (ADR 0007). La autorización por rol la aplica Order Service.

@@ -16,6 +16,11 @@ import (
 type CustomerQueryClient interface {
 	GetByID(ctx context.Context, m grpcclient.CallMeta, req *customerv1.GetByIDRequest) (*customerv1.GetByIDResponse, error)
 	ListCustomers(ctx context.Context, m grpcclient.CallMeta, req *customerv1.ListCustomersRequest) (*customerv1.ListCustomersResponse, error)
+	UpdateStatus(ctx context.Context, m grpcclient.CallMeta, req *customerv1.UpdateStatusRequest) (*customerv1.UpdateStatusResponse, error)
+}
+
+type setCustomerStatusRequest struct {
+	Status string `json:"status"`
 }
 
 // customerHandlers traduce REST <-> gRPC para consultas de clientes. La
@@ -53,6 +58,21 @@ func toCustomerDTO(c *customerv1.Customer) customerDTO {
 		CreatedAt:        c.GetCreatedAt(),
 		UpdatedAt:        c.GetUpdatedAt(),
 	}
+}
+
+func (h *customerHandlers) setStatus(c echo.Context) error {
+	var req setCustomerStatusRequest
+	if err := bindJSON(c, &req); err != nil {
+		return err
+	}
+	res, err := h.customers.UpdateStatus(c.Request().Context(), callMeta(c), &customerv1.UpdateStatusRequest{
+		Id:     c.Param("id"),
+		Status: req.Status,
+	})
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, toCustomerDTO(res.GetCustomer()))
 }
 
 func (h *customerHandlers) get(c echo.Context) error {
