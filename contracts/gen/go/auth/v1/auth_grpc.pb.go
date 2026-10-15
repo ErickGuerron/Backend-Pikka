@@ -25,6 +25,8 @@ const (
 	AuthService_ValidateToken_FullMethodName  = "/auth.v1.AuthService/ValidateToken"
 	AuthService_SignupCustomer_FullMethodName = "/auth.v1.AuthService/SignupCustomer"
 	AuthService_ListUsers_FullMethodName      = "/auth.v1.AuthService/ListUsers"
+	AuthService_UpdateUser_FullMethodName     = "/auth.v1.AuthService/UpdateUser"
+	AuthService_DeactivateUser_FullMethodName = "/auth.v1.AuthService/DeactivateUser"
 )
 
 // AuthServiceClient is the client API for AuthService service.
@@ -47,6 +49,11 @@ type AuthServiceClient interface {
 	SignupCustomer(ctx context.Context, in *SignupCustomerRequest, opts ...grpc.CallOption) (*SignupCustomerResponse, error)
 	// ListUsers devuelve todos los usuarios del sistema. Solo ADMIN.
 	ListUsers(ctx context.Context, in *ListUsersRequest, opts ...grpc.CallOption) (*ListUsersResponse, error)
+	// UpdateUser edita nombre y/o rol de un usuario. Solo ADMIN. Las reglas de
+	// dominio (último ADMIN activo, rol CUSTOMER inmutable) las aplica auth-service.
+	UpdateUser(ctx context.Context, in *UpdateUserRequest, opts ...grpc.CallOption) (*UpdateUserResponse, error)
+	// DeactivateUser hace borrado lógico (active=false). Solo ADMIN. Es idempotente.
+	DeactivateUser(ctx context.Context, in *DeactivateUserRequest, opts ...grpc.CallOption) (*DeactivateUserResponse, error)
 }
 
 type authServiceClient struct {
@@ -117,6 +124,26 @@ func (c *authServiceClient) ListUsers(ctx context.Context, in *ListUsersRequest,
 	return out, nil
 }
 
+func (c *authServiceClient) UpdateUser(ctx context.Context, in *UpdateUserRequest, opts ...grpc.CallOption) (*UpdateUserResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateUserResponse)
+	err := c.cc.Invoke(ctx, AuthService_UpdateUser_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *authServiceClient) DeactivateUser(ctx context.Context, in *DeactivateUserRequest, opts ...grpc.CallOption) (*DeactivateUserResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeactivateUserResponse)
+	err := c.cc.Invoke(ctx, AuthService_DeactivateUser_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AuthServiceServer is the server API for AuthService service.
 // All implementations must embed UnimplementedAuthServiceServer
 // for forward compatibility.
@@ -137,6 +164,11 @@ type AuthServiceServer interface {
 	SignupCustomer(context.Context, *SignupCustomerRequest) (*SignupCustomerResponse, error)
 	// ListUsers devuelve todos los usuarios del sistema. Solo ADMIN.
 	ListUsers(context.Context, *ListUsersRequest) (*ListUsersResponse, error)
+	// UpdateUser edita nombre y/o rol de un usuario. Solo ADMIN. Las reglas de
+	// dominio (último ADMIN activo, rol CUSTOMER inmutable) las aplica auth-service.
+	UpdateUser(context.Context, *UpdateUserRequest) (*UpdateUserResponse, error)
+	// DeactivateUser hace borrado lógico (active=false). Solo ADMIN. Es idempotente.
+	DeactivateUser(context.Context, *DeactivateUserRequest) (*DeactivateUserResponse, error)
 	mustEmbedUnimplementedAuthServiceServer()
 }
 
@@ -164,6 +196,12 @@ func (UnimplementedAuthServiceServer) SignupCustomer(context.Context, *SignupCus
 }
 func (UnimplementedAuthServiceServer) ListUsers(context.Context, *ListUsersRequest) (*ListUsersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListUsers not implemented")
+}
+func (UnimplementedAuthServiceServer) UpdateUser(context.Context, *UpdateUserRequest) (*UpdateUserResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateUser not implemented")
+}
+func (UnimplementedAuthServiceServer) DeactivateUser(context.Context, *DeactivateUserRequest) (*DeactivateUserResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeactivateUser not implemented")
 }
 func (UnimplementedAuthServiceServer) mustEmbedUnimplementedAuthServiceServer() {}
 func (UnimplementedAuthServiceServer) testEmbeddedByValue()                     {}
@@ -294,6 +332,42 @@ func _AuthService_ListUsers_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuthService_UpdateUser_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateUserRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).UpdateUser(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_UpdateUser_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).UpdateUser(ctx, req.(*UpdateUserRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuthService_DeactivateUser_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeactivateUserRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).DeactivateUser(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_DeactivateUser_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).DeactivateUser(ctx, req.(*DeactivateUserRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AuthService_ServiceDesc is the grpc.ServiceDesc for AuthService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -324,6 +398,14 @@ var AuthService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListUsers",
 			Handler:    _AuthService_ListUsers_Handler,
+		},
+		{
+			MethodName: "UpdateUser",
+			Handler:    _AuthService_UpdateUser_Handler,
+		},
+		{
+			MethodName: "DeactivateUser",
+			Handler:    _AuthService_DeactivateUser_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
