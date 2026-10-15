@@ -147,6 +147,8 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 	// administra. El servicio decide qué ve cada rol.
 	if opts.Catalog != nil {
 		p := &catalogHandlers{catalog: opts.Catalog}
+		// Ruta pública para la landing: fuera del grupo authed, sin JWT. Solo lectura de productos activos.
+		api.GET("/catalog/products", p.listPublic)
 		staff := authed.Group("", StaffOnly())
 		authed.GET("/products", p.list)
 		authed.GET("/products/:id", p.get)
