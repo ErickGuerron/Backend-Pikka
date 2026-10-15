@@ -17,10 +17,11 @@ type Config struct {
 	AppEnv   string
 	HTTPPort int
 
-	AuthServiceAddr  string
-	ZoneServiceAddr  string
-	OrderServiceAddr string
-	GRPCTimeout      time.Duration
+	AuthServiceAddr   string
+	ZoneServiceAddr   string
+	OrderServiceAddr  string
+	DriverServiceAddr string
+	GRPCTimeout       time.Duration
 
 	JWTSecret string
 	JWTIssuer string
@@ -49,6 +50,7 @@ func Load() (Config, error) {
 		AuthServiceAddr:     getEnv("AUTH_SERVICE_ADDR", "localhost:9090"),
 		ZoneServiceAddr:     getEnv("ZONE_SERVICE_ADDR", "localhost:9090"),
 		OrderServiceAddr:    getEnv("ORDER_SERVICE_ADDR", "localhost:9091"),
+		DriverServiceAddr:   getEnv("DRIVER_SERVICE_ADDR", "localhost:9092"),
 		GRPCTimeout:         getDuration("GRPC_TIMEOUT", 3*time.Second, &errs),
 		JWTSecret:           os.Getenv("JWT_SECRET"),
 		JWTIssuer:           getEnv("JWT_ISSUER", "lastmile-auth"),

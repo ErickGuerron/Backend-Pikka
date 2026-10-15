@@ -42,6 +42,32 @@ service DriverService {
   // En FAILED_PRECONDITION el mensaje del error distingue cuál de las tres causas
   // ocurrió.
   rpc ReserveDriver(ReserveDriverRequest) returns (ReserveDriverResponse);
+
+  // GetDriverByUserID devuelve el repartidor asociado a un user_id de Auth Service. Lo usa el
+  // Gateway para resolver GET /drivers/me.
+  //
+  // Códigos de estado gRPC que el servidor debe devolver:
+  //
+  //   - INVALID_ARGUMENT: user_id en blanco.
+  //   - NOT_FOUND: ningún repartidor tiene ese user_id.
+  rpc GetDriverByUserID(GetDriverByUserIDRequest) returns (GetDriverByUserIDResponse);
+
+  // RegisterDelivery guarda el resultado de una parada (ADR 0007, sección 4) y su verificación
+  // de llegada. El repartidor debe estar ON_ROUTE en route_id.
+  //
+  // La dirección y la ventana de la parada NO las envía el llamador: el servidor las obtiene de
+  // la fuente de paradas del Routing Service. Mientras esa fuente no esté configurada, responde
+  // UNIMPLEMENTED. Así el cliente no puede declarar una ubicación de parada y falsear la llegada.
+  //
+  // Códigos de estado gRPC que el servidor debe devolver:
+  //
+  //   - INVALID_ARGUMENT: campos obligatorios en blanco, outcome o reason fuera de la lista,
+  //     coordenadas fuera de rango o recorded_at que no es RFC 3339.
+  //   - NOT_FOUND: el repartidor o la parada no existen.
+  //   - FAILED_PRECONDITION: el repartidor no está ON_ROUTE en esa ruta.
+  //   - ALREADY_EXISTS: la parada ya tiene un registro en esa ruta.
+  //   - UNIMPLEMENTED: la fuente de paradas aún no existe.
+  rpc RegisterDelivery(RegisterDeliveryRequest) returns (RegisterDeliveryResponse);
 }
 
 enum DriverStatus {
@@ -98,4 +124,43 @@ message ReserveDriverResponse {
   // contactar al cliente y el cliente al repartidor. Solo se expone a quien reserva,
   // nunca a clientes finales.
   Driver driver = 1;
+}
+
+message GetDriverByUserIDRequest {
+  // Identificador del usuario en Auth Service con rol DRIVER; obligatorio.
+  string user_id = 1;
+}
+
+message GetDriverByUserIDResponse {
+  DriverSummary driver = 1;
+}
+
+message RegisterDeliveryRequest {
+  // Repartidor que registra; obligatorio.
+  string driver_id = 1;
+  // Ruta de la parada; obligatoria.
+  string route_id = 2;
+  // Parada; obligatoria.
+  string stop_id = 3;
+  // "DELIVERED" o "NOT_DELIVERED".
+  string outcome = 4;
+  // Motivo de la lista cerrada: obligatorio con NOT_DELIVERED y vacío con DELIVERED.
+  string reason = 5;
+  // Momento del registro, RFC 3339.
+  string recorded_at = 6;
+  // Posición GPS del repartidor al registrar. Grados decimales.
+  double latitude = 7;
+  double longitude = 8;
+  // Opcional: URL de la foto, vacía si no hay.
+  string photo_url = 9;
+}
+
+message RegisterDeliveryResponse {
+  string stop_id = 1;
+  string outcome = 2;
+  string reason = 3;
+  // Verificación de llegada que el motor de penalizaciones lee.
+  bool within_radius = 4;
+  bool within_window = 5;
+  double distance_meters = 6;
 }

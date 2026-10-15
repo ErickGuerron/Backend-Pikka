@@ -28,6 +28,8 @@ tags:
     description: Zonas de reparto y clasificación de coordenadas
   - name: products
     description: Catálogo de productos y stock (ADR 0009)
+  - name: drivers
+    description: Rutas del repartidor (ADR 0007). Solo rol DRIVER. Hoy responden 501 hasta que existan el Routing Service y el Tracking Service
 paths:
   /health:
     get:
@@ -751,6 +753,92 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/drivers/me/route:
+    get:
+      tags: [drivers]
+      operationId: getMyDriverRoute
+      summary: Ruta asignada al repartidor autenticado (solo DRIVER)
+      description: |
+        NO IMPLEMENTADO. Responde 501 hasta que exista el Routing Service, que es quien posee la
+        ruta. Ninguna respuesta 200 contiene datos inventados. La app móvil trata 501 como
+        "servicio no disponible".
+      responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "501": { $ref: "#/components/responses/NotImplemented" }
+  /api/v1/drivers/me/routes/{routeId}/stops/{stopId}/status:
+    patch:
+      tags: [drivers]
+      operationId: setMyStopStatus
+      summary: Avanza una parada a PICKED_UP o IN_TRANSIT (solo DRIVER)
+      description: |
+        NO IMPLEMENTADO. Responde 501 hasta que exista el Tracking Service, que posee las
+        transiciones de parada. El resultado final de la parada va en el endpoint de resultado.
+      parameters:
+        - name: routeId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: stopId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [PICKED_UP, IN_TRANSIT] }
+      responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "501": { $ref: "#/components/responses/NotImplemented" }
+  /api/v1/drivers/me/routes/{routeId}/stops/{stopId}/result:
+    post:
+      tags: [drivers]
+      operationId: registerMyStopResult
+      summary: Registra el resultado de una parada (solo DRIVER)
+      description: |
+        NO IMPLEMENTADO. Responde 501 porque la dirección y la ventana de la parada las aporta el
+        Routing Service, que aún no existe. El cliente nunca envía la ubicación de la parada: el
+        sistema comprueba la llegada (ADR 0007, sección 5). Cuando exista la fuente, el cuerpo
+        será el de este contrato.
+      parameters:
+        - name: routeId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: stopId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome, location]
+              properties:
+                outcome: { type: string, enum: [DELIVERED, NOT_DELIVERED] }
+                reason:
+                  type: string
+                  description: Obligatorio con NOT_DELIVERED y ausente con DELIVERED
+                  enum: [CLIENT_REFUSED, CLIENT_ABSENT, OUT_OF_WINDOW, PRODUCT_DAMAGED, WRONG_ADDRESS, DUPLICATE_ORDER]
+                location:
+                  type: object
+                  required: [latitude, longitude]
+                  description: Posición GPS del repartidor al registrar (ADR 0007, sección 4)
+                  properties:
+                    latitude: { type: number, minimum: -90, maximum: 90 }
+                    longitude: { type: number, minimum: -180, maximum: 180 }
+      responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "501": { $ref: "#/components/responses/NotImplemented" }
 security:
   - bearerAuth: []
 components:
@@ -1060,7 +1148,7 @@ components:
               description: |
                 INVALID_ARGUMENT, UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, CONFLICT,
                 FAILED_PRECONDITION, RATE_LIMITED, PAYLOAD_TOO_LARGE,
-                UNSUPPORTED_MEDIA_TYPE, UPSTREAM_TIMEOUT, UPSTREAM_UNAVAILABLE, INTERNAL
+                UNSUPPORTED_MEDIA_TYPE, UPSTREAM_TIMEOUT, UPSTREAM_UNAVAILABLE, NOT_IMPLEMENTED, INTERNAL
             message: { type: string }
             requestId: { type: string, description: Igual a la cabecera X-Request-Id }
   responses:
@@ -1076,6 +1164,11 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     Forbidden:
       description: Sin permiso sobre el recurso
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotImplemented:
+      description: Ruta reservada, sin backend todavía. Código NOT_IMPLEMENTED
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

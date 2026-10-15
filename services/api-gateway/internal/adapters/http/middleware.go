@@ -58,6 +58,23 @@ func AdminOnly() echo.MiddlewareFunc {
 	}
 }
 
+// DriverOnly exige rol DRIVER. Igual que AdminOnly, corta con 403 antes del handler: las rutas
+// de repartidor no las usa ningún otro rol (ADR 0007, sección 1).
+func DriverOnly() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			id, ok := identityFrom(c)
+			if !ok {
+				return echo.NewHTTPError(http.StatusUnauthorized, "missing identity")
+			}
+			if !strings.EqualFold(id.Role, "DRIVER") {
+				return echo.NewHTTPError(http.StatusForbidden, "driver role required")
+			}
+			return next(c)
+		}
+	}
+}
+
 // StaffOnly deja pasar a ADMIN y OPERATOR (ADR 0008). Igual que AdminOnly, corta con 403 antes
 // del handler; las reglas finas del catálogo las aplica el servicio interno.
 func StaffOnly() echo.MiddlewareFunc {

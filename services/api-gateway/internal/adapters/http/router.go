@@ -35,6 +35,8 @@ type Options struct {
 	Orders OrderClient
 	// Catalog, si no es nil, habilita /products (ADR 0009). Los roles los aplica el middleware y el servicio.
 	Catalog CatalogClient
+	// Drivers, si no es nil, habilita las rutas de repartidor (rol DRIVER). Hoy responden 501.
+	Drivers DriverClient
 }
 
 // Readiness informa si una dependencia está lista.
@@ -152,6 +154,14 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 		staff.PATCH("/products/:id/active", p.setActive)
 		staff.POST("/products/:id/stock-adjustments", p.adjustStock)
 		staff.GET("/products/:id/stock-movements", p.movements)
+	}
+
+	// Rutas del repartidor (ADR 0007). Solo rol DRIVER; el backend de ruta y parada aún no existe.
+	if opts.Drivers != nil {
+		driverOnly := authed.Group("", DriverOnly())
+		driverOnly.GET("/drivers/me/route", driverRouteNotImplemented)
+		driverOnly.PATCH("/drivers/me/routes/:routeId/stops/:stopId/status", driverRouteNotImplemented)
+		driverOnly.POST("/drivers/me/routes/:routeId/stops/:stopId/result", driverRouteNotImplemented)
 	}
 
 	z := &zonesHandlers{zones: zones}

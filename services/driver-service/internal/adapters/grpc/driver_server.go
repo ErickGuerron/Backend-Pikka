@@ -16,15 +16,82 @@ import (
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/domain"
 )
 
+// StopSource entrega la dirección y la ventana de una parada de una ruta. Su origen es el
+// Routing Service, que aún no existe.
+type StopSource interface {
+	Stop(ctx context.Context, routeID, stopID string) (domain.Stop, error)
+}
+
 // DriverServer implementa driversv1.DriverServiceServer delegando en la capa de aplicación.
 type DriverServer struct {
 	driversv1.UnimplementedDriverServiceServer
-	svc *driver.Service
+	svc        *driver.Service
+	deliveries *driver.Deliveries
+	stops      StopSource
 }
 
 // NewDriverServer crea el adaptador gRPC.
 func NewDriverServer(svc *driver.Service) *DriverServer {
 	return &DriverServer{svc: svc}
+}
+
+// WithDeliveries activa RegisterDelivery. Si stops es nil, el RPC responde UNIMPLEMENTED: sin
+// fuente de paradas no hay forma verificable de comprobar la llegada.
+func (s *DriverServer) WithDeliveries(deliveries *driver.Deliveries, stops StopSource) *DriverServer {
+	s.deliveries = deliveries
+	s.stops = stops
+	return s
+}
+
+// GetDriverByUserID devuelve el resumen del repartidor asociado a un user_id.
+func (s *DriverServer) GetDriverByUserID(ctx context.Context, req *driversv1.GetDriverByUserIDRequest) (*driversv1.GetDriverByUserIDResponse, error) {
+	userID := strings.TrimSpace(req.GetUserId())
+	if userID == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	d, err := s.svc.FindByUserID(ctx, userID)
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	return &driversv1.GetDriverByUserIDResponse{Driver: &driversv1.DriverSummary{Id: d.ID, UserId: d.UserID}}, nil
+}
+
+// RegisterDelivery registra el resultado de una parada. La parada la aporta la fuente de
+// paradas, nunca el llamador.
+func (s *DriverServer) RegisterDelivery(ctx context.Context, req *driversv1.RegisterDeliveryRequest) (*driversv1.RegisterDeliveryResponse, error) {
+	if s.deliveries == nil || s.stops == nil {
+		return nil, status.Error(codes.Unimplemented, "stop source is not available yet")
+	}
+	recordedAt, err := time.Parse(time.RFC3339, req.GetRecordedAt())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "recorded_at must be RFC 3339")
+	}
+	routeID := strings.TrimSpace(req.GetRouteId())
+	stopID := strings.TrimSpace(req.GetStopId())
+	stop, err := s.stops.Stop(ctx, routeID, stopID)
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	in := driver.DeliveryInput{
+		StopID:   stopID,
+		Outcome:  domain.Outcome(req.GetOutcome()),
+		Reason:   domain.NotDeliveredReason(req.GetReason()),
+		At:       recordedAt,
+		Location: domain.GeoPoint{Latitude: req.GetLatitude(), Longitude: req.GetLongitude()},
+		PhotoURL: req.GetPhotoUrl(),
+	}
+	reg, err := s.deliveries.RegisterDelivery(ctx, strings.TrimSpace(req.GetDriverId()), routeID, stop, in)
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	return &driversv1.RegisterDeliveryResponse{
+		StopId:         reg.Record.StopID,
+		Outcome:        string(reg.Record.Outcome),
+		Reason:         string(reg.Record.Reason),
+		WithinRadius:   reg.Arrival.WithinRadius,
+		WithinWindow:   reg.Arrival.WithinWindow,
+		DistanceMeters: reg.Arrival.DistanceM,
+	}, nil
 }
 
 // FindAvailableDrivers devuelve solo identificadores de repartidores activos y disponibles.
@@ -74,6 +141,14 @@ func toStatus(err error) error {
 	case errors.Is(err, domain.ErrRouteMismatch), errors.Is(err, domain.ErrInvalidTransition):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, domain.ErrInvalidRouteID), errors.Is(err, domain.ErrInvalidDriverID):
+		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, ports.ErrStopNotFound):
+		return status.Error(codes.NotFound, "stop not found")
+	case errors.Is(err, ports.ErrDeliveryAlreadyRecorded):
+		return status.Error(codes.AlreadyExists, "delivery already recorded for this stop")
+	case errors.Is(err, domain.ErrInvalidOutcome), errors.Is(err, domain.ErrReasonRequired),
+		errors.Is(err, domain.ErrReasonNotAllowed), errors.Is(err, domain.ErrInvalidStopID),
+		errors.Is(err, domain.ErrInvalidCoordinates):
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, ports.ErrVersionConflict):
 		// Tras los reintentos del servicio, otro cambio sigue ganando: el cliente debe reintentar.
