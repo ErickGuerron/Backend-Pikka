@@ -25,6 +25,11 @@ type OrderRepository interface {
 	// decide recibe el pedido actual y devuelve el pedido nuevo y la notificación (opcional).
 	// Devuelve domain.ErrOrderNotFound si el id no existe.
 	Review(ctx context.Context, orderID string, decide func(current domain.Order) (domain.Order, *domain.Notification, error)) (domain.Order, error)
+
+	// CancelForCustomer cancela un pedido del cliente dentro de una transacción con bloqueo de fila.
+	// Si el pedido no existe o es de otro cliente devuelve domain.ErrOrderNotFound (BOLA, ADR 0007).
+	// decide aplica la regla de dominio; el stock se devuelve en la misma transacción.
+	CancelForCustomer(ctx context.Context, orderID string, customerID uuid.UUID, decide func(current domain.Order) (domain.Order, error)) (domain.Order, error)
 }
 
 // NotificationRepository lee los avisos del cliente.

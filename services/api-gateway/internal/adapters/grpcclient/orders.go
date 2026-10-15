@@ -70,3 +70,10 @@ func (o *Orders) ReviewOrder(ctx context.Context, m CallMeta, req *ordersv1.Revi
 	defer cancel()
 	return o.client.ReviewOrder(ctx, req)
 }
+
+// CancelOrder cancela un pedido del cliente autenticado.
+func (o *Orders) CancelOrder(ctx context.Context, m CallMeta, req *ordersv1.CancelOrderRequest) (*ordersv1.CancelOrderResponse, error) {
+	ctx, cancel := o.outgoing(ctx, m)
+	defer cancel()
+	return o.client.CancelOrder(ctx, req)
+}

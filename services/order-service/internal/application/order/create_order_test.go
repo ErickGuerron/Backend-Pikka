@@ -348,3 +348,7 @@ func TestListMyOrdersReturnsOnlyTheCallersOrders(t *testing.T) {
 		t.Fatalf("got %d orders, want only the caller's one", len(got))
 	}
 }
+
+func (f *fakeOrders) CancelForCustomer(_ context.Context, _ string, _ uuid.UUID, _ func(domain.Order) (domain.Order, error)) (domain.Order, error) {
+	return domain.Order{}, domain.ErrOrderNotFound
+}

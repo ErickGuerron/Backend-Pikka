@@ -27,6 +27,7 @@ const (
 	OrderService_ReviewOrder_FullMethodName         = "/orders.v1.OrderService/ReviewOrder"
 	OrderService_ListMyOrders_FullMethodName        = "/orders.v1.OrderService/ListMyOrders"
 	OrderService_ListMyNotifications_FullMethodName = "/orders.v1.OrderService/ListMyNotifications"
+	OrderService_CancelOrder_FullMethodName         = "/orders.v1.OrderService/CancelOrder"
 )
 
 // OrderServiceClient is the client API for OrderService service.
@@ -57,6 +58,9 @@ type OrderServiceClient interface {
 	// ListMyNotifications returns the notices the customer received about the
 	// review of their orders, newest first. Only the CUSTOMER role can call it.
 	ListMyNotifications(ctx context.Context, in *ListMyNotificationsRequest, opts ...grpc.CallOption) (*ListMyNotificationsResponse, error)
+	// CancelOrder cancels an order of the authenticated CUSTOMER. Only PENDING or ROUTE_ASSIGNED can be
+	// cancelled; another state returns ABORTED (HTTP 409). An order of another customer returns NOT_FOUND.
+	CancelOrder(ctx context.Context, in *CancelOrderRequest, opts ...grpc.CallOption) (*CancelOrderResponse, error)
 }
 
 type orderServiceClient struct {
@@ -147,6 +151,16 @@ func (c *orderServiceClient) ListMyNotifications(ctx context.Context, in *ListMy
 	return out, nil
 }
 
+func (c *orderServiceClient) CancelOrder(ctx context.Context, in *CancelOrderRequest, opts ...grpc.CallOption) (*CancelOrderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CancelOrderResponse)
+	err := c.cc.Invoke(ctx, OrderService_CancelOrder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // OrderServiceServer is the server API for OrderService service.
 // All implementations must embed UnimplementedOrderServiceServer
 // for forward compatibility.
@@ -175,6 +189,9 @@ type OrderServiceServer interface {
 	// ListMyNotifications returns the notices the customer received about the
 	// review of their orders, newest first. Only the CUSTOMER role can call it.
 	ListMyNotifications(context.Context, *ListMyNotificationsRequest) (*ListMyNotificationsResponse, error)
+	// CancelOrder cancels an order of the authenticated CUSTOMER. Only PENDING or ROUTE_ASSIGNED can be
+	// cancelled; another state returns ABORTED (HTTP 409). An order of another customer returns NOT_FOUND.
+	CancelOrder(context.Context, *CancelOrderRequest) (*CancelOrderResponse, error)
 	mustEmbedUnimplementedOrderServiceServer()
 }
 
@@ -208,6 +225,9 @@ func (UnimplementedOrderServiceServer) ListMyOrders(context.Context, *ListMyOrde
 }
 func (UnimplementedOrderServiceServer) ListMyNotifications(context.Context, *ListMyNotificationsRequest) (*ListMyNotificationsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListMyNotifications not implemented")
+}
+func (UnimplementedOrderServiceServer) CancelOrder(context.Context, *CancelOrderRequest) (*CancelOrderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CancelOrder not implemented")
 }
 func (UnimplementedOrderServiceServer) mustEmbedUnimplementedOrderServiceServer() {}
 func (UnimplementedOrderServiceServer) testEmbeddedByValue()                      {}
@@ -374,6 +394,24 @@ func _OrderService_ListMyNotifications_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _OrderService_CancelOrder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelOrderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).CancelOrder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_CancelOrder_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).CancelOrder(ctx, req.(*CancelOrderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // OrderService_ServiceDesc is the grpc.ServiceDesc for OrderService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -412,6 +450,10 @@ var OrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListMyNotifications",
 			Handler:    _OrderService_ListMyNotifications_Handler,
+		},
+		{
+			MethodName: "CancelOrder",
+			Handler:    _OrderService_CancelOrder_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

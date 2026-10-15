@@ -20,6 +20,7 @@ type fakeOrderClient struct {
 	createReq *ordersv1.CreateOrderRequest
 	createRes *ordersv1.CreateOrderResponse
 	reviewReq *ordersv1.ReviewOrderRequest
+	cancelReq *ordersv1.CancelOrderRequest
 	meta      grpcclient.CallMeta
 	err       error
 }
@@ -234,4 +235,47 @@ func TestNotifications_ReturnsCustomerNotices(t *testing.T) {
 	require.Len(t, body.Notifications, 1)
 	assert.Equal(t, "ORDER_IN_REVIEW", body.Notifications[0].Kind)
 	assert.Equal(t, "o-1", body.Notifications[0].OrderID)
+}
+
+func (f *fakeOrderClient) CancelOrder(_ context.Context, m grpcclient.CallMeta, req *ordersv1.CancelOrderRequest) (*ordersv1.CancelOrderResponse, error) {
+	f.cancelReq, f.meta = req, m
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &ordersv1.CancelOrderResponse{Order: &ordersv1.Order{Id: req.GetId(), Status: ordersv1.OrderStatus_ORDER_STATUS_CANCELLED}}, nil
+}
+
+func TestCancelOrder_CustomerGets200WithCancelledOrder(t *testing.T) {
+	fake := &fakeOrderClient{}
+	rec := do(ordersRouter(fake), http.MethodPost, "/api/v1/orders/o-7/cancel", "", authHdr(t, "CUSTOMER"))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var body struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, "o-7", body.ID)
+	assert.Equal(t, "CANCELLED", body.Status)
+	require.NotNil(t, fake.cancelReq)
+	assert.Equal(t, "o-7", fake.cancelReq.GetId())
+	assert.Equal(t, "CUSTOMER", fake.meta.Role, "la identidad del JWT se propaga al servicio")
+}
+
+func TestCancelOrder_ServiceErrorsMapToHTTP(t *testing.T) {
+	cases := map[string]struct {
+		err  error
+		want int
+	}{
+		"not cancellable": {status.Error(codes.Aborted, "order cannot be cancelled"), http.StatusConflict},
+		"not owned":       {status.Error(codes.NotFound, "pedido no encontrado"), http.StatusNotFound},
+		"not customer":    {status.Error(codes.PermissionDenied, "forbidden"), http.StatusForbidden},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			fake := &fakeOrderClient{err: tc.err}
+			rec := do(ordersRouter(fake), http.MethodPost, "/api/v1/orders/o-7/cancel", "", authHdr(t, "CUSTOMER"))
+			assert.Equal(t, tc.want, rec.Code, rec.Body.String())
+		})
+	}
 }

@@ -28,6 +28,9 @@ service OrderService {
   // ListMyNotifications returns the notices the customer received about the
   // review of their orders, newest first. Only the CUSTOMER role can call it.
   rpc ListMyNotifications(ListMyNotificationsRequest) returns (ListMyNotificationsResponse);
+  // CancelOrder cancels an order of the authenticated CUSTOMER. Only PENDING or ROUTE_ASSIGNED can be
+  // cancelled; another state returns ABORTED (HTTP 409). An order of another customer returns NOT_FOUND.
+  rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse);
 }
 
 enum OrderStatus {
@@ -198,4 +201,13 @@ message Notification {
   // RFC 3339, UTC.
   string created_at = 5;
   bool read = 6;
+}
+
+message CancelOrderRequest {
+  // Required UUID of an order owned by the caller.
+  string id = 1;
+}
+
+message CancelOrderResponse {
+  Order order = 1;
 }

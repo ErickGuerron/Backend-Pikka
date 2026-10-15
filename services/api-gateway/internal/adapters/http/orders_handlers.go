@@ -18,6 +18,7 @@ type OrderClient interface {
 	ListMyNotifications(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ListMyNotificationsRequest) (*ordersv1.ListMyNotificationsResponse, error)
 	ListOrderExceptions(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ListOrderExceptionsRequest) (*ordersv1.ListOrderExceptionsResponse, error)
 	ReviewOrder(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ReviewOrderRequest) (*ordersv1.ReviewOrderResponse, error)
+	CancelOrder(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.CancelOrderRequest) (*ordersv1.CancelOrderResponse, error)
 }
 
 // ordersHandlers traduce REST <-> gRPC. Los roles y el alcance los aplica Order Service;
@@ -176,6 +177,15 @@ func (h *ordersHandlers) review(c echo.Context) error {
 			WindowEnd:    correctionField(req.Correction, func(v *correctionDTO) *string { return v.WindowEnd }),
 		},
 	})
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, toOrderDTO(res.GetOrder()))
+}
+
+// cancel cancela un pedido propio del cliente. Un pedido ajeno llega como NOT_FOUND desde Order Service.
+func (h *ordersHandlers) cancel(c echo.Context) error {
+	res, err := h.orders.CancelOrder(c.Request().Context(), callMeta(c), &ordersv1.CancelOrderRequest{Id: c.Param("id")})
 	if err != nil {
 		return err
 	}

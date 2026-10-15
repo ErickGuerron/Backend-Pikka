@@ -426,6 +426,29 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/orders/{id}/cancel:
+    post:
+      tags: [orders]
+      operationId: cancelMyOrder
+      summary: Cancela un pedido propio del cliente (solo CUSTOMER)
+      description: |
+        Solo aplica a pedidos en PENDING o ROUTE_ASSIGNED (ADR 0007, sección 8). El stock de sus productos
+        vuelve al catálogo en la misma operación. Un pedido de otro cliente responde 404.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Pedido cancelado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /api/v1/zones:
     get:
       tags: [zones]
