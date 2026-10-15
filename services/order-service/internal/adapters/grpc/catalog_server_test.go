@@ -6,13 +6,17 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	catalogv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/catalog/v1"
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/application/catalog"
+	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/application/ports"
+	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/domain"
 )
 
 // Estas pruebas cubren la traducción de identidad y errores. Las rutas que llegan al repositorio
@@ -33,6 +37,35 @@ func TestCatalogoRequiereIdentidad(t *testing.T) {
 	_, err := newCatalogServer().ListProducts(context.Background(), &catalogv1.ListProductsRequest{})
 
 	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+}
+
+// publicRepo sirve productos fijos al caso de uso; el resto del repositorio no se usa aquí.
+type publicRepo struct {
+	ports.CatalogRepository
+	products []domain.Product
+}
+
+func (r publicRepo) ListActiveProducts(context.Context) ([]domain.Product, error) {
+	return r.products, nil
+}
+
+func TestCatalogoPublicoSinIdentidad(t *testing.T) {
+	stock := int64(7)
+	repo := publicRepo{products: []domain.Product{{
+		ID: uuid.New(), Name: "Pan", Description: "Recién horneado", UnitPrice: decimal.RequireFromString("2.5"),
+		Active: true, StockQuantity: &stock,
+	}}}
+	srv := NewCatalogServer(catalog.NewService(repo, time.Now))
+
+	res, err := srv.ListPublicProducts(context.Background(), &catalogv1.ListPublicProductsRequest{})
+
+	require.NoError(t, err, "el catálogo público no exige identidad")
+	require.Len(t, res.GetProducts(), 1)
+	p := res.GetProducts()[0]
+	assert.Equal(t, "Pan", p.GetName())
+	assert.Equal(t, "2.50", p.GetUnitPrice())
+	assert.Equal(t, "Recién horneado", p.GetDescription())
+	assert.NotEmpty(t, p.GetId())
 }
 
 func TestClienteNoCreaProductos(t *testing.T) {

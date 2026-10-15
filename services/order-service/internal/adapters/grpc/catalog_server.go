@@ -38,6 +38,25 @@ func (s *CatalogServer) ListProducts(ctx context.Context, req *catalogv1.ListPro
 	return &catalogv1.ListProductsResponse{Products: productsToProto(list)}, nil
 }
 
+// ListPublicProducts no exige identidad: la landing lo llama sin usuario. Solo expone id, nombre,
+// descripción y precio; nunca stock ni estado.
+func (s *CatalogServer) ListPublicProducts(ctx context.Context, _ *catalogv1.ListPublicProductsRequest) (*catalogv1.ListPublicProductsResponse, error) {
+	list, err := s.svc.ListPublicProducts(ctx)
+	if err != nil {
+		return nil, toCatalogStatus(err)
+	}
+	out := make([]*catalogv1.PublicProduct, 0, len(list))
+	for _, p := range list {
+		out = append(out, &catalogv1.PublicProduct{
+			Id:          p.ID.String(),
+			Name:        p.Name,
+			Description: p.Description,
+			UnitPrice:   p.UnitPrice.StringFixed(2),
+		})
+	}
+	return &catalogv1.ListPublicProductsResponse{Products: out}, nil
+}
+
 func (s *CatalogServer) GetProduct(ctx context.Context, req *catalogv1.GetProductRequest) (*catalogv1.GetProductResponse, error) {
 	actor, err := catalogActor(ctx)
 	if err != nil {

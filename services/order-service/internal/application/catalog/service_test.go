@@ -170,6 +170,36 @@ func TestClienteSoloVeProductosActivos(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrProductNotFound, "para el cliente un producto inactivo no existe")
 }
 
+func TestListaPublicaSoloActivos(t *testing.T) {
+	svc, _ := newService()
+	ctx := context.Background()
+	active, err := svc.CreateProduct(ctx, admin, domain.NewProductInput{Name: "Pan", UnitPrice: price("1"), InitialStock: stock(4)})
+	require.NoError(t, err)
+	hidden, err := svc.CreateProduct(ctx, admin, domain.NewProductInput{Name: "Jugo", UnitPrice: price("2")})
+	require.NoError(t, err)
+	_, err = svc.SetProductActive(ctx, admin, hidden.ID, false)
+	require.NoError(t, err)
+
+	list, err := svc.ListPublicProducts(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, active.ID, list[0].ID)
+	assert.True(t, list[0].Active, "solo se devuelven productos activos")
+}
+
+func TestListaPublicaTopaEn50(t *testing.T) {
+	svc, _ := newService()
+	ctx := context.Background()
+	for i := 0; i < 60; i++ {
+		_, err := svc.CreateProduct(ctx, admin, domain.NewProductInput{Name: "Producto", UnitPrice: price("1")})
+		require.NoError(t, err)
+	}
+
+	list, err := svc.ListPublicProducts(ctx)
+	require.NoError(t, err)
+	assert.Len(t, list, 50)
+}
+
 func TestHistorialSoloPersonal(t *testing.T) {
 	svc, _ := newService()
 	ctx := context.Background()
