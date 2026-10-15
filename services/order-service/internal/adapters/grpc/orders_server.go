@@ -28,6 +28,7 @@ type OrderUseCases struct {
 	Exceptions    *orderapp.ListExceptions
 	Review        *orderapp.ReviewOrder
 	Notifications *orderapp.ListMyNotifications
+	Cancel        *orderapp.CancelOrder
 }
 
 // OrderServer implementa ordersv1.OrderServiceServer. Solo traduce: la regla de
@@ -168,6 +169,26 @@ func (s *OrderServer) ReviewOrder(ctx context.Context, req *ordersv1.ReviewOrder
 	return &ordersv1.ReviewOrderResponse{Order: orderToProto(order)}, nil
 }
 
+// CancelOrder cancela un pedido del cliente autenticado. Un pedido ajeno responde NOT_FOUND.
+func (s *OrderServer) CancelOrder(ctx context.Context, req *ordersv1.CancelOrderRequest) (*ordersv1.CancelOrderResponse, error) {
+	if s.useCases.Cancel == nil {
+		return nil, status.Error(codes.Unimplemented, "cancel order is not wired")
+	}
+	userID, role, err := identityFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	order, err := s.useCases.Cancel.Run(ctx, orderapp.CancelCommand{
+		UserID:  userID,
+		Role:    role,
+		OrderID: req.GetId(),
+	})
+	if err != nil {
+		return nil, mapOrderError(err)
+	}
+	return &ordersv1.CancelOrderResponse{Order: orderToProto(order)}, nil
+}
+
 // identityFrom lee la identidad propagada por el Gateway. Sin ella no hay
 // alcance posible, así que la petición se rechaza antes de tocar casos de uso.
 func identityFrom(ctx context.Context) (uuid.UUID, string, error) {
@@ -230,8 +251,8 @@ func mapOrderError(err error) error {
 		return status.Error(codes.PermissionDenied, err.Error())
 	case errors.Is(err, domain.ErrOrderNotFound):
 		return status.Error(codes.NotFound, "pedido no encontrado")
-	case errors.Is(err, domain.ErrOrderNotInReview):
-		// El contrato responde ABORTED (HTTP 409) cuando el pedido no está en revisión.
+	case errors.Is(err, domain.ErrOrderNotInReview), errors.Is(err, domain.ErrOrderNotCancellable):
+		// El contrato responde ABORTED (HTTP 409) cuando el estado del pedido no admite la acción.
 		return status.Error(codes.Aborted, err.Error())
 	case errors.Is(err, domain.ErrSpatialReasonNotOverridable):
 		return status.Error(codes.FailedPrecondition, err.Error())

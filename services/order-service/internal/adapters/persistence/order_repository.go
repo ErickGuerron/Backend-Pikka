@@ -154,6 +154,51 @@ func (r *OrderRepository) Review(ctx context.Context, orderID string, decide fun
 	return out, nil
 }
 
+// CancelForCustomer cancela el pedido del cliente y devuelve su stock en la misma transacción. La consulta
+// filtra por cliente: un pedido ajeno no se bloquea ni se modifica y responde como inexistente (BOLA).
+func (r *OrderRepository) CancelForCustomer(ctx context.Context, orderID string, customerID uuid.UUID, decide func(domain.Order) (domain.Order, error)) (domain.Order, error) {
+	id, err := uuid.Parse(orderID)
+	if err != nil {
+		return domain.Order{}, domain.ErrOrderNotFound
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return domain.Order{}, fmt.Errorf("cancel order: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	current, err := scanOrder(tx.QueryRow(ctx,
+		`SELECT `+orderColumns+` FROM orders WHERE id = $1 AND customer_id = $2 FOR UPDATE`, id, customerID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Order{}, domain.ErrOrderNotFound
+	}
+	if err != nil {
+		return domain.Order{}, fmt.Errorf("cancel order: load: %w", err)
+	}
+
+	next, err := decide(current)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	out, err := scanOrder(tx.QueryRow(ctx,
+		`UPDATE orders
+		    SET status = $2, review_reasons = $3, version = version + 1, updated_at = now()
+		  WHERE id = $1
+		RETURNING `+orderColumns,
+		id, string(next.Status), reasonStrings(next.ReviewReasons),
+	))
+	if err != nil {
+		return domain.Order{}, fmt.Errorf("cancel order: update: %w", err)
+	}
+	if err := returnStock(ctx, tx, id, time.Now().UTC()); err != nil {
+		return domain.Order{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return domain.Order{}, fmt.Errorf("cancel order: commit: %w", err)
+	}
+	return out, nil
+}
+
 func (r *OrderRepository) queryOrders(ctx context.Context, sql string, args ...any) ([]domain.Order, error) {
 	rows, err := r.pool.Query(ctx, sql, args...)
 	if err != nil {
