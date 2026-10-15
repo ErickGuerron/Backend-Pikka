@@ -24,6 +24,7 @@ import (
 	authv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/auth/v1"
 	grpcadapter "github.com/ErickGuerron/Backend-Pikka/services/auth-service/internal/adapters/grpc"
 	"github.com/ErickGuerron/Backend-Pikka/services/auth-service/internal/application"
+	"github.com/ErickGuerron/Backend-Pikka/services/auth-service/internal/application/ports"
 	"github.com/ErickGuerron/Backend-Pikka/services/auth-service/internal/domain"
 	"github.com/ErickGuerron/Backend-Pikka/services/auth-service/internal/infrastructure/security"
 )
@@ -76,6 +77,32 @@ func (r *memRepo) List(context.Context) ([]domain.User, error) {
 	return out, nil
 }
 
+// UpdateUser replica la transacción del repositorio real: cuenta los ADMIN
+// activos, aplica mutate y guarda con version+1.
+func (r *memRepo) UpdateUser(_ context.Context, id string, mutate ports.UserMutation) (domain.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	idx, admins := -1, 0
+	for i, u := range r.users {
+		if u.Role == domain.RoleAdmin && u.Active {
+			admins++
+		}
+		if u.ID == id {
+			idx = i
+		}
+	}
+	if idx < 0 {
+		return domain.User{}, domain.ErrUserNotFound
+	}
+	next, err := mutate(r.users[idx], admins)
+	if err != nil {
+		return domain.User{}, err
+	}
+	next.Version = r.users[idx].Version + 1
+	r.users[idx] = next
+	return next, nil
+}
+
 func newClient(t *testing.T) authv1.AuthServiceClient {
 	t.Helper()
 	repo := &memRepo{}
@@ -94,6 +121,8 @@ func newClient(t *testing.T) authv1.AuthServiceClient {
 		GetUser:        application.NewGetUser(repo),
 		ValidateToken:  application.NewValidateToken(tokens),
 		SignupCustomer: application.NewSignupCustomer(repo, hasher, tokens),
+		UpdateUser:     application.NewUpdateUser(repo),
+		DeactivateUser: application.NewDeactivateUser(repo),
 	}))
 	go func() { _ = srv.Serve(lis) }()
 	t.Cleanup(srv.Stop)
