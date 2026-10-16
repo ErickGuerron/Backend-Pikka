@@ -38,6 +38,7 @@ un fallo de seguridad aunque la pantalla esté oculta.
 |---|---|---|
 | Sus pedidos y su estado | Completo (solo los propios) | Sin acceso |
 | Ruta del pedido propio: posición de la parada | Solo lectura (solo la parada propia) | Sin acceso |
+| Cobertura: zonas activas (solo contorno, para dibujarlas en el mapa) | Solo lectura | Solo lectura |
 | Su ruta asignada y el orden de paradas | Sin acceso | Completo (solo la ruta activa) |
 | Registro de la entrega de cada parada | Sin acceso | Completo (solo sus paradas) |
 | Listado de repartidores u otros repartidores | Sin acceso | Sin acceso |
@@ -66,6 +67,8 @@ revelar que existe.
 | `POST /api/v1/users` | Solo `ADMIN` | Implementado y probado en Auth Service |
 | `GET /api/v1/users/{id}` | `ADMIN`, `OPERATOR` o el propio usuario | Implementado y probado en Auth Service |
 | `GET /api/v1/users` (listado) | Solo `ADMIN` | Falta en el contrato OpenAPI y en Auth Service |
+| `GET /api/v1/coverage/zones` | Cualquier rol autenticado (`CUSTOMER` incluido): solo zonas `ACTIVE`, con `id`, `code`, `name`, `ring` y `holes`; sin depósito, capacidad ni configuración | Implementado y probado en Zone Service (`ListCoverageZones`) y en el Gateway |
+| `GET /api/v1/zones` (listado completo) | Solo `ADMIN` y `OPERATOR`; `CUSTOMER` recibe `403` | Sin cambios: la cobertura usa un endpoint aparte para no abrir la configuración |
 | Pedidos, zonas, repartidores, rutas, seguimiento | Según la matriz | Pendientes: se implementan con su servicio y deben probar su rol |
 
 ### 5. Frontend

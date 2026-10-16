@@ -87,6 +87,12 @@ message Order {
   // Zone resolved when the order was registered. Empty when the order has no zone
   // (for example PENDING_REVIEW with ZONE_NOT_COVERED). Used by Routing for capacity.
   string zone_id = 11;
+  // Reference to find the delivery point (3 to 200 characters). Empty in orders created before it existed.
+  string address_reference = 12;
+  // Optional postal code (4 to 10 letters, digits or hyphen). Empty when not given.
+  string postal_code = 13;
+  // Contact phone for the delivery, normalized (digits and optional leading "+"). Empty in old orders.
+  string contact_phone = 14;
 }
 
 message CreateOrderRequest {
@@ -102,6 +108,12 @@ message CreateOrderRequest {
   // Productos del pedido (ADR 0009). Obligatorio: al menos uno, sin repetir producto.
   // Cada producto debe estar activo y tener stock suficiente; si no, el pedido no se guarda.
   repeated OrderItemRequest items = 7;
+  // Required, 3 to 200 characters after trimming.
+  string address_reference = 8;
+  // Optional, 4 to 10 letters, digits or hyphen.
+  string postal_code = 9;
+  // Required, 7 to 15 digits with optional leading "+"; spaces, hyphens, dots and parentheses are stripped.
+  string contact_phone = 10;
 }
 
 // Un producto del catálogo y la cantidad pedida. El precio lo fija el servidor, no el cliente.

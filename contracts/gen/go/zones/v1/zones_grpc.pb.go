@@ -19,13 +19,14 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ZoneService_CreateZone_FullMethodName    = "/zones.v1.ZoneService/CreateZone"
-	ZoneService_GetZone_FullMethodName       = "/zones.v1.ZoneService/GetZone"
-	ZoneService_ClassifyPoint_FullMethodName = "/zones.v1.ZoneService/ClassifyPoint"
-	ZoneService_ListZones_FullMethodName     = "/zones.v1.ZoneService/ListZones"
-	ZoneService_UpdateZone_FullMethodName    = "/zones.v1.ZoneService/UpdateZone"
-	ZoneService_SetZoneStatus_FullMethodName = "/zones.v1.ZoneService/SetZoneStatus"
-	ZoneService_DeleteZone_FullMethodName    = "/zones.v1.ZoneService/DeleteZone"
+	ZoneService_CreateZone_FullMethodName        = "/zones.v1.ZoneService/CreateZone"
+	ZoneService_GetZone_FullMethodName           = "/zones.v1.ZoneService/GetZone"
+	ZoneService_ClassifyPoint_FullMethodName     = "/zones.v1.ZoneService/ClassifyPoint"
+	ZoneService_ListZones_FullMethodName         = "/zones.v1.ZoneService/ListZones"
+	ZoneService_ListCoverageZones_FullMethodName = "/zones.v1.ZoneService/ListCoverageZones"
+	ZoneService_UpdateZone_FullMethodName        = "/zones.v1.ZoneService/UpdateZone"
+	ZoneService_SetZoneStatus_FullMethodName     = "/zones.v1.ZoneService/SetZoneStatus"
+	ZoneService_DeleteZone_FullMethodName        = "/zones.v1.ZoneService/DeleteZone"
 )
 
 // ZoneServiceClient is the client API for ZoneService service.
@@ -45,6 +46,9 @@ type ZoneServiceClient interface {
 	ClassifyPoint(ctx context.Context, in *ClassifyPointRequest, opts ...grpc.CallOption) (*ClassifyPointResponse, error)
 	// ListZones devuelve todas las zonas registradas.
 	ListZones(ctx context.Context, in *ListZonesRequest, opts ...grpc.CallOption) (*ListZonesResponse, error)
+	// ListCoverageZones devuelve solo las zonas ACTIVE, para mostrar la cobertura a cualquier rol
+	// autenticado (incluido CUSTOMER). No cambia la autorización de ListZones.
+	ListCoverageZones(ctx context.Context, in *ListCoverageZonesRequest, opts ...grpc.CallOption) (*ListCoverageZonesResponse, error)
 	// UpdateZone reemplaza la geometría y los datos de una zona existente.
 	UpdateZone(ctx context.Context, in *UpdateZoneRequest, opts ...grpc.CallOption) (*UpdateZoneResponse, error)
 	// SetZoneStatus activa o desactiva una zona. El motivo es obligatorio y queda en la bitácora.
@@ -101,6 +105,16 @@ func (c *zoneServiceClient) ListZones(ctx context.Context, in *ListZonesRequest,
 	return out, nil
 }
 
+func (c *zoneServiceClient) ListCoverageZones(ctx context.Context, in *ListCoverageZonesRequest, opts ...grpc.CallOption) (*ListCoverageZonesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCoverageZonesResponse)
+	err := c.cc.Invoke(ctx, ZoneService_ListCoverageZones_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *zoneServiceClient) UpdateZone(ctx context.Context, in *UpdateZoneRequest, opts ...grpc.CallOption) (*UpdateZoneResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(UpdateZoneResponse)
@@ -148,6 +162,9 @@ type ZoneServiceServer interface {
 	ClassifyPoint(context.Context, *ClassifyPointRequest) (*ClassifyPointResponse, error)
 	// ListZones devuelve todas las zonas registradas.
 	ListZones(context.Context, *ListZonesRequest) (*ListZonesResponse, error)
+	// ListCoverageZones devuelve solo las zonas ACTIVE, para mostrar la cobertura a cualquier rol
+	// autenticado (incluido CUSTOMER). No cambia la autorización de ListZones.
+	ListCoverageZones(context.Context, *ListCoverageZonesRequest) (*ListCoverageZonesResponse, error)
 	// UpdateZone reemplaza la geometría y los datos de una zona existente.
 	UpdateZone(context.Context, *UpdateZoneRequest) (*UpdateZoneResponse, error)
 	// SetZoneStatus activa o desactiva una zona. El motivo es obligatorio y queda en la bitácora.
@@ -175,6 +192,9 @@ func (UnimplementedZoneServiceServer) ClassifyPoint(context.Context, *ClassifyPo
 }
 func (UnimplementedZoneServiceServer) ListZones(context.Context, *ListZonesRequest) (*ListZonesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListZones not implemented")
+}
+func (UnimplementedZoneServiceServer) ListCoverageZones(context.Context, *ListCoverageZonesRequest) (*ListCoverageZonesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListCoverageZones not implemented")
 }
 func (UnimplementedZoneServiceServer) UpdateZone(context.Context, *UpdateZoneRequest) (*UpdateZoneResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateZone not implemented")
@@ -278,6 +298,24 @@ func _ZoneService_ListZones_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ZoneService_ListCoverageZones_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCoverageZonesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ZoneServiceServer).ListCoverageZones(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ZoneService_ListCoverageZones_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ZoneServiceServer).ListCoverageZones(ctx, req.(*ListCoverageZonesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ZoneService_UpdateZone_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(UpdateZoneRequest)
 	if err := dec(in); err != nil {
@@ -354,6 +392,10 @@ var ZoneService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListZones",
 			Handler:    _ZoneService_ListZones_Handler,
+		},
+		{
+			MethodName: "ListCoverageZones",
+			Handler:    _ZoneService_ListCoverageZones_Handler,
 		},
 		{
 			MethodName: "UpdateZone",

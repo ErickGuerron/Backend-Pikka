@@ -41,12 +41,16 @@ message Customer {
   string pending_surcharge = 6;        // NUMERIC(12,2) como string
   string created_at = 7;               // RFC 3339
   string updated_at = 8;               // RFC 3339
+  string phone = 9;                    // normalizado (solo dígitos y "+" inicial); vacío en clientes antiguos
+  string city = 10;                    // 2 a 80 caracteres; vacío en clientes antiguos
 }
 
 message CreateCustomerRequest {
   string user_id = 1;                  // UUID v4 del CUSTOMER en auth.users
   string full_name = 2;
   string email = 3;
+  string phone = 4;                    // obligatorio: 7 a 15 dígitos, "+" inicial opcional
+  string city = 5;                     // obligatorio: 2 a 80 caracteres
 }
 
 message CreateCustomerResponse {
