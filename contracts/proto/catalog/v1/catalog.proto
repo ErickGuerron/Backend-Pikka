@@ -27,6 +27,10 @@ service CatalogService {
 
   // ListStockMovements devuelve el historial de un producto, del más reciente al más antiguo.
   rpc ListStockMovements(ListStockMovementsRequest) returns (ListStockMovementsResponse);
+
+  // ListPublicProducts devuelve solo los productos activos, sin identidad ni stock, para la landing.
+  // Es el único RPC del catálogo que acepta llamadas sin metadata de usuario.
+  rpc ListPublicProducts(ListPublicProductsRequest) returns (ListPublicProductsResponse);
 }
 
 enum StockMovementType {
@@ -127,4 +131,19 @@ message ListStockMovementsRequest {
 
 message ListStockMovementsResponse {
   repeated StockMovement movements = 1;
+}
+
+message ListPublicProductsRequest {}
+
+// Vista pública de un producto: sin stock ni campos internos.
+message PublicProduct {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  // Precio unitario en USD con dos decimales, por ejemplo "2.50".
+  string unit_price = 4;
+}
+
+message ListPublicProductsResponse {
+  repeated PublicProduct products = 1;
 }

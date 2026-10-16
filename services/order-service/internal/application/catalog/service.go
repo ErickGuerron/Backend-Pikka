@@ -52,6 +52,22 @@ func (s *Service) ListProducts(ctx context.Context, actor Actor, includeInactive
 	return s.repo.ListActiveProducts(ctx)
 }
 
+// publicProductsLimit acota la vista pública de la landing.
+// shortcut: sin paginación, se devuelven los primeros 50 por nombre; añadir cursor cuando la landing lo necesite.
+const publicProductsLimit = 50
+
+// ListPublicProducts devuelve los productos activos para la landing, sin identidad de usuario.
+func (s *Service) ListPublicProducts(ctx context.Context) ([]domain.Product, error) {
+	list, err := s.repo.ListActiveProducts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(list) > publicProductsLimit {
+		list = list[:publicProductsLimit]
+	}
+	return list, nil
+}
+
 // GetProduct devuelve un producto. Para el cliente, un producto inactivo es como si no existiera.
 func (s *Service) GetProduct(ctx context.Context, actor Actor, id uuid.UUID) (domain.Product, error) {
 	p, err := s.repo.GetProduct(ctx, id)

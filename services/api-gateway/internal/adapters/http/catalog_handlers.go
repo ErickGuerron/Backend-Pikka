@@ -15,6 +15,7 @@ import (
 // CatalogClient es lo que los endpoints de productos necesitan del Order Service.
 type CatalogClient interface {
 	ListProducts(ctx context.Context, m grpcclient.CallMeta, req *catalogv1.ListProductsRequest) (*catalogv1.ListProductsResponse, error)
+	ListPublicProducts(ctx context.Context, m grpcclient.CallMeta, req *catalogv1.ListPublicProductsRequest) (*catalogv1.ListPublicProductsResponse, error)
 	GetProduct(ctx context.Context, m grpcclient.CallMeta, req *catalogv1.GetProductRequest) (*catalogv1.GetProductResponse, error)
 	CreateProduct(ctx context.Context, m grpcclient.CallMeta, req *catalogv1.CreateProductRequest) (*catalogv1.CreateProductResponse, error)
 	SetProductActive(ctx context.Context, m grpcclient.CallMeta, req *catalogv1.SetProductActiveRequest) (*catalogv1.SetProductActiveResponse, error)
@@ -69,6 +70,36 @@ type adjustStockRequest struct {
 
 type productsResponse struct {
 	Products []productDTO `json:"products"`
+}
+
+// publicProductDTO es la vista de la landing: nunca stock ni campos internos.
+type publicProductDTO struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	UnitPrice   string `json:"unitPrice"`
+}
+
+type publicProductsResponse struct {
+	Products []publicProductDTO `json:"products"`
+}
+
+// listPublic devuelve el catálogo activo a cualquiera, sin token.
+func (h *catalogHandlers) listPublic(c echo.Context) error {
+	res, err := h.catalog.ListPublicProducts(c.Request().Context(), callMeta(c), &catalogv1.ListPublicProductsRequest{})
+	if err != nil {
+		return err
+	}
+	out := make([]publicProductDTO, 0, len(res.GetProducts()))
+	for _, p := range res.GetProducts() {
+		out = append(out, publicProductDTO{
+			ID:          p.GetId(),
+			Name:        p.GetName(),
+			Description: p.GetDescription(),
+			UnitPrice:   p.GetUnitPrice(),
+		})
+	}
+	return c.JSON(http.StatusOK, publicProductsResponse{Products: out})
 }
 
 type stockMovementsResponse struct {

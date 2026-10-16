@@ -668,6 +668,35 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /api/v1/catalog/products:
+    get:
+      tags: [products]
+      operationId: listPublicProducts
+      summary: Catálogo público de la landing (sin autenticación)
+      description: |
+        Público y de solo lectura. Devuelve solo productos activos, ordenados por nombre, sin stock ni campos internos.
+        Límite de exposición: como máximo 50 productos, sin paginación por ahora.
+      security: []
+      responses:
+        "200":
+          description: Productos activos; arreglo vacío si no hay ninguno
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [products]
+                properties:
+                  products:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name, description, unitPrice]
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+                        description: { type: string }
+                        unitPrice: { type: string, example: "2.50" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /api/v1/products:
     get:
       tags: [products]

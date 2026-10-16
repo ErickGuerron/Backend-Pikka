@@ -63,8 +63,54 @@ func (f *fakeCatalogClient) ListStockMovements(_ context.Context, m grpcclient.C
 	return &catalogv1.ListStockMovementsResponse{}, nil
 }
 
+func (f *fakeCatalogClient) ListPublicProducts(_ context.Context, m grpcclient.CallMeta, _ *catalogv1.ListPublicProductsRequest) (*catalogv1.ListPublicProductsResponse, error) {
+	f.meta = m
+	return &catalogv1.ListPublicProductsResponse{Products: []*catalogv1.PublicProduct{{
+		Id: "p-1", Name: "Manzana", Description: "Roja y dulce", UnitPrice: "0.50",
+	}}}, nil
+}
+
+// emptyPublicCatalog responde un catálogo público vacío.
+type emptyPublicCatalog struct{ fakeCatalogClient }
+
+func (f *emptyPublicCatalog) ListPublicProducts(context.Context, grpcclient.CallMeta, *catalogv1.ListPublicProductsRequest) (*catalogv1.ListPublicProductsResponse, error) {
+	return &catalogv1.ListPublicProductsResponse{}, nil
+}
+
 func catalogRouter(c httpapi.CatalogClient) http.Handler {
 	return newRouterWithSignup(&fakeAuth{}, httpapi.Options{Catalog: c})
+}
+
+func TestCatalogoPublico_SinTokenYShapeExacto(t *testing.T) {
+	rec := do(catalogRouter(&fakeCatalogClient{}), http.MethodGet, "/api/v1/catalog/products", "", nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	body := rec.Body.String()
+	assert.NotContains(t, body, `"stockQuantity"`, "la landing no recibe stock")
+	assert.NotContains(t, body, `"active"`, "la landing no recibe campos internos")
+
+	var parsed struct {
+		Products []map[string]any `json:"products"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &parsed))
+	require.Len(t, parsed.Products, 1)
+	assert.ElementsMatch(t, []string{"id", "name", "description", "unitPrice"}, mapKeys(parsed.Products[0]))
+	assert.Equal(t, "0.50", parsed.Products[0]["unitPrice"])
+}
+
+func TestCatalogoPublico_SinResultadosEsArregloVacio(t *testing.T) {
+	rec := do(catalogRouter(&emptyPublicCatalog{}), http.MethodGet, "/api/v1/catalog/products", "", nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.JSONEq(t, `{"products":[]}`, rec.Body.String())
+}
+
+func mapKeys(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
 
 func TestProductos_ClienteLeeElCatalogo(t *testing.T) {

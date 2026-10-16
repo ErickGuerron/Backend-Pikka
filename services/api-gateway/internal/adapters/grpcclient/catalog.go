@@ -43,6 +43,13 @@ func (c *Catalog) ListProducts(ctx context.Context, m CallMeta, req *catalogv1.L
 	return c.client.ListProducts(ctx, req)
 }
 
+// ListPublicProducts devuelve el catálogo público (sin identidad de usuario).
+func (c *Catalog) ListPublicProducts(ctx context.Context, m CallMeta, req *catalogv1.ListPublicProductsRequest) (*catalogv1.ListPublicProductsResponse, error) {
+	ctx, cancel := c.outgoing(ctx, m)
+	defer cancel()
+	return c.client.ListPublicProducts(ctx, req)
+}
+
 // GetProduct devuelve un producto.
 func (c *Catalog) GetProduct(ctx context.Context, m CallMeta, req *catalogv1.GetProductRequest) (*catalogv1.GetProductResponse, error) {
 	ctx, cancel := c.outgoing(ctx, m)
