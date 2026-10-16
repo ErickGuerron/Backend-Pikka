@@ -10,5 +10,6 @@ use (
 	./services/driver-service
 	./services/order-service
 	./services/routing-service
+	./services/tracking-service
 	./services/zone-service
 )
