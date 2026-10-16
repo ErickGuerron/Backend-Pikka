@@ -68,6 +68,13 @@ func run(log *slog.Logger) error {
 	defer func() { _ = driverConn.Close() }()
 	drivers := grpcclient.NewDrivers(driverConn, cfg.GRPCTimeout)
 
+	trackingConn, err := grpcclient.Dial(cfg.TrackingServiceAddr)
+	if err != nil {
+		return fmt.Errorf("dial tracking service: %w", err)
+	}
+	defer func() { _ = trackingConn.Close() }()
+	tracking := grpcclient.NewTracking(trackingConn, cfg.GRPCTimeout)
+
 	e := httpapi.NewRouter(log, httpapi.Options{
 		CORSAllowedOrigins:  cfg.CORSAllowedOrigins,
 		RateLimitPerSecond:  cfg.RateLimitPerSecond,
@@ -84,6 +91,7 @@ func run(log *slog.Logger) error {
 		Orders:              orders,
 		Catalog:             catalog,
 		Drivers:             drivers,
+		Tracking:            tracking,
 	}, jwt.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer), auth, zones, func(ctx context.Context) bool {
 		// El gateway solo está listo si puede llegar a sus dependencias gRPC.
 		return auth.Ready(ctx) && zones.Ready(ctx)
