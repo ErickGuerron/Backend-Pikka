@@ -11,6 +11,11 @@ type Point struct {
 	Longitude float64
 }
 
+// Valid reports whether the point is a finite WGS 84 coordinate.
+func (p Point) Valid() bool {
+	return p.Latitude >= -90 && p.Latitude <= 90 && p.Longitude >= -180 && p.Longitude <= 180
+}
+
 // Estimate is the road distance and driving time between two points.
 type Estimate struct {
 	DistanceMeters  float64
