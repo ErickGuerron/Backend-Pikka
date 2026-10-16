@@ -1,8 +1,6 @@
 # Feature: routing-plan-generation
 
-Branch: `feat/routing-plan-generation`, stacked on `feat/routing-service-planner`
-(which is on `feat/routing-service-types`, on `develop`). Depends on the Order Service
-contract of `feat/order-route-assignment` (not merged yet).
+Branch: `feat/routing-plan-generation`, stacked on `feat/routing-service-planner` (on `feat/routing-service-types`, on `develop`). The Order Service contract it uses is already in `develop` (PRs #38 and #39).
 
 ## Objective
 
@@ -44,7 +42,9 @@ and capacity, then assigns each route to Order Service. This is the core of the
       order was validated for an empty zone), fixed by validating the zone first.
       Note: TDD was not strictly RED-first for this slice. Tests and implementation were
       written before the first run; the failure found by the run is recorded here.
-- [ ] T3 Size check: `git diff --numstat` against `feat/routing-service-planner`.
+- [x] T3 gRPC adapters (TDD): `OrderGateway` and `ZoneCapacities` over real gRPC in-memory (bufconn). RED = undefined constructors; GREEN with -race. Identity: the caller's `x-user-id`/`x-user-role` is forwarded, because Order and Zone authorize by the user role. Zone `GetZone` does not accept the `SERVICE` role (only `ClassifyPoint` does), so Routing acts as the operator who started the request instead of adding a role to Zone Service.
+- [x] T4 Lint: golangci-lint (CI matrix includes routing-service) flagged `gocritic appendAssign` in `planner.go` from the planner branch; fixed with a pointer to the route. Lint 0 issues.
+- [ ] T5 Size check and PR plan.
 
 ## Acceptance criteria
 
