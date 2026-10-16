@@ -59,6 +59,28 @@ func (s *Server) ListZones(ctx context.Context, _ *zonesv1.ListZonesRequest) (*z
 	return &zonesv1.ListZonesResponse{Zones: out}, nil
 }
 
+// ListCoverageZones devuelve solo las zonas activas, sin su configuración operativa, para
+// cualquier rol autenticado. ListZones sigue reservada a ADMIN y OPERATOR.
+func (s *Server) ListCoverageZones(ctx context.Context, _ *zonesv1.ListCoverageZonesRequest) (*zonesv1.ListCoverageZonesResponse, error) {
+	if err := requireRole(ctx, roleAdmin, roleOperator, roleCustomer, roleDriver, roleService); err != nil {
+		return nil, err
+	}
+	zones, err := s.zones.ListZones(ctx)
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	out := make([]*zonesv1.Zone, 0, len(zones))
+	for _, z := range zones {
+		if z.Status != domain.StatusActive {
+			continue
+		}
+		pz := toProtoZone(z)
+		pz.Settings, pz.StatusReason, pz.CreatedBy, pz.UpdatedBy = nil, "", "", ""
+		out = append(out, pz)
+	}
+	return &zonesv1.ListCoverageZonesResponse{Zones: out}, nil
+}
+
 // UpdateZone reemplaza los datos y la geometría de una zona existente.
 func (s *Server) UpdateZone(ctx context.Context, req *zonesv1.UpdateZoneRequest) (*zonesv1.UpdateZoneResponse, error) {
 	if err := requireRole(ctx, roleAdmin); err != nil {

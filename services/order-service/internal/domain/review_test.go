@@ -17,6 +17,8 @@ func pendingOrder(t *testing.T) domain.Order {
 		DeliveryDate: "2030-04-12",
 		WindowStart:  "09:00",
 		WindowEnd:    "12:00",
+
+		AddressReference: "Casa azul", ContactPhone: "0991234567",
 	}, time.Date(2030, 4, 10, 10, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("setup: %v", err)

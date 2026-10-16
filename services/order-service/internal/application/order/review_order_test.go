@@ -44,6 +44,8 @@ func reviewFixture(t *testing.T, reasons ...domain.ReviewReason) (*ReviewOrder, 
 		DeliveryDate: "2030-04-12",
 		WindowStart:  "09:00",
 		WindowEnd:    "12:00",
+
+		AddressReference: "Casa azul", PostalCode: "170150", ContactPhone: "0991234567",
 	}, time.Date(2030, 4, 10, 10, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("setup: %v", err)
@@ -135,6 +137,39 @@ func TestReviewCorrectAddressThatNowLocatesAndCoversBecomesPending(t *testing.T)
 	}
 	if len(repo.notices) != 1 || repo.notices[0].Kind != domain.NotificationCorrected {
 		t.Fatalf("notices = %v, want ORDER_CORRECTED", repo.notices)
+	}
+}
+
+func TestReviewCorrectKeepsCustomerContactDetails(t *testing.T) {
+	uc, repo, _, _ := reviewFixture(t, domain.ReviewAddressNotLocated)
+	address := "Calle Germán Alemán 555, Quito"
+	cmd := operatorCmd(ActionCorrect, "Dirección completada con el cliente")
+	cmd.OrderID = repo.current.ID
+	cmd.Correction = &Correction{Address: &address}
+
+	got, err := uc.Run(context.Background(), cmd)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.AddressReference != "Casa azul" || got.PostalCode != "170150" || got.ContactPhone != "0991234567" {
+		t.Fatalf("contact details changed: %q %q %q", got.AddressReference, got.PostalCode, got.ContactPhone)
+	}
+}
+
+func TestReviewCorrectOfOrderWithoutContactDetailsStillWorks(t *testing.T) {
+	uc, repo, _, _ := reviewFixture(t, domain.ReviewAddressNotLocated)
+	repo.current.AddressReference, repo.current.PostalCode, repo.current.ContactPhone = "", "", ""
+	address := "Calle Germán Alemán 555, Quito"
+	cmd := operatorCmd(ActionCorrect, "Dirección completada con el cliente")
+	cmd.OrderID = repo.current.ID
+	cmd.Correction = &Correction{Address: &address}
+
+	got, err := uc.Run(context.Background(), cmd)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.AddressReference != "" || got.ContactPhone != "" {
+		t.Fatalf("legacy order must stay without contact details: %q %q", got.AddressReference, got.ContactPhone)
 	}
 }
 

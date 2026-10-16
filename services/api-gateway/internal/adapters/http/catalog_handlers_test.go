@@ -240,6 +240,7 @@ func TestProductos_SinTokenEs401(t *testing.T) {
 func TestCrearPedidoReenviaLosProductos(t *testing.T) {
 	fake := &fakeOrderClient{}
 	body := `{"address":"Avenida Amazonas 123","deliveryDate":"2030-04-12","windowStart":"09:00","windowEnd":"12:00",` +
+		`"addressReference":"Casa azul","contactPhone":"0991234567",` +
 		`"items":[{"productId":"p-1","quantity":2}]}`
 	rec := do(ordersRouter(fake), http.MethodPost, "/api/v1/orders", body, authHdr(t, "CUSTOMER"))
 

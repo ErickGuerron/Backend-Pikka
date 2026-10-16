@@ -3,7 +3,9 @@ package http
 import (
 	"context"
 	"net/http"
+	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/labstack/echo/v4"
 	"google.golang.org/grpc/codes"
@@ -59,6 +61,8 @@ type signupRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	FullName string `json:"fullName"`
+	Phone    string `json:"phone"`
+	City     string `json:"city"`
 }
 
 type signupResponse struct {
@@ -146,6 +150,15 @@ func (h *authHandlers) signup(c echo.Context) error {
 	if err := bindJSON(c, &req); err != nil {
 		return err
 	}
+	// Teléfono y ciudad se validan antes de crear la cuenta: createCustomer no propaga sus fallos.
+	phone, err := normalizePhone(req.Phone)
+	if err != nil {
+		return err
+	}
+	city, err := normalizeCity(req.City)
+	if err != nil {
+		return err
+	}
 	res, err := h.auth.SignupCustomer(c.Request().Context(), callMeta(c), &authv1.SignupCustomerRequest{
 		Email:    req.Email,
 		Password: req.Password,
@@ -154,7 +167,7 @@ func (h *authHandlers) signup(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	h.createCustomer(c, res.GetUser())
+	h.createCustomer(c, res.GetUser(), phone, city)
 	return c.JSON(http.StatusCreated, signupResponse{
 		AccessToken: res.GetAccessToken(),
 		TokenType:   res.GetTokenType(),
@@ -172,11 +185,11 @@ func (h *authHandlers) signup(c echo.Context) error {
 // reintento posterior es seguro: CreateCustomer es idempotente por user_id
 // (ErrCustomerAlreadyExists -> AlreadyExists), por lo que un backfill o job de
 // reconciliación puede volver a llamarlo sin riesgo.
-func (h *authHandlers) createCustomer(c echo.Context, u *authv1.User) {
+func (h *authHandlers) createCustomer(c echo.Context, u *authv1.User, phone, city string) {
 	if h.customers == nil || u == nil {
 		return
 	}
-	req := &customerv1.CreateCustomerRequest{UserId: u.GetId(), Email: u.GetEmail(), FullName: u.GetFullName()}
+	req := &customerv1.CreateCustomerRequest{UserId: u.GetId(), Email: u.GetEmail(), FullName: u.GetFullName(), Phone: phone, City: city}
 	m := callMeta(c)
 	var err error
 	for attempt := 0; attempt < 2; attempt++ {
@@ -232,6 +245,30 @@ func (h *authHandlers) deactivateUser(c echo.Context) error {
 		return err
 	}
 	return c.JSON(http.StatusOK, toUserDTO(res.GetUser()))
+}
+
+var (
+	phoneSeparators = strings.NewReplacer(" ", "", "-", "", ".", "", "(", "", ")", "")
+	phonePattern    = regexp.MustCompile(`^\+?[0-9]{7,15}$`)
+)
+
+// normalizePhone aplica la misma regla que el dominio de order-service: quita espacios,
+// guiones, puntos y paréntesis y exige 7 a 15 dígitos con "+" inicial opcional.
+func normalizePhone(raw string) (string, error) {
+	phone := phoneSeparators.Replace(strings.TrimSpace(raw))
+	if !phonePattern.MatchString(phone) {
+		return "", echo.NewHTTPError(http.StatusBadRequest, "phone must have 7 to 15 digits with an optional leading +")
+	}
+	return phone, nil
+}
+
+// normalizeCity recorta la ciudad y exige entre 2 y 80 caracteres.
+func normalizeCity(raw string) (string, error) {
+	city := strings.TrimSpace(raw)
+	if n := utf8.RuneCountInString(city); strings.ContainsRune(city, '\x00') || n < 2 || n > 80 {
+		return "", echo.NewHTTPError(http.StatusBadRequest, "city must contain 2 to 80 characters")
+	}
+	return city, nil
 }
 
 func bindJSON(c echo.Context, dst any) error {

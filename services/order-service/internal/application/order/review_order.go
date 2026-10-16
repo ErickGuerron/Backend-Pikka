@@ -143,6 +143,15 @@ func (uc *ReviewOrder) correct(ctx context.Context, current domain.Order, corr *
 		return domain.Order{}, nil, err
 	}
 
+	// El operador no corrige estos datos del cliente: se conservan tal cual. Un pedido anterior a
+	// ellos los tiene vacíos, así que se valida con valores de relleno y luego se restituye el original.
+	reference, phone := current.AddressReference, current.ContactPhone
+	if reference == "" {
+		reference = "---"
+	}
+	if phone == "" {
+		phone = "0000000"
+	}
 	next, err := domain.NewOrder(domain.NewOrderInput{
 		Address:      address,
 		Latitude:     point.latitude,
@@ -150,10 +159,15 @@ func (uc *ReviewOrder) correct(ctx context.Context, current domain.Order, corr *
 		DeliveryDate: date,
 		WindowStart:  start,
 		WindowEnd:    end,
+
+		AddressReference: reference,
+		PostalCode:       current.PostalCode,
+		ContactPhone:     phone,
 	}, uc.clock().In(uc.location))
 	if err != nil {
 		return domain.Order{}, nil, err
 	}
+	next.AddressReference, next.PostalCode, next.ContactPhone = current.AddressReference, current.PostalCode, current.ContactPhone
 
 	customerID, err := uuid.Parse(current.CustomerID)
 	if err != nil {

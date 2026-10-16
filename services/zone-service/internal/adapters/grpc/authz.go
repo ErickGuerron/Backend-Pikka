@@ -20,6 +20,9 @@ const (
 const (
 	roleAdmin    = "ADMIN"
 	roleOperator = "OPERATOR"
+	// roleCustomer y roleDriver solo pueden ver la cobertura (ListCoverageZones).
+	roleCustomer = "CUSTOMER"
+	roleDriver   = "DRIVER"
 	// roleService identifica llamadas internas entre servicios (Order Service
 	// clasifica pedidos). El Gateway nunca lo emite: su rol sale del JWT y auth
 	// no emite este valor, así que un cliente externo no puede obtenerlo.

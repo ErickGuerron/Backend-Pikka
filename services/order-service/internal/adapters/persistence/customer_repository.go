@@ -21,7 +21,7 @@ import (
 // customerColumns es la lista canónica en orden en que se escanea la fila.
 // Mantenerla en una constante evita errores tontos entre SELECT, INSERT/UPDATE
 // RETURNING y la firma de scanCustomer.
-const customerColumns = `id, user_id, email, full_name, status, pending_surcharge, created_at, updated_at`
+const customerColumns = `id, user_id, email, full_name, status, pending_surcharge, created_at, updated_at, phone, city`
 
 // CustomerRepository es la implementación PostgreSQL de
 // ports.CustomerRepository.
@@ -39,10 +39,10 @@ func NewCustomerRepository(pool *pgxpool.Pool) *CustomerRepository {
 // código 23505 es unique_violation en PostgreSQL.
 func (r *CustomerRepository) Create(ctx context.Context, c domain.Customer) (domain.Customer, error) {
 	row := r.pool.QueryRow(ctx,
-		`INSERT INTO customers (user_id, email, full_name, status, pending_surcharge)
-		 VALUES ($1, $2, $3, $4, $5)
+		`INSERT INTO customers (user_id, email, full_name, status, pending_surcharge, phone, city)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 RETURNING `+customerColumns,
-		c.UserID, c.Email, c.FullName, string(c.Status), c.PendingSurcharge,
+		c.UserID, c.Email, c.FullName, string(c.Status), c.PendingSurcharge, c.Phone, c.City,
 	)
 	out, err := scanCustomer(row)
 	if err != nil {
@@ -108,7 +108,7 @@ func scanCustomer(row pgx.Row) (domain.Customer, error) {
 		status    string
 		surcharge decimal.Decimal
 	)
-	err := row.Scan(&c.ID, &c.UserID, &c.Email, &c.FullName, &status, &surcharge, &c.CreatedAt, &c.UpdatedAt)
+	err := row.Scan(&c.ID, &c.UserID, &c.Email, &c.FullName, &status, &surcharge, &c.CreatedAt, &c.UpdatedAt, &c.Phone, &c.City)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Customer{}, domain.ErrCustomerNotFound

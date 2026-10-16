@@ -68,6 +68,10 @@ func (s *OrderServer) CreateOrder(ctx context.Context, req *ordersv1.CreateOrder
 		WindowStart:  req.GetWindowStart(),
 		WindowEnd:    req.GetWindowEnd(),
 		Items:        items,
+
+		AddressReference: req.GetAddressReference(),
+		PostalCode:       req.GetPostalCode(),
+		ContactPhone:     req.GetContactPhone(),
 	})
 	if err != nil {
 		return nil, mapOrderError(err)
@@ -270,6 +274,9 @@ func mapOrderError(err error) error {
 		errors.Is(err, orderapp.ErrUnknownAction),
 		errors.Is(err, orderapp.ErrNothingToCorrect),
 		errors.Is(err, domain.ErrInvalidAddress),
+		errors.Is(err, domain.ErrInvalidAddressReference),
+		errors.Is(err, domain.ErrInvalidPostalCode),
+		errors.Is(err, domain.ErrInvalidPhone),
 		errors.Is(err, domain.ErrInvalidCoordinate),
 		errors.Is(err, domain.ErrInvalidDate),
 		errors.Is(err, domain.ErrPastDeliveryDate),
@@ -310,6 +317,10 @@ func orderToProto(o domain.Order) *ordersv1.Order {
 		ReviewReasons: reasons,
 		CreatedAt:     o.CreatedAt.UTC().Format(time.RFC3339),
 		ZoneId:        o.ZoneID,
+
+		AddressReference: o.AddressReference,
+		PostalCode:       o.PostalCode,
+		ContactPhone:     o.ContactPhone,
 	}
 }
 

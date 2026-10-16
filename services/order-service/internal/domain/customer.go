@@ -3,11 +3,38 @@
 package domain
 
 import (
+	"regexp"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
+
+var (
+	phoneSeparators = strings.NewReplacer(" ", "", "-", "", ".", "", "(", "", ")", "")
+	phonePattern    = regexp.MustCompile(`^\+?[0-9]{7,15}$`)
+)
+
+// NormalizePhone quita espacios, guiones, puntos y paréntesis y valida el
+// resultado (7 a 15 dígitos, "+" inicial opcional). Devuelve la forma que se guarda.
+func NormalizePhone(raw string) (string, error) {
+	phone := phoneSeparators.Replace(strings.TrimSpace(raw))
+	if !phonePattern.MatchString(phone) {
+		return "", ErrInvalidPhone
+	}
+	return phone, nil
+}
+
+// NormalizeCity recorta la ciudad y exige entre 2 y 80 caracteres.
+func NormalizeCity(raw string) (string, error) {
+	city := strings.TrimSpace(raw)
+	if n := utf8.RuneCountInString(city); !utf8.ValidString(city) || strings.ContainsRune(city, '\x00') || n < 2 || n > 80 {
+		return "", ErrInvalidCity
+	}
+	return city, nil
+}
 
 // Customer es la entidad de negocio de un cliente en el esquema orders.
 //
@@ -20,6 +47,9 @@ type Customer struct {
 	UserID   uuid.UUID
 	Email    string
 	FullName string
+	// Phone y City llegan en el alta; vacíos solo en clientes anteriores a ese dato.
+	Phone string
+	City  string
 
 	Status           CustomerStatus
 	PendingSurcharge decimal.Decimal
@@ -39,6 +69,20 @@ func NewCustomer(userID uuid.UUID, email, fullName string) Customer {
 		Status:           StatusActive,
 		PendingSurcharge: decimal.Zero,
 	}
+}
+
+// WithContact devuelve una copia con teléfono y ciudad validados y normalizados.
+func (c Customer) WithContact(phone, city string) (Customer, error) {
+	p, err := NormalizePhone(phone)
+	if err != nil {
+		return Customer{}, err
+	}
+	ct, err := NormalizeCity(city)
+	if err != nil {
+		return Customer{}, err
+	}
+	c.Phone, c.City = p, ct
+	return c, nil
 }
 
 // CanCreateOrders delega al status. La entidad no aporta lógica adicional.

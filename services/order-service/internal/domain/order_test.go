@@ -15,6 +15,7 @@ func validInput() domain.NewOrderInput {
 	return domain.NewOrderInput{
 		Address: "  Avenida Amazonas 123  ", Latitude: -0.18, Longitude: -78.48,
 		DeliveryDate: "2026-10-25", WindowStart: "09:00", WindowEnd: "12:00",
+		AddressReference: "  Casa azul junto a la farmacia ", PostalCode: " 170-150 ", ContactPhone: "+593 (99) 123-4567",
 	}
 }
 
@@ -38,6 +39,18 @@ func TestNewOrderSeparatesRegistrationInstantAndDeliveryDate(t *testing.T) {
 	}
 	if order.ID != "" || order.Version != 0 {
 		t.Fatal("persistence must assign ID and version")
+	}
+	if order.AddressReference != "Casa azul junto a la farmacia" || order.PostalCode != "170-150" || order.ContactPhone != "+593991234567" {
+		t.Fatalf("contact details were not normalized: %+v", order)
+	}
+}
+
+func TestNewOrderPostalCodeIsOptional(t *testing.T) {
+	input := validInput()
+	input.PostalCode = "  "
+	order, err := domain.NewOrder(input, registrationTime())
+	if err != nil || order.PostalCode != "" {
+		t.Fatalf("blank postal code: %v %q", err, order.PostalCode)
 	}
 }
 
@@ -89,6 +102,17 @@ func TestNewOrderRejectsInvalidInput(t *testing.T) {
 		{"non padded hour", func(i *domain.NewOrderInput) { i.WindowStart = "9:00" }, domain.ErrInvalidWindow},
 		{"24 hour clock", func(i *domain.NewOrderInput) { i.WindowEnd = "24:00" }, domain.ErrInvalidWindow},
 		{"seconds", func(i *domain.NewOrderInput) { i.WindowEnd = "12:00:01" }, domain.ErrInvalidWindow},
+		{"blank reference", func(i *domain.NewOrderInput) { i.AddressReference = "  " }, domain.ErrInvalidAddressReference},
+		{"short reference", func(i *domain.NewOrderInput) { i.AddressReference = "ab" }, domain.ErrInvalidAddressReference},
+		{"long reference", func(i *domain.NewOrderInput) { i.AddressReference = strings.Repeat("a", 201) }, domain.ErrInvalidAddressReference},
+		{"short postal code", func(i *domain.NewOrderInput) { i.PostalCode = "123" }, domain.ErrInvalidPostalCode},
+		{"long postal code", func(i *domain.NewOrderInput) { i.PostalCode = "12345678901" }, domain.ErrInvalidPostalCode},
+		{"postal code with space", func(i *domain.NewOrderInput) { i.PostalCode = "17 01" }, domain.ErrInvalidPostalCode},
+		{"missing phone", func(i *domain.NewOrderInput) { i.ContactPhone = "" }, domain.ErrInvalidPhone},
+		{"short phone", func(i *domain.NewOrderInput) { i.ContactPhone = "123456" }, domain.ErrInvalidPhone},
+		{"long phone", func(i *domain.NewOrderInput) { i.ContactPhone = "1234567890123456" }, domain.ErrInvalidPhone},
+		{"letters in phone", func(i *domain.NewOrderInput) { i.ContactPhone = "09912345ab" }, domain.ErrInvalidPhone},
+		{"plus inside phone", func(i *domain.NewOrderInput) { i.ContactPhone = "099+1234567" }, domain.ErrInvalidPhone},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

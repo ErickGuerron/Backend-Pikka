@@ -21,6 +21,10 @@ service ZoneService {
   // ListZones devuelve todas las zonas registradas.
   rpc ListZones(ListZonesRequest) returns (ListZonesResponse);
 
+  // ListCoverageZones devuelve solo las zonas ACTIVE, para mostrar la cobertura a cualquier rol
+  // autenticado (incluido CUSTOMER). No cambia la autorización de ListZones.
+  rpc ListCoverageZones(ListCoverageZonesRequest) returns (ListCoverageZonesResponse);
+
   // UpdateZone reemplaza la geometría y los datos de una zona existente.
   rpc UpdateZone(UpdateZoneRequest) returns (UpdateZoneResponse);
 
@@ -34,6 +38,12 @@ service ZoneService {
 message ListZonesRequest {}
 
 message ListZonesResponse {
+  repeated Zone zones = 1;
+}
+
+message ListCoverageZonesRequest {}
+
+message ListCoverageZonesResponse {
   repeated Zone zones = 1;
 }
 

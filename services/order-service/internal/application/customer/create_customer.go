@@ -27,7 +27,10 @@ func NewCreateCustomer(repo ports.CustomerRepository) *CreateCustomer {
 
 // Run ejecuta el alta y devuelve el Customer persistido (con ID y timestamps
 // asignados por la capa de persistencia).
-func (uc *CreateCustomer) Run(ctx context.Context, userID uuid.UUID, email, fullName string) (domain.Customer, error) {
-	c := domain.NewCustomer(userID, email, fullName)
+func (uc *CreateCustomer) Run(ctx context.Context, userID uuid.UUID, email, fullName, phone, city string) (domain.Customer, error) {
+	c, err := domain.NewCustomer(userID, email, fullName).WithContact(phone, city)
+	if err != nil {
+		return domain.Customer{}, err
+	}
 	return uc.repo.Create(ctx, c)
 }

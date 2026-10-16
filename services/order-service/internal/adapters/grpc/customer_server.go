@@ -63,7 +63,7 @@ func (s *CustomerServer) CreateCustomer(ctx context.Context, req *customerv1.Cre
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "user_id inválido: %v", err)
 	}
-	c, err := s.useCases.Create.Run(ctx, userID, req.GetEmail(), req.GetFullName())
+	c, err := s.useCases.Create.Run(ctx, userID, req.GetEmail(), req.GetFullName(), req.GetPhone(), req.GetCity())
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -169,6 +169,8 @@ func mapError(err error) error {
 		return status.Error(codes.InvalidArgument, "paginación inválida")
 	case errors.Is(err, domain.ErrInvalidStatus):
 		return status.Error(codes.InvalidArgument, "status inválido")
+	case errors.Is(err, domain.ErrInvalidPhone), errors.Is(err, domain.ErrInvalidCity):
+		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, context.DeadlineExceeded):
 		return status.Error(codes.DeadlineExceeded, "deadline exceeded")
 	case errors.Is(err, context.Canceled):
@@ -188,6 +190,8 @@ func domainToProto(c domain.Customer) *customerv1.Customer {
 		UserId:           c.UserID.String(),
 		FullName:         c.FullName,
 		Email:            c.Email,
+		Phone:            c.Phone,
+		City:             c.City,
 		Status:           string(c.Status),
 		PendingSurcharge: c.PendingSurcharge.StringFixed(2),
 		CreatedAt:        c.CreatedAt.UTC().Format(time.RFC3339),

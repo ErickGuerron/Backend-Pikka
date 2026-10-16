@@ -51,6 +51,8 @@ func TestOrderReviewAndNotificationsPersistTogether(t *testing.T) {
 		DeliveryDate: "2030-04-12",
 		WindowStart:  "09:00",
 		WindowEnd:    "12:00",
+
+		AddressReference: "Casa azul", ContactPhone: "0991234567",
 	}, time.Date(2030, 4, 10, 15, 0, 0, 0, time.UTC))
 	require.NoError(t, err)
 	order.CustomerID = customer.ID.String()

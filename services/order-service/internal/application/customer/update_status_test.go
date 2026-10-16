@@ -16,7 +16,7 @@ func TestUpdateStatus_ValidStatus_Updates(t *testing.T) {
 	update := NewUpdateStatus(repo)
 
 	uid := uuid.New()
-	created, err := create.Run(context.Background(), uid, "a@b.com", "Test")
+	created, err := create.Run(context.Background(), uid, "a@b.com", "Test", "0991234567", "Quito")
 	if err != nil {
 		t.Fatalf("setup: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestUpdateStatus_InvalidStatus_ReturnsError(t *testing.T) {
 	create := NewCreateCustomer(repo)
 	update := NewUpdateStatus(repo)
 
-	created, err := create.Run(context.Background(), uuid.New(), "a@b.com", "Test")
+	created, err := create.Run(context.Background(), uuid.New(), "a@b.com", "Test", "0991234567", "Quito")
 	if err != nil {
 		t.Fatalf("setup: %v", err)
 	}

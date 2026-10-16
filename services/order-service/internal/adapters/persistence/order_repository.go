@@ -18,7 +18,8 @@ import (
 // se devuelven como texto con el formato del contrato (YYYY-MM-DD y HH:mm).
 const orderColumns = `id::text, COALESCE(customer_id::text, ''), COALESCE(zone_id::text, ''), address, latitude, longitude,
 	to_char(delivery_date, 'YYYY-MM-DD'), to_char(window_start, 'HH24:MI'), to_char(window_end, 'HH24:MI'),
-	status, review_reasons, version, created_at, COALESCE(route_id, '')`
+	status, review_reasons, version, created_at, COALESCE(route_id, ''),
+	address_reference, postal_code, contact_phone`
 
 // OrderRepository es la implementación PostgreSQL de ports.OrderRepository.
 type OrderRepository struct {
@@ -69,12 +70,14 @@ func insertOrder(ctx context.Context, tx pgx.Tx, order domain.Order) (domain.Ord
 	}
 	out, err := scanOrder(tx.QueryRow(ctx,
 		`INSERT INTO orders (customer_id, zone_id, address, latitude, longitude, delivery_date,
-		                     window_start, window_end, status, review_reasons)
-		 VALUES ($1, $2, $3, $4, $5, $6::date, $7::time, $8::time, $9, $10)
+		                     window_start, window_end, status, review_reasons,
+			                     address_reference, postal_code, contact_phone)
+		 VALUES ($1, $2, $3, $4, $5, $6::date, $7::time, $8::time, $9, $10, $11, $12, $13)
 		 RETURNING `+orderColumns,
 		customerID, zoneID, order.Address, order.Latitude, order.Longitude,
 		order.DeliveryDate.String(), order.Window.Start(), order.Window.End(),
 		string(order.Status), reasonStrings(order.ReviewReasons),
+		order.AddressReference, order.PostalCode, order.ContactPhone,
 	))
 	if err != nil {
 		return domain.Order{}, fmt.Errorf("create order: %w", err)
@@ -128,11 +131,13 @@ func (r *OrderRepository) Review(ctx context.Context, orderID string, decide fun
 		`UPDATE orders
 		    SET address = $2, latitude = $3, longitude = $4, delivery_date = $5::date,
 		        window_start = $6::time, window_end = $7::time, zone_id = $8,
-		        status = $9, review_reasons = $10, version = version + 1, updated_at = now()
+		        status = $9, review_reasons = $10, address_reference = $11, postal_code = $12,
+		        contact_phone = $13, version = version + 1, updated_at = now()
 		  WHERE id = $1
 		RETURNING `+orderColumns,
 		id, next.Address, next.Latitude, next.Longitude, next.DeliveryDate.String(),
 		next.Window.Start(), next.Window.End(), zoneID, string(next.Status), reasonStrings(next.ReviewReasons),
+		next.AddressReference, next.PostalCode, next.ContactPhone,
 	))
 	if err != nil {
 		return domain.Order{}, fmt.Errorf("review order: update: %w", err)
@@ -268,11 +273,13 @@ func scanOrder(row rowScanner) (domain.Order, error) {
 		latitude, longitude                                                           float64
 		reasons                                                                       []string
 		routeID                                                                       string
+		reference, postalCode, contactPhone                                           string
 		version                                                                       int64
 		createdAt                                                                     time.Time
 	)
 	if err := row.Scan(&id, &customerID, &zoneID, &address, &latitude, &longitude,
-		&deliveryDate, &windowStart, &windowEnd, &status, &reasons, &version, &createdAt, &routeID); err != nil {
+		&deliveryDate, &windowStart, &windowEnd, &status, &reasons, &version, &createdAt, &routeID,
+		&reference, &postalCode, &contactPhone); err != nil {
 		return domain.Order{}, err
 	}
 	date, err := domain.ParseDeliveryDate(deliveryDate)
@@ -309,5 +316,9 @@ func scanOrder(row rowScanner) (domain.Order, error) {
 		ReviewReasons: reviewReasons,
 		CreatedAt:     createdAt.UTC(),
 		Version:       version,
+
+		AddressReference: reference,
+		PostalCode:       postalCode,
+		ContactPhone:     contactPhone,
 	}, nil
 }
