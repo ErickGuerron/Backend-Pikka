@@ -3,7 +3,9 @@ package http
 import (
 	"context"
 	"net/http"
+	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/labstack/echo/v4"
 
@@ -36,6 +38,10 @@ type createOrderRequest struct {
 	DeliveryDate string   `json:"deliveryDate"`
 	WindowStart  string   `json:"windowStart"`
 	WindowEnd    string   `json:"windowEnd"`
+	// AddressReference y ContactPhone son obligatorios; PostalCode es opcional.
+	AddressReference string `json:"addressReference"`
+	PostalCode       string `json:"postalCode"`
+	ContactPhone     string `json:"contactPhone"`
 	// Items son los productos del pedido (ADR 0009). Al menos uno; el precio lo fija el servidor.
 	Items []orderItemRequest `json:"items"`
 }
@@ -71,6 +77,10 @@ type orderDTO struct {
 	Status        string   `json:"status"`
 	ReviewReasons []string `json:"reviewReasons"`
 	CreatedAt     string   `json:"createdAt"`
+	// Vacíos en pedidos anteriores a estos datos: se omiten de la respuesta.
+	AddressReference string `json:"addressReference,omitempty"`
+	PostalCode       string `json:"postalCode,omitempty"`
+	ContactPhone     string `json:"contactPhone,omitempty"`
 }
 
 // createdOrderDTO es la respuesta del alta: el pedido más sus productos y su total (ADR 0009).
@@ -109,6 +119,10 @@ func (h *ordersHandlers) create(c echo.Context) error {
 	if err := bindJSON(c, &req); err != nil {
 		return err
 	}
+	reference, postalCode, phone, err := validateOrderContact(req)
+	if err != nil {
+		return err
+	}
 	items := make([]*ordersv1.OrderItemRequest, 0, len(req.Items))
 	for _, item := range req.Items {
 		items = append(items, &ordersv1.OrderItemRequest{ProductId: item.ProductID, Quantity: item.Quantity})
@@ -121,6 +135,10 @@ func (h *ordersHandlers) create(c echo.Context) error {
 		WindowStart:  req.WindowStart,
 		WindowEnd:    req.WindowEnd,
 		Items:        items,
+
+		AddressReference: reference,
+		PostalCode:       postalCode,
+		ContactPhone:     phone,
 	})
 	if err != nil {
 		return err
@@ -256,5 +274,30 @@ func toOrderDTO(o *ordersv1.Order) orderDTO {
 		Status:        strings.TrimPrefix(o.GetStatus().String(), "ORDER_STATUS_"),
 		ReviewReasons: reasons,
 		CreatedAt:     o.GetCreatedAt(),
+
+		AddressReference: o.GetAddressReference(),
+		PostalCode:       o.GetPostalCode(),
+		ContactPhone:     o.GetContactPhone(),
 	}
+}
+
+var postalCodePattern = regexp.MustCompile(`^[A-Za-z0-9-]{4,10}$`)
+
+// validateOrderContact aplica las reglas del dominio de order-service a los datos de contacto del
+// pedido y devuelve los valores normalizados: referencia 3 a 200 caracteres, código postal
+// opcional de 4 a 10 letras, dígitos o guion, y teléfono como en el registro.
+func validateOrderContact(req createOrderRequest) (reference, postalCode, phone string, err error) {
+	reference = strings.TrimSpace(req.AddressReference)
+	if n := utf8.RuneCountInString(reference); strings.ContainsRune(reference, '\x00') || n < 3 || n > 200 {
+		return "", "", "", echo.NewHTTPError(http.StatusBadRequest, "addressReference must contain 3 to 200 characters")
+	}
+	postalCode = strings.TrimSpace(req.PostalCode)
+	if postalCode != "" && !postalCodePattern.MatchString(postalCode) {
+		return "", "", "", echo.NewHTTPError(http.StatusBadRequest, "postalCode must contain 4 to 10 letters, digits or hyphens")
+	}
+	phone, err = normalizePhone(req.ContactPhone)
+	if err != nil {
+		return "", "", "", echo.NewHTTPError(http.StatusBadRequest, "contactPhone must have 7 to 15 digits with an optional leading +")
+	}
+	return reference, postalCode, phone, nil
 }

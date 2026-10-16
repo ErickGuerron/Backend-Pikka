@@ -77,7 +77,7 @@ func newRouterWithSignup(auth httpapi.AuthClient, opts httpapi.Options) http.Han
 func TestSignup_Valid_Returns201WithToken(t *testing.T) {
 	h := newRouterWithSignup(&signupFakeAuth{fakeAuth: &fakeAuth{}}, httpapi.Options{})
 
-	body := `{"email":"cliente@example.com","password":"password123","fullName":"Cliente Nuevo"}`
+	body := `{"email":"cliente@example.com","password":"password123","fullName":"Cliente Nuevo","phone":"099 123-4567","city":"Quito"}`
 	rec := do(h, http.MethodPost, "/api/v1/auth/signup", body, nil)
 	require.Equal(t, http.StatusCreated, rec.Code, "signup válido devuelve 201")
 
@@ -94,7 +94,7 @@ func TestSignup_Valid_Returns201WithToken(t *testing.T) {
 func TestSignup_DuplicateEmail_Returns409(t *testing.T) {
 	h := newRouterWithSignup(&signupFakeAuth{fakeAuth: &fakeAuth{}}, httpapi.Options{})
 
-	body := `{"email":"duplicado@example.com","password":"password123","fullName":"X"}`
+	body := `{"email":"duplicado@example.com","password":"password123","fullName":"X","phone":"099 123-4567","city":"Quito"}`
 	rec := do(h, http.MethodPost, "/api/v1/auth/signup", body, nil)
 	assert.Equal(t, http.StatusConflict, rec.Code)
 	assert.Equal(t, "CONFLICT", decodeError(t, rec).Code)
@@ -113,9 +113,9 @@ func TestSignup_RateLimited_Returns429(t *testing.T) {
 	// La primera llamada consume el token inicial; la segunda llega antes de que
 	// se reponga (rate = 3/min ≈ 20 s/token) y debe devolver 429.
 	assert.Equal(t, http.StatusCreated, do(h, http.MethodPost, "/api/v1/auth/signup",
-		`{"email":"a@example.com","password":"password123","fullName":"A"}`, nil).Code)
+		`{"email":"a@example.com","password":"password123","fullName":"A","phone":"099 123-4567","city":"Quito"}`, nil).Code)
 	rec := do(h, http.MethodPost, "/api/v1/auth/signup",
-		`{"email":"b@example.com","password":"password123","fullName":"B"}`, nil)
+		`{"email":"b@example.com","password":"password123","fullName":"B","phone":"099 123-4567","city":"Quito"}`, nil)
 	assert.Equal(t, http.StatusTooManyRequests, rec.Code)
 	assert.Equal(t, "RATE_LIMITED", decodeError(t, rec).Code)
 }

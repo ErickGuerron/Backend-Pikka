@@ -176,6 +176,8 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 	authed.DELETE("/zones/:id", z.remove)
 	authed.GET("/zones/classify", z.classify)
 	authed.GET("/zones/:id", z.get)
+	// Cobertura: cualquier rol autenticado ve las zonas activas (ADR 0008). /zones sigue siendo de staff.
+	authed.GET("/coverage/zones", z.coverage)
 
 	return e
 }

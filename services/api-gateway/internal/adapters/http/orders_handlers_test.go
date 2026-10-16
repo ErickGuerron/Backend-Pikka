@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -39,6 +40,8 @@ func (f *fakeOrderClient) CreateOrder(_ context.Context, m grpcclient.CallMeta, 
 		Status:        ordersv1.OrderStatus_ORDER_STATUS_PENDING_REVIEW,
 		ReviewReasons: []ordersv1.ReviewReason{ordersv1.ReviewReason_REVIEW_REASON_ZONE_NOT_COVERED},
 		CreatedAt:     "2030-04-10T15:00:00Z",
+
+		AddressReference: req.GetAddressReference(), PostalCode: req.GetPostalCode(), ContactPhone: req.GetContactPhone(),
 	}}, nil
 }
 
@@ -47,7 +50,7 @@ func (f *fakeOrderClient) ListMyOrders(_ context.Context, m grpcclient.CallMeta,
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &ordersv1.ListMyOrdersResponse{Orders: []*ordersv1.Order{{Id: "o-1", Status: ordersv1.OrderStatus_ORDER_STATUS_PENDING}}}, nil
+	return &ordersv1.ListMyOrdersResponse{Orders: []*ordersv1.Order{{Id: "o-1", Status: ordersv1.OrderStatus_ORDER_STATUS_PENDING, AddressReference: "Casa azul", PostalCode: "170150", ContactPhone: "0991234567"}}}, nil
 }
 
 func (f *fakeOrderClient) ListMyNotifications(_ context.Context, m grpcclient.CallMeta, _ *ordersv1.ListMyNotificationsRequest) (*ordersv1.ListMyNotificationsResponse, error) {
@@ -65,7 +68,7 @@ func (f *fakeOrderClient) ListOrderExceptions(_ context.Context, m grpcclient.Ca
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &ordersv1.ListOrderExceptionsResponse{Orders: []*ordersv1.Order{{Id: "o-9", Status: ordersv1.OrderStatus_ORDER_STATUS_PENDING_REVIEW}}}, nil
+	return &ordersv1.ListOrderExceptionsResponse{Orders: []*ordersv1.Order{{Id: "o-9", Status: ordersv1.OrderStatus_ORDER_STATUS_PENDING_REVIEW, AddressReference: "Casa azul", ContactPhone: "0991234567"}}}, nil
 }
 
 func (f *fakeOrderClient) ReviewOrder(_ context.Context, m grpcclient.CallMeta, req *ordersv1.ReviewOrderRequest) (*ordersv1.ReviewOrderResponse, error) {
@@ -73,14 +76,14 @@ func (f *fakeOrderClient) ReviewOrder(_ context.Context, m grpcclient.CallMeta, 
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &ordersv1.ReviewOrderResponse{Order: &ordersv1.Order{Id: req.GetId(), Status: ordersv1.OrderStatus_ORDER_STATUS_PENDING}}, nil
+	return &ordersv1.ReviewOrderResponse{Order: &ordersv1.Order{Id: req.GetId(), Status: ordersv1.OrderStatus_ORDER_STATUS_PENDING, AddressReference: "Casa azul", ContactPhone: "0991234567"}}, nil
 }
 
 func ordersRouter(c httpapi.OrderClient) http.Handler {
 	return newRouterWithSignup(&fakeAuth{}, httpapi.Options{Orders: c})
 }
 
-const validOrderBody = `{"address":"Avenida Amazonas 123","deliveryDate":"2030-04-12","windowStart":"09:00","windowEnd":"12:00"}`
+const validOrderBody = `{"address":"Avenida Amazonas 123","deliveryDate":"2030-04-12","windowStart":"09:00","windowEnd":"12:00","addressReference":"Casa azul junto a la farmacia","postalCode":"170150","contactPhone":"099 123-4567"}`
 
 func TestCreateOrder_AddressOnlyIsAccepted_CoordinatesStayAbsent(t *testing.T) {
 	fake := &fakeOrderClient{}
@@ -106,6 +109,7 @@ func TestCreateOrder_ReturnsProductsAndTotal(t *testing.T) {
 		Total: "3.00",
 	}}
 	body := `{"address":"Avenida Amazonas 123","deliveryDate":"2030-04-12","windowStart":"09:00","windowEnd":"12:00",` +
+		`"addressReference":"Casa azul","contactPhone":"0991234567",` +
 		`"items":[{"productId":"11111111-1111-1111-1111-111111111111","quantity":2}]}`
 	rec := do(ordersRouter(fake), http.MethodPost, "/api/v1/orders", body, authHdr(t, "CUSTOMER"))
 
@@ -134,7 +138,7 @@ func TestCreateOrder_ReturnsProductsAndTotal(t *testing.T) {
 
 func TestCreateOrder_WithMapPointKeepsCoordinates(t *testing.T) {
 	fake := &fakeOrderClient{}
-	body := `{"address":"Avenida Amazonas 123","latitude":0,"longitude":-78.48,"deliveryDate":"2030-04-12","windowStart":"09:00","windowEnd":"12:00"}`
+	body := `{"address":"Avenida Amazonas 123","latitude":0,"longitude":-78.48,"deliveryDate":"2030-04-12","windowStart":"09:00","windowEnd":"12:00","addressReference":"Casa azul","contactPhone":"0991234567"}`
 	rec := do(ordersRouter(fake), http.MethodPost, "/api/v1/orders", body, authHdr(t, "CUSTOMER"))
 
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
@@ -276,6 +280,74 @@ func TestCancelOrder_ServiceErrorsMapToHTTP(t *testing.T) {
 			fake := &fakeOrderClient{err: tc.err}
 			rec := do(ordersRouter(fake), http.MethodPost, "/api/v1/orders/o-7/cancel", "", authHdr(t, "CUSTOMER"))
 			assert.Equal(t, tc.want, rec.Code, rec.Body.String())
+		})
+	}
+}
+
+func TestCreateOrder_ForwardsNormalizedContactDetailsAndReturnsThem(t *testing.T) {
+	fake := &fakeOrderClient{}
+	rec := do(ordersRouter(fake), http.MethodPost, "/api/v1/orders", validOrderBody, authHdr(t, "CUSTOMER"))
+
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	assert.Equal(t, "Casa azul junto a la farmacia", fake.createReq.GetAddressReference())
+	assert.Equal(t, "170150", fake.createReq.GetPostalCode())
+	assert.Equal(t, "0991234567", fake.createReq.GetContactPhone())
+	var body struct {
+		AddressReference string `json:"addressReference"`
+		PostalCode       string `json:"postalCode"`
+		ContactPhone     string `json:"contactPhone"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, "Casa azul junto a la farmacia", body.AddressReference)
+	assert.Equal(t, "170150", body.PostalCode)
+	assert.Equal(t, "0991234567", body.ContactPhone)
+}
+
+func TestCreateOrder_PostalCodeIsOptionalAndOmittedWhenEmpty(t *testing.T) {
+	body := `{"address":"Avenida Amazonas 123","deliveryDate":"2030-04-12","windowStart":"09:00","windowEnd":"12:00",` +
+		`"addressReference":"Casa azul","contactPhone":"+593991234567"}`
+	rec := do(ordersRouter(&fakeOrderClient{}), http.MethodPost, "/api/v1/orders", body, authHdr(t, "CUSTOMER"))
+
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	assert.NotContains(t, rec.Body.String(), "postalCode")
+	assert.Contains(t, rec.Body.String(), `"contactPhone":"+593991234567"`)
+}
+
+func TestCreateOrder_InvalidContactDetails_Returns400WithoutCallingService(t *testing.T) {
+	const head = `{"address":"Avenida Amazonas 123","deliveryDate":"2030-04-12","windowStart":"09:00","windowEnd":"12:00"`
+	tests := map[string]string{
+		"missing reference":  head + `,"contactPhone":"0991234567"}`,
+		"short reference":    head + `,"addressReference":"ab","contactPhone":"0991234567"}`,
+		"long reference":     head + `,"addressReference":"` + strings.Repeat("a", 201) + `","contactPhone":"0991234567"}`,
+		"missing phone":      head + `,"addressReference":"Casa azul"}`,
+		"short phone":        head + `,"addressReference":"Casa azul","contactPhone":"123456"}`,
+		"letters in phone":   head + `,"addressReference":"Casa azul","contactPhone":"09912abc67"}`,
+		"short postal code":  head + `,"addressReference":"Casa azul","contactPhone":"0991234567","postalCode":"123"}`,
+		"long postal code":   head + `,"addressReference":"Casa azul","contactPhone":"0991234567","postalCode":"12345678901"}`,
+		"postal code symbol": head + `,"addressReference":"Casa azul","contactPhone":"0991234567","postalCode":"1701 50"}`,
+	}
+	for name, body := range tests {
+		t.Run(name, func(t *testing.T) {
+			fake := &fakeOrderClient{}
+			rec := do(ordersRouter(fake), http.MethodPost, "/api/v1/orders", body, authHdr(t, "CUSTOMER"))
+			assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+			assert.Equal(t, "INVALID_ARGUMENT", decodeError(t, rec).Code)
+			assert.Nil(t, fake.createReq, "no debe llamar al servicio con datos inválidos")
+		})
+	}
+}
+
+func TestOrderResponses_IncludeContactDetails(t *testing.T) {
+	for name, tc := range map[string]struct{ method, path, role, body string }{
+		"mine":       {http.MethodGet, "/api/v1/orders/mine", "CUSTOMER", ""},
+		"exceptions": {http.MethodGet, "/api/v1/orders/exceptions", "OPERATOR", ""},
+		"review":     {http.MethodPost, "/api/v1/orders/o-7/review", "OPERATOR", `{"action":"CONFIRM","reason":"Confirmado por teléfono"}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := do(ordersRouter(&fakeOrderClient{}), tc.method, tc.path, tc.body, authHdr(t, tc.role))
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			assert.Contains(t, rec.Body.String(), `"addressReference":"Casa azul"`)
+			assert.Contains(t, rec.Body.String(), `"contactPhone":"0991234567"`)
 		})
 	}
 }

@@ -17,6 +17,7 @@ type ZonesClient interface {
 	GetZone(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.GetZoneRequest) (*zonesv1.GetZoneResponse, error)
 	ClassifyPoint(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.ClassifyPointRequest) (*zonesv1.ClassifyPointResponse, error)
 	ListZones(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.ListZonesRequest) (*zonesv1.ListZonesResponse, error)
+	ListCoverageZones(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.ListCoverageZonesRequest) (*zonesv1.ListCoverageZonesResponse, error)
 	UpdateZone(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.UpdateZoneRequest) (*zonesv1.UpdateZoneResponse, error)
 	SetZoneStatus(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.SetZoneStatusRequest) (*zonesv1.SetZoneStatusResponse, error)
 	DeleteZone(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.DeleteZoneRequest) (*zonesv1.DeleteZoneResponse, error)
@@ -30,6 +31,35 @@ func (h *zonesHandlers) list(c echo.Context) error {
 	out := make([]zoneDTO, 0, len(res.GetZones()))
 	for _, z := range res.GetZones() {
 		out = append(out, toZoneDTO(z))
+	}
+	return c.JSON(http.StatusOK, out)
+}
+
+// coverageZoneDTO es lo único que se publica de una zona a cualquier rol autenticado: el contorno.
+// Sin depósito, capacidad ni configuración operativa.
+type coverageZoneDTO struct {
+	ID    string            `json:"id"`
+	Code  string            `json:"code"`
+	Name  string            `json:"name"`
+	Ring  []coordinateDTO   `json:"ring"`
+	Holes [][]coordinateDTO `json:"holes"`
+}
+
+type coverageZonesResponse struct {
+	Zones []coverageZoneDTO `json:"zones"`
+}
+
+// coverage lista las zonas activas para dibujar la cobertura. Zone Service decide los roles
+// permitidos y filtra las inactivas; aquí solo se recorta cada zona al contorno.
+func (h *zonesHandlers) coverage(c echo.Context) error {
+	res, err := h.zones.ListCoverageZones(c.Request().Context(), callMeta(c), &zonesv1.ListCoverageZonesRequest{})
+	if err != nil {
+		return err
+	}
+	out := coverageZonesResponse{Zones: make([]coverageZoneDTO, 0, len(res.GetZones()))}
+	for _, z := range res.GetZones() {
+		full := toZoneDTO(z)
+		out.Zones = append(out.Zones, coverageZoneDTO{ID: full.ID, Code: full.Code, Name: full.Name, Ring: full.Ring, Holes: full.Holes})
 	}
 	return c.JSON(http.StatusOK, out)
 }

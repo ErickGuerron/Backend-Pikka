@@ -58,6 +58,13 @@ func (z *Zones) ListZones(ctx context.Context, m CallMeta, req *zonesv1.ListZone
 	return z.client.ListZones(ctx, req)
 }
 
+// ListCoverageZones devuelve solo las zonas activas, visibles para cualquier rol autenticado.
+func (z *Zones) ListCoverageZones(ctx context.Context, m CallMeta, req *zonesv1.ListCoverageZonesRequest) (*zonesv1.ListCoverageZonesResponse, error) {
+	ctx, cancel := z.outgoing(ctx, m)
+	defer cancel()
+	return z.client.ListCoverageZones(ctx, req)
+}
+
 // UpdateZone redibuja una zona existente.
 func (z *Zones) UpdateZone(ctx context.Context, m CallMeta, req *zonesv1.UpdateZoneRequest) (*zonesv1.UpdateZoneResponse, error) {
 	ctx, cancel := z.outgoing(ctx, m)

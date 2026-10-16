@@ -2,6 +2,7 @@ package http_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -138,7 +139,25 @@ func (f *fakeZones) ListZones(_ context.Context, m grpcclient.CallMeta, _ *zones
 	if f.err != nil {
 		return nil, f.err
 	}
+	// Zone Service reserva el listado completo al personal; el Gateway no decide por rol.
+	if m.Role == "CUSTOMER" {
+		return nil, status.Error(codes.PermissionDenied, "forbidden")
+	}
 	return &zonesv1.ListZonesResponse{Zones: []*zonesv1.Zone{{Id: "z-1", Code: "CENTRO", Name: "Centro"}}}, nil
+}
+
+func (f *fakeZones) ListCoverageZones(_ context.Context, m grpcclient.CallMeta, _ *zonesv1.ListCoverageZonesRequest) (*zonesv1.ListCoverageZonesResponse, error) {
+	f.lastMeta, f.called = m, true
+	if f.err != nil {
+		return nil, f.err
+	}
+	// Zone Service ya devuelve solo zonas activas; aquí llega con datos operativos para comprobar que no se filtran.
+	return &zonesv1.ListCoverageZonesResponse{Zones: []*zonesv1.Zone{{
+		Id: "z-1", Code: "CENTRO", Name: "Centro", Status: "ACTIVE", StatusReason: "interno", CreatedBy: "admin-1", Version: 3,
+		Ring:     []*zonesv1.Coordinate{{Latitude: -0.2, Longitude: -78.5}, {Latitude: -0.2, Longitude: -78.4}, {Latitude: -0.1, Longitude: -78.4}, {Latitude: -0.2, Longitude: -78.5}},
+		Holes:    []*zonesv1.Ring{{Points: []*zonesv1.Coordinate{{Latitude: -0.17, Longitude: -78.45}}}},
+		Settings: &zonesv1.ZoneSettings{DepotName: "Hub Norte", DefaultRouteCapacityKg: 45},
+	}}}, nil
 }
 
 func (f *fakeZones) UpdateZone(_ context.Context, m grpcclient.CallMeta, req *zonesv1.UpdateZoneRequest) (*zonesv1.UpdateZoneResponse, error) {
@@ -203,4 +222,57 @@ func TestZones_StatusAndDeleteRequireAuthentication(t *testing.T) {
 	h := newZonesRouter(&fakeZones{})
 	assert.Equal(t, http.StatusUnauthorized, do(h, http.MethodPatch, "/api/v1/zones/z-9/status", `{"status":"INACTIVE","reason":"x"}`, nil).Code)
 	assert.Equal(t, http.StatusUnauthorized, do(h, http.MethodDelete, "/api/v1/zones/z-9", `{"reason":"x"}`, nil).Code)
+}
+
+func TestCoverage_RequiresAuthentication(t *testing.T) {
+	zones := &fakeZones{}
+	assert.Equal(t, http.StatusUnauthorized, do(newZonesRouter(zones), http.MethodGet, "/api/v1/coverage/zones", "", nil).Code)
+	assert.False(t, zones.called)
+}
+
+func TestCoverage_EveryRoleGetsTheSameTrimmedZones(t *testing.T) {
+	for _, role := range []string{"ADMIN", "OPERATOR", "DRIVER", "CUSTOMER"} {
+		t.Run(role, func(t *testing.T) {
+			zones := &fakeZones{}
+			rec := do(newZonesRouter(zones), http.MethodGet, "/api/v1/coverage/zones", "", bearer(t, role))
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			assert.Equal(t, role, zones.lastMeta.Role)
+
+			var body struct {
+				Zones []map[string]any `json:"zones"`
+			}
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+			require.Len(t, body.Zones, 1)
+			keys := make([]string, 0, len(body.Zones[0]))
+			for k := range body.Zones[0] {
+				keys = append(keys, k)
+			}
+			assert.ElementsMatch(t, []string{"id", "code", "name", "ring", "holes"}, keys)
+			assert.Equal(t, "z-1", body.Zones[0]["id"])
+			assert.Len(t, body.Zones[0]["ring"], 4)
+			assert.Len(t, body.Zones[0]["holes"], 1)
+			assert.NotContains(t, rec.Body.String(), "Hub Norte")
+		})
+	}
+}
+
+// noCoverage simula un Zone Service sin zonas activas.
+type noCoverage struct{ fakeZones }
+
+func (noCoverage) ListCoverageZones(context.Context, grpcclient.CallMeta, *zonesv1.ListCoverageZonesRequest) (*zonesv1.ListCoverageZonesResponse, error) {
+	return &zonesv1.ListCoverageZonesResponse{}, nil
+}
+
+func TestCoverage_NoActiveZonesIsAnEmptyArray(t *testing.T) {
+	rec := do(newZonesRouter(&noCoverage{}), http.MethodGet, "/api/v1/coverage/zones", "", bearer(t, "CUSTOMER"))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.JSONEq(t, `{"zones":[]}`, rec.Body.String())
+}
+
+func TestCoverage_CustomerStillForbiddenOnFullZoneList(t *testing.T) {
+	h := newZonesRouter(&fakeZones{})
+	assert.Equal(t, http.StatusOK, do(h, http.MethodGet, "/api/v1/coverage/zones", "", bearer(t, "CUSTOMER")).Code)
+	rec := do(h, http.MethodGet, "/api/v1/zones", "", bearer(t, "CUSTOMER"))
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Equal(t, "FORBIDDEN", decodeError(t, rec).Code)
 }
