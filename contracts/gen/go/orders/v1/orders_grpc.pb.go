@@ -28,6 +28,7 @@ const (
 	OrderService_ListMyOrders_FullMethodName        = "/orders.v1.OrderService/ListMyOrders"
 	OrderService_ListMyNotifications_FullMethodName = "/orders.v1.OrderService/ListMyNotifications"
 	OrderService_CancelOrder_FullMethodName         = "/orders.v1.OrderService/CancelOrder"
+	OrderService_AssignOrdersToRoute_FullMethodName = "/orders.v1.OrderService/AssignOrdersToRoute"
 )
 
 // OrderServiceClient is the client API for OrderService service.
@@ -61,6 +62,11 @@ type OrderServiceClient interface {
 	// CancelOrder cancels an order of the authenticated CUSTOMER. Only PENDING or ROUTE_ASSIGNED can be
 	// cancelled; another state returns ABORTED (HTTP 409). An order of another customer returns NOT_FOUND.
 	CancelOrder(ctx context.Context, in *CancelOrderRequest, opts ...grpc.CallOption) (*CancelOrderResponse, error)
+	// AssignOrdersToRoute moves every listed order from PENDING to ROUTE_ASSIGNED
+	// in one transaction. Internal, called by Routing. Blank route_id or empty
+	// order_ids returns INVALID_ARGUMENT; an unknown ID returns NOT_FOUND; any
+	// order not in PENDING returns ABORTED (HTTP 409) and none is changed.
+	AssignOrdersToRoute(ctx context.Context, in *AssignOrdersToRouteRequest, opts ...grpc.CallOption) (*AssignOrdersToRouteResponse, error)
 }
 
 type orderServiceClient struct {
@@ -161,6 +167,16 @@ func (c *orderServiceClient) CancelOrder(ctx context.Context, in *CancelOrderReq
 	return out, nil
 }
 
+func (c *orderServiceClient) AssignOrdersToRoute(ctx context.Context, in *AssignOrdersToRouteRequest, opts ...grpc.CallOption) (*AssignOrdersToRouteResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AssignOrdersToRouteResponse)
+	err := c.cc.Invoke(ctx, OrderService_AssignOrdersToRoute_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // OrderServiceServer is the server API for OrderService service.
 // All implementations must embed UnimplementedOrderServiceServer
 // for forward compatibility.
@@ -192,6 +208,11 @@ type OrderServiceServer interface {
 	// CancelOrder cancels an order of the authenticated CUSTOMER. Only PENDING or ROUTE_ASSIGNED can be
 	// cancelled; another state returns ABORTED (HTTP 409). An order of another customer returns NOT_FOUND.
 	CancelOrder(context.Context, *CancelOrderRequest) (*CancelOrderResponse, error)
+	// AssignOrdersToRoute moves every listed order from PENDING to ROUTE_ASSIGNED
+	// in one transaction. Internal, called by Routing. Blank route_id or empty
+	// order_ids returns INVALID_ARGUMENT; an unknown ID returns NOT_FOUND; any
+	// order not in PENDING returns ABORTED (HTTP 409) and none is changed.
+	AssignOrdersToRoute(context.Context, *AssignOrdersToRouteRequest) (*AssignOrdersToRouteResponse, error)
 	mustEmbedUnimplementedOrderServiceServer()
 }
 
@@ -228,6 +249,9 @@ func (UnimplementedOrderServiceServer) ListMyNotifications(context.Context, *Lis
 }
 func (UnimplementedOrderServiceServer) CancelOrder(context.Context, *CancelOrderRequest) (*CancelOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CancelOrder not implemented")
+}
+func (UnimplementedOrderServiceServer) AssignOrdersToRoute(context.Context, *AssignOrdersToRouteRequest) (*AssignOrdersToRouteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AssignOrdersToRoute not implemented")
 }
 func (UnimplementedOrderServiceServer) mustEmbedUnimplementedOrderServiceServer() {}
 func (UnimplementedOrderServiceServer) testEmbeddedByValue()                      {}
@@ -412,6 +436,24 @@ func _OrderService_CancelOrder_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _OrderService_AssignOrdersToRoute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AssignOrdersToRouteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).AssignOrdersToRoute(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_AssignOrdersToRoute_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).AssignOrdersToRoute(ctx, req.(*AssignOrdersToRouteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // OrderService_ServiceDesc is the grpc.ServiceDesc for OrderService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -454,6 +496,10 @@ var OrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CancelOrder",
 			Handler:    _OrderService_CancelOrder_Handler,
+		},
+		{
+			MethodName: "AssignOrdersToRoute",
+			Handler:    _OrderService_AssignOrdersToRoute_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
