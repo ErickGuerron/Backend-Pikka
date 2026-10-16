@@ -63,5 +63,5 @@ osrm-up: ## Levanta el servidor OSRM de Ecuador en 127.0.0.1:5000 (requiere `mak
 osrm-down: ## Detiene el servidor OSRM
 	docker compose --profile osrm stop osrm
 
-osrm-test: ## Pruebas de integración del adaptador OSRM contra el servidor levantado con `make osrm-up`
-	cd services/routing-service && OSRM_URL="http://127.0.0.1:5000" go test -race -tags integration -count=1 ./internal/adapters/osrm/
+osrm-test: ## Pruebas de integración del módulo libs/osrm contra el servidor levantado con `make osrm-up`
+	cd libs/osrm && OSRM_URL="http://127.0.0.1:5000" go test -race -tags integration -count=1 ./...
