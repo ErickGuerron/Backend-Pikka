@@ -27,6 +27,10 @@ type Command struct {
 	DeliveryDate string
 	WindowStart  string
 	WindowEnd    string
+	// AddressReference y ContactPhone son obligatorios; PostalCode es opcional.
+	AddressReference string
+	PostalCode       string
+	ContactPhone     string
 	// Items son los productos del pedido (ADR 0009). Al menos uno.
 	Items []LineRequest
 }
@@ -92,6 +96,10 @@ func (uc *CreateOrder) Place(ctx context.Context, cmd Command) (Placed, error) {
 		DeliveryDate: cmd.DeliveryDate,
 		WindowStart:  cmd.WindowStart,
 		WindowEnd:    cmd.WindowEnd,
+
+		AddressReference: cmd.AddressReference,
+		PostalCode:       cmd.PostalCode,
+		ContactPhone:     cmd.ContactPhone,
 	}, uc.clock().In(uc.location))
 	if err != nil {
 		return Placed{}, err

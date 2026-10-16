@@ -21,7 +21,11 @@ type Order struct {
 	Longitude    float64
 	DeliveryDate DeliveryDate
 	Window       DeliveryWindow
-	Status       Status
+	// AddressReference, PostalCode and ContactPhone are empty only in orders created before they existed.
+	AddressReference string
+	PostalCode       string
+	ContactPhone     string
+	Status           Status
 	// ReviewReasons is non-empty only while Status is PENDING_REVIEW (ADR 0007).
 	ReviewReasons []ReviewReason
 	CreatedAt     time.Time
@@ -36,6 +40,10 @@ type NewOrderInput struct {
 	DeliveryDate string
 	WindowStart  string
 	WindowEnd    string
+	// AddressReference and ContactPhone are required; PostalCode is optional.
+	AddressReference string
+	PostalCode       string
+	ContactPhone     string
 }
 
 // NewOrder receives the clock instant in the operating timezone. This makes
@@ -64,11 +72,36 @@ func NewOrder(input NewOrderInput, registeredAt time.Time) (Order, error) {
 	if err != nil {
 		return Order{}, err
 	}
+	reference := strings.TrimSpace(input.AddressReference)
+	if n := utf8.RuneCountInString(reference); !utf8.ValidString(reference) || strings.ContainsRune(reference, '\x00') || n < 3 || n > 200 {
+		return Order{}, ErrInvalidAddressReference
+	}
+	postalCode := strings.TrimSpace(input.PostalCode)
+	if postalCode != "" && !validPostalCode(postalCode) {
+		return Order{}, ErrInvalidPostalCode
+	}
+	phone, err := NormalizePhone(input.ContactPhone)
+	if err != nil {
+		return Order{}, err
+	}
 	return Order{
 		Address: address, Latitude: input.Latitude, Longitude: input.Longitude,
 		DeliveryDate: date, Window: window, Status: StatusPending,
+		AddressReference: reference, PostalCode: postalCode, ContactPhone: phone,
 		CreatedAt: registeredAt.UTC(),
 	}, nil
+}
+
+func validPostalCode(code string) bool {
+	if len(code) < 4 || len(code) > 10 {
+		return false
+	}
+	for _, r := range code {
+		if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 // TransitionTo returns an updated copy; a rejected transition leaves the order intact.

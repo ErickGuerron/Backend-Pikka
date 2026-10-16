@@ -11,6 +11,11 @@ var (
 	ErrInvalidCreatedAt   = errors.New("registration instant is required")
 	ErrInvalidOrderStatus = errors.New("unknown order status")
 	ErrInvalidTransition  = errors.New("order status transition is not allowed")
+
+	ErrInvalidPhone            = errors.New("phone must have 7 to 15 digits with an optional leading +")
+	ErrInvalidCity             = errors.New("city must contain 2 to 80 characters")
+	ErrInvalidAddressReference = errors.New("address reference must contain 3 to 200 characters")
+	ErrInvalidPostalCode       = errors.New("postal code must contain 4 to 10 letters, digits or hyphens")
 )
 
 // Sentinel errors del dominio Customer. Los adaptadores los traducen a

@@ -158,6 +158,8 @@ func addressCommand() Command {
 		WindowStart:  "09:00",
 		WindowEnd:    "12:00",
 		Items:        []LineRequest{{ProductID: appleID, Quantity: 2}},
+
+		AddressReference: "Casa azul", PostalCode: "170150", ContactPhone: "099 123 4567",
 	}
 }
 
@@ -202,6 +204,43 @@ func TestCreateOrderCoveredActiveCustomerIsPlannable(t *testing.T) {
 	}
 	if len(f.orders.notices) != 0 {
 		t.Fatal("un pedido sin revisión no genera aviso")
+	}
+}
+
+func TestCreateOrderStoresNormalizedContactDetails(t *testing.T) {
+	f := newCreate(activeCustomer(), &fakeZones{zoneID: zoneUUID}, &fakeGeocoder{found: true})
+
+	got, err := f.uc.Run(context.Background(), knownPoint())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.AddressReference != "Casa azul" || got.PostalCode != "170150" || got.ContactPhone != "0991234567" {
+		t.Fatalf("contact details = %q %q %q", got.AddressReference, got.PostalCode, got.ContactPhone)
+	}
+}
+
+func TestCreateOrderRejectsMissingContactDetailsWithoutSaving(t *testing.T) {
+	tests := []struct {
+		name   string
+		change func(*Command)
+		want   error
+	}{
+		{"reference", func(c *Command) { c.AddressReference = "" }, domain.ErrInvalidAddressReference},
+		{"phone", func(c *Command) { c.ContactPhone = "" }, domain.ErrInvalidPhone},
+		{"postal code", func(c *Command) { c.PostalCode = "x" }, domain.ErrInvalidPostalCode},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newCreate(activeCustomer(), &fakeZones{zoneID: zoneUUID}, &fakeGeocoder{found: true})
+			cmd := knownPoint()
+			tt.change(&cmd)
+			if _, err := f.uc.Run(context.Background(), cmd); !errors.Is(err, tt.want) {
+				t.Fatalf("got %v, want %v", err, tt.want)
+			}
+			if len(f.orders.saved) != 0 {
+				t.Fatal("an invalid order must not be saved")
+			}
+		})
 	}
 }
 

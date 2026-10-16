@@ -70,6 +70,7 @@ func newOrder(t *testing.T, customerID string) domain.Order {
 	order, err := domain.NewOrder(domain.NewOrderInput{
 		Address: "Avenida Amazonas 123", Latitude: -0.18, Longitude: -78.48,
 		DeliveryDate: "2030-04-12", WindowStart: "09:00", WindowEnd: "12:00",
+		AddressReference: "Casa azul", ContactPhone: "0991234567",
 	}, now)
 	require.NoError(t, err)
 	order.CustomerID = customerID

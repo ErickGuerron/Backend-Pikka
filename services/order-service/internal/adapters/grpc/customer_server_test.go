@@ -130,6 +130,8 @@ func TestCreateCustomer_Valid_ReturnsCustomer(t *testing.T) {
 		UserId:   userID.String(),
 		FullName: "Ada Lovelace",
 		Email:    "ada@example.com",
+		Phone:    "0991234567",
+		City:     "Quito",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, resp.GetCustomer())
@@ -143,6 +145,24 @@ func TestCreateCustomer_Valid_ReturnsCustomer(t *testing.T) {
 	assert.Equal(t, "0.00", got.GetPendingSurcharge())
 	assert.NotEmpty(t, got.GetCreatedAt())
 	assert.NotEmpty(t, got.GetUpdatedAt())
+	assert.Equal(t, "0991234567", got.GetPhone())
+	assert.Equal(t, "Quito", got.GetCity())
+}
+
+func TestCreateCustomer_InvalidContact_ReturnsInvalidArgument(t *testing.T) {
+	srv := newTestServer(t, newFakeCustomerRepository())
+
+	for name, req := range map[string]*customerv1.CreateCustomerRequest{
+		"missing phone": {UserId: uuid.New().String(), FullName: "Ada", Email: "ada@example.com", City: "Quito"},
+		"missing city":  {UserId: uuid.New().String(), FullName: "Ada", Email: "ada@example.com", Phone: "0991234567"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := srv.CreateCustomer(context.Background(), req)
+			st, ok := status.FromError(err)
+			require.True(t, ok)
+			assert.Equal(t, codes.InvalidArgument, st.Code())
+		})
+	}
 }
 
 func TestCreateCustomer_DuplicateUserID_ReturnsAlreadyExists(t *testing.T) {
@@ -154,6 +174,8 @@ func TestCreateCustomer_DuplicateUserID_ReturnsAlreadyExists(t *testing.T) {
 		UserId:   userID.String(),
 		FullName: "Ada Lovelace",
 		Email:    "ada@example.com",
+		Phone:    "0991234567",
+		City:     "Quito",
 	})
 	require.NoError(t, err)
 
@@ -161,6 +183,8 @@ func TestCreateCustomer_DuplicateUserID_ReturnsAlreadyExists(t *testing.T) {
 		UserId:   userID.String(),
 		FullName: "Duplicado",
 		Email:    "otro@example.com",
+		Phone:    "0991234567",
+		City:     "Quito",
 	})
 	require.Error(t, err)
 	st, ok := status.FromError(err)
@@ -218,6 +242,8 @@ func TestUpdateStatus_ValidStatus_Updates(t *testing.T) {
 		UserId:   userID.String(),
 		FullName: "Ada",
 		Email:    "ada@example.com",
+		Phone:    "0991234567",
+		City:     "Quito",
 	})
 	require.NoError(t, err)
 
@@ -238,6 +264,8 @@ func TestUpdateStatus_InvalidStatus_ReturnsInvalidArgument(t *testing.T) {
 		UserId:   userID.String(),
 		FullName: "Ada",
 		Email:    "ada@example.com",
+		Phone:    "0991234567",
+		City:     "Quito",
 	})
 	require.NoError(t, err)
 

@@ -15,7 +15,7 @@ func TestCanCreateOrders_Active_ReturnsTrue(t *testing.T) {
 	create := NewCreateCustomer(repo)
 	can := NewCanCreateOrders(repo)
 
-	created, err := create.Run(context.Background(), uuid.New(), "a@b.com", "Test")
+	created, err := create.Run(context.Background(), uuid.New(), "a@b.com", "Test", "0991234567", "Quito")
 	if err != nil {
 		t.Fatalf("setup: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestCanCreateOrders_Blocked_ReturnsFalse(t *testing.T) {
 	update := NewUpdateStatus(repo)
 	can := NewCanCreateOrders(repo)
 
-	created, err := create.Run(context.Background(), uuid.New(), "a@b.com", "Test")
+	created, err := create.Run(context.Background(), uuid.New(), "a@b.com", "Test", "0991234567", "Quito")
 	if err != nil {
 		t.Fatalf("setup: %v", err)
 	}

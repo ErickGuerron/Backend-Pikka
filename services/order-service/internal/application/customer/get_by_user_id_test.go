@@ -29,7 +29,7 @@ func TestGetByUserID_ReturnsInserted(t *testing.T) {
 	get := NewGetByUserID(repo)
 
 	uid := uuid.New()
-	created, err := create.Run(context.Background(), uid, "a@b.com", "Test")
+	created, err := create.Run(context.Background(), uid, "a@b.com", "Test", "0991234567", "Quito")
 	if err != nil {
 		t.Fatalf("setup: %v", err)
 	}

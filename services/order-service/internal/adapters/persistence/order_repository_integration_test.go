@@ -56,6 +56,8 @@ func TestOrderRepositoryPersistsAndListsByCustomer(t *testing.T) {
 			DeliveryDate: "2030-04-12",
 			WindowStart:  "09:00",
 			WindowEnd:    "12:00",
+
+			AddressReference: "Casa azul", PostalCode: "170150", ContactPhone: "0991234567",
 		}, registeredAt)
 		require.NoError(t, err)
 		order.CustomerID = customer.ID.String()
