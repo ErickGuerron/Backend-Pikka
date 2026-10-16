@@ -37,6 +37,8 @@ type Options struct {
 	Catalog CatalogClient
 	// Drivers, si no es nil, habilita las rutas de repartidor (rol DRIVER). Hoy responden 501.
 	Drivers DriverClient
+	// Tracking, si no es nil, habilita PUT /drivers/me/location (rol DRIVER). Requiere Drivers.
+	Tracking TrackingClient
 }
 
 // Readiness informa si una dependencia está lista.
@@ -166,6 +168,10 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 		driverOnly.GET("/drivers/me/route", driverRouteNotImplemented)
 		driverOnly.PATCH("/drivers/me/routes/:routeId/stops/:stopId/status", driverRouteNotImplemented)
 		driverOnly.POST("/drivers/me/routes/:routeId/stops/:stopId/result", driverRouteNotImplemented)
+		if opts.Tracking != nil {
+			loc := &driverLocationHandlers{drivers: opts.Drivers, tracking: opts.Tracking}
+			driverOnly.PUT("/drivers/me/location", loc.report)
+		}
 	}
 
 	z := &zonesHandlers{zones: zones}
