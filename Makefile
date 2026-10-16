@@ -13,7 +13,7 @@ ifeq ($(OS),Windows_NT)
 SHELL := C:/PROGRA~1/Git/bin/sh.exe
 endif
 
-.PHONY: help up down logs test test-integration lint fmt proto openapi-lint perf-smoke security-scan
+.PHONY: help up down logs test test-integration lint fmt proto openapi-lint perf-smoke security-scan osrm-prepare osrm-up osrm-down osrm-test
 
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
@@ -53,3 +53,15 @@ perf-smoke: ## Smoke de rendimiento con k6 (requiere `make up`)
 
 security-scan: ## Escaneo activo OWASP ZAP sobre el contrato OpenAPI (requiere `make up`)
 	docker compose --profile security run --rm zap
+
+osrm-prepare: ## Descarga el mapa de Ecuador y genera los datos de OSRM (una vez; -Force regenera)
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/osrm-prepare-ecuador.ps1
+
+osrm-up: ## Levanta el servidor OSRM de Ecuador en 127.0.0.1:5000 (requiere `make osrm-prepare`)
+	docker compose --profile osrm up -d osrm
+
+osrm-down: ## Detiene el servidor OSRM
+	docker compose --profile osrm stop osrm
+
+osrm-test: ## Pruebas de integración del adaptador OSRM contra el servidor levantado con `make osrm-up`
+	cd services/routing-service && OSRM_URL="http://127.0.0.1:5000" go test -race -tags integration -count=1 ./internal/adapters/osrm/

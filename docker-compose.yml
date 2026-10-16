@@ -202,5 +202,18 @@ services:
     depends_on:
       - api-gateway
 
+  # Motor de rutas OSRM con el mapa de Ecuador (MVP). Opcional: se levanta con
+  # `make osrm-up`. Los datos se generan una vez con scripts/osrm-prepare-ecuador.ps1.
+  # Un contenedor por región; cada región expone su propio puerto.
+  osrm:
+    image: osrm/osrm-backend:v5.25.0
+    profiles: ["osrm"]
+    restart: unless-stopped
+    command: osrm-routed --algorithm mld /data/ecuador-latest.osrm
+    volumes:
+      - ./infrastructure/osrm/data:/data:ro
+    ports:
+      - "127.0.0.1:5000:5000"
+
 volumes:
   postgres-data:
