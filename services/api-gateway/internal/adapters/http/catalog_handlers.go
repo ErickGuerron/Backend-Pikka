@@ -35,7 +35,7 @@ type productDTO struct {
 	Description   string `json:"description"`
 	UnitPrice     string `json:"unitPrice"`
 	Active        bool   `json:"active"`
-	StockQuantity *int64 `json:"stockQuantity"`
+	StockQuantity *int64 `json:"stockQuantity,omitempty"`
 	CreatedAt     string `json:"createdAt"`
 	UpdatedAt     string `json:"updatedAt"`
 }
