@@ -100,18 +100,20 @@ func run(log *slog.Logger) error {
 	listExceptions := orderapp.NewListExceptions(orderRepo)
 	listMyNotifications := orderapp.NewListMyNotifications(customerRepo, notificationRepo)
 	cancelOrder := orderapp.NewCancelOrder(customerRepo, orderRepo)
+	routeAssignment := orderapp.NewRouteAssignment(orderRepo)
 	log.Info("order use cases wired", "create", createOrder != nil, "review", reviewOrder != nil)
 
 	// gRPC server para Customer y Order. La autorización por rol se aplica en
 	// los casos de uso; el Gateway solo propaga la identidad del JWT.
 	grpcServer := grpc.NewServer()
 	ordersv1.RegisterOrderServiceServer(grpcServer, grpcadapter.NewOrderServer(grpcadapter.OrderUseCases{
-		Create:        createOrder,
-		ListMine:      listMyOrders,
-		Exceptions:    listExceptions,
-		Review:        reviewOrder,
-		Notifications: listMyNotifications,
-		Cancel:        cancelOrder,
+		Create:          createOrder,
+		ListMine:        listMyOrders,
+		Exceptions:      listExceptions,
+		Review:          reviewOrder,
+		Notifications:   listMyNotifications,
+		Cancel:          cancelOrder,
+		RouteAssignment: routeAssignment,
 	}))
 	// Catálogo de productos (ADR 0009): el operador administra, el cliente lee lo activo.
 	catalogv1.RegisterCatalogServiceServer(grpcServer, grpcadapter.NewCatalogServer(
