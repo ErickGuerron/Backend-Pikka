@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package tracking.v1;
+
+option go_package = "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/tracking/v1;trackingv1";
+
+// TrackingService guarda la última posición GPS de cada repartidor y estima la distancia y el
+// tiempo hasta un punto de entrega. Solo lo consumen servicios internos; nunca clientes finales.
+service TrackingService {
+  // RecordPosition registra un fix del repartidor. Un fix que no es más nuevo que el guardado se
+  // descarta y responde accepted = false sin error.
+  //
+  // Códigos de estado gRPC que el servidor debe devolver:
+  //
+  //   - INVALID_ARGUMENT: driver_id en blanco, coordenadas fuera de rango o no finitas,
+  //     recorded_at que no es RFC 3339 o que está más de 30 s en el futuro.
+  rpc RecordPosition(RecordPositionRequest) returns (RecordPositionResponse);
+
+  // EstimateArrival estima distancia y duración por carretera desde la última posición vigente del
+  // repartidor hasta el destino. Nunca estima con una posición vencida.
+  //
+  // Códigos de estado gRPC que el servidor debe devolver:
+  //
+  //   - INVALID_ARGUMENT: driver_id en blanco o destino fuera de rango.
+  //   - NOT_FOUND: el repartidor no tiene posición guardada (nunca reportó o expiró),
+  //     o no existe ruta por carretera hasta el destino.
+  //   - FAILED_PRECONDITION: la última posición tiene más de 120 s; el repartidor debe reportar otra.
+  //   - INTERNAL: cualquier otro fallo, por ejemplo el motor de rutas no responde.
+  rpc EstimateArrival(EstimateArrivalRequest) returns (EstimateArrivalResponse);
+}
+
+message RecordPositionRequest {
+  // Repartidor que reporta; obligatorio.
+  string driver_id = 1;
+  // Grados decimales WGS 84.
+  double latitude = 2;
+  double longitude = 3;
+  // Momento del fix en el dispositivo, RFC 3339 en UTC.
+  string recorded_at = 4;
+}
+
+message RecordPositionResponse {
+  // false cuando el fix es más antiguo que el guardado y se descartó.
+  bool accepted = 1;
+}
+
+message EstimateArrivalRequest {
+  // Repartidor cuya posición se usa como origen; obligatorio.
+  string driver_id = 1;
+  // Punto de entrega en grados decimales WGS 84.
+  double destination_latitude = 2;
+  double destination_longitude = 3;
+}
+
+message EstimateArrivalResponse {
+  double distance_meters = 1;
+  double duration_seconds = 2;
+}
