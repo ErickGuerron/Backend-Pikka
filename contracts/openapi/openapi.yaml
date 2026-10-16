@@ -1018,7 +1018,7 @@ components:
       properties:
         accessToken: { type: string }
         tokenType: { type: string, example: Bearer }
-        expiresIn: { type: integer, description: Segundos hasta que expira el token, example: 3600 }
+        expiresIn: { type: integer, description: "Segundos hasta que expira el token", example: 3600 }
         user: { $ref: "#/components/schemas/User" }
     CreateUserRequest:
       type: object
@@ -1063,7 +1063,7 @@ components:
         createdAt: { type: string, format: date-time, description: Instante de registro asignado por el servidor en RFC 3339 UTC }
         addressReference: { type: string, minLength: 3, maxLength: 200, description: Referencia para ubicar el punto de entrega. Omitida en pedidos anteriores a este dato }
         postalCode: { type: string, minLength: 4, maxLength: 10, description: Código postal si el cliente lo indicó }
-        contactPhone: { type: string, description: Teléfono de contacto de la entrega, normalizado. Omitido en pedidos anteriores a este dato }
+        contactPhone: { type: string, description: "Teléfono de contacto de la entrega, normalizado. Omitido en pedidos anteriores a este dato" }
     CreateOrderRequest:
       type: object
       required: [address, deliveryDate, windowStart, windowEnd, addressReference, contactPhone, items]
@@ -1075,7 +1075,7 @@ components:
         windowStart: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$" }
         windowEnd: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$", description: Debe ser posterior a windowStart }
         addressReference: { type: string, minLength: 3, maxLength: 200, description: Referencia para ubicar el punto de entrega (se recorta antes de validar) }
-        postalCode: { type: string, minLength: 4, maxLength: 10, pattern: "^[A-Za-z0-9-]+$", description: Opcional. Letras, dígitos o guion }
+        postalCode: { type: string, minLength: 4, maxLength: 10, pattern: "^[A-Za-z0-9-]+$", description: "Opcional. Letras, dígitos o guion" }
         contactPhone: { type: string, example: "0991234567", description: "Teléfono de contacto de la entrega. Mismas reglas que phone en el registro: 7 a 15 dígitos con + inicial opcional tras quitar espacios, guiones, puntos y paréntesis" }
         items:
           type: array
