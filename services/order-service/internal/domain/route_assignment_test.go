@@ -1,6 +1,9 @@
 package domain
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestAssignToRouteStoresRouteAndAllowsOnlyPending(t *testing.T) {
 	order := Order{Status: StatusPending}
@@ -22,7 +25,7 @@ func TestAssignToRouteRejectsBlankRoute(t *testing.T) {
 		order := Order{Status: StatusPending}
 
 		_, err := order.AssignToRoute(route)
-		if err != ErrInvalidRouteID {
+		if !errors.Is(err, ErrInvalidRouteID) {
 			t.Fatalf("route %q: err = %v, want ErrInvalidRouteID", route, err)
 		}
 	}
@@ -36,7 +39,7 @@ func TestAssignToRouteRejectsEveryOtherStatus(t *testing.T) {
 		order := Order{Status: from}
 
 		updated, err := order.AssignToRoute("zone-1#1")
-		if err != ErrOrderNotPending {
+		if !errors.Is(err, ErrOrderNotPending) {
 			t.Fatalf("from %s: err = %v, want ErrOrderNotPending", from, err)
 		}
 		if updated.Status != from {
