@@ -31,7 +31,7 @@ tags:
   - name: products
     description: Catálogo de productos y stock (ADR 0009)
   - name: drivers
-    description: Rutas del repartidor (ADR 0007). Solo rol DRIVER. Hoy responden 501 hasta que existan el Routing Service y el Tracking Service
+    description: Rutas del repartidor (ADR 0007) y reporte de posición. Solo rol DRIVER. Las rutas de ruta y parada responden 501 hasta que exista el Routing Service
 paths:
   /health:
     get:
@@ -952,6 +952,32 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "501": { $ref: "#/components/responses/NotImplemented" }
+  /api/v1/drivers/me/location:
+    put:
+      tags: [drivers]
+      operationId: reportMyLocation
+      summary: Reporta la posición GPS del repartidor autenticado (solo DRIVER)
+      description: |
+        Guarda la última posición del repartidor en el Tracking Service. Un reporte más antiguo que el
+        guardado se descarta en silencio y también responde 204. La posición no se devuelve a ningún
+        cliente ni se registra en logs. Cualquier repartidor con token válido puede reportar; la
+        verificación de ruta activa llega con el Routing Service.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DriverLocationRequest" }
+      responses:
+        "204": { description: Posición recibida. Sin cuerpo }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503":
+          description: Tracking Service no disponible. Código UPSTREAM_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 security:
   - bearerAuth: []
 components:
@@ -1281,6 +1307,16 @@ components:
               type: array
               items: { $ref: "#/components/schemas/OrderLine" }
             total: { type: string, description: "Suma de los subtotales, con dos decimales" }
+    DriverLocationRequest:
+      type: object
+      required: [latitude, longitude, recordedAt]
+      properties:
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        recordedAt:
+          type: string
+          format: date-time
+          description: Momento del fix en el dispositivo, RFC 3339 en UTC. Más de 30 s en el futuro responde 400
     Error:
       type: object
       required: [error]

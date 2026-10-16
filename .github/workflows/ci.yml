@@ -143,6 +143,8 @@ jobs:
         run: docker build -f services/driver-service/Dockerfile -t lastmile/driver-service:ci .
       - name: Build order-service
         run: docker build -f services/order-service/Dockerfile -t lastmile/order-service:ci .
+      - name: Build tracking-service
+        run: docker build -f services/tracking-service/Dockerfile -t lastmile/tracking-service:ci .
 
   secrets:
     name: Secret scan

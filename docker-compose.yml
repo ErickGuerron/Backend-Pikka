@@ -134,6 +134,22 @@ services:
       postgres:
         condition: service_healthy
 
+  tracking-service:
+    <<: *go-service
+    build:
+      context: .
+      dockerfile: services/tracking-service/Dockerfile
+    environment:
+      <<: *go-env
+      TRACKING_GRPC_PORT: "9093"
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      OSRM_URL: http://osrm:5000
+    # Tráfico interno: sin puertos publicados al host; solo el Gateway lo alcanza.
+    depends_on:
+      redis:
+        condition: service_healthy
+
   api-gateway:
     <<: *go-service
     build:
@@ -145,6 +161,8 @@ services:
       AUTH_SERVICE_ADDR: auth-service:9090
       ZONE_SERVICE_ADDR: zone-service:9090
       ORDER_SERVICE_ADDR: order-service:9091
+      DRIVER_SERVICE_ADDR: driver-service:9092
+      TRACKING_GRPC_ADDR: tracking-service:9093
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8081}
       # En local no hay TLS; en producción el HTTPS termina en el balanceador.
       ENABLE_HSTS: "false"
@@ -156,6 +174,8 @@ services:
       - auth-service
       - zone-service
       - order-service
+      - driver-service
+      - tracking-service
 
   # --- Pruebas de rendimiento y seguridad -----------------------------------
   # Estos servicios NO se levantan con `make up`. Se ejecutan bajo demanda:
