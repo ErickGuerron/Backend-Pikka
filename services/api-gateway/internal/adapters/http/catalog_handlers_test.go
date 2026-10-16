@@ -133,6 +133,19 @@ func TestProductos_ClienteLeeElCatalogo(t *testing.T) {
 	assert.False(t, fake.listReq.GetIncludeInactive())
 }
 
+type noStockCatalog struct{ fakeCatalogClient }
+
+func (noStockCatalog) ListProducts(context.Context, grpcclient.CallMeta, *catalogv1.ListProductsRequest) (*catalogv1.ListProductsResponse, error) {
+	return &catalogv1.ListProductsResponse{Products: []*catalogv1.Product{{Id: "p-2", Name: "Servicio", UnitPrice: "9.00", Active: true}}}, nil
+}
+
+func TestProductos_SinControlDeStockOmiteElCampo(t *testing.T) {
+	rec := do(catalogRouter(&noStockCatalog{}), http.MethodGet, "/api/v1/products", "", authHdr(t, "OPERATOR"))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.NotContains(t, rec.Body.String(), "stockQuantity", "el contrato dice ausente, no null")
+}
+
 func TestProductos_IncludeInactiveMustBeBoolean(t *testing.T) {
 	rec := do(catalogRouter(&fakeCatalogClient{}), http.MethodGet, "/api/v1/products?includeInactive=quizas", "", authHdr(t, "OPERATOR"))
 
