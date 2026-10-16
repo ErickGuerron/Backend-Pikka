@@ -97,3 +97,28 @@ func (fakeTokens) Verify(token string) (ports.Claims, error) {
 	}
 	return ports.Claims{UserID: parts[1], Role: domain.Role(parts[2])}, nil
 }
+
+// UpdateUser simula la transacción del repositorio real: cuenta los ADMIN
+// activos, aplica mutate y guarda con version+1.
+func (r *fakeRepo) UpdateUser(_ context.Context, id string, mutate ports.UserMutation) (domain.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cur, ok := r.users[id]
+	if !ok {
+		return domain.User{}, domain.ErrUserNotFound
+	}
+	admins := 0
+	for _, u := range r.users {
+		if u.Role == domain.RoleAdmin && u.Active {
+			admins++
+		}
+	}
+	next, err := mutate(cur, admins)
+	if err != nil {
+		return domain.User{}, err
+	}
+	next.Version = cur.Version + 1
+	next.UpdatedAt = time.Now().UTC()
+	r.users[id] = next
+	return next, nil
+}

@@ -15,7 +15,14 @@ type UserRepository interface {
 	FindByID(ctx context.Context, id string) (domain.User, error)
 	Count(ctx context.Context) (int, error)
 	List(ctx context.Context) ([]domain.User, error)
+	// UpdateUser carga la fila (bloqueándola), aplica mutate con el número de
+	// ADMIN activos y guarda con version+1, todo en una transacción.
+	UpdateUser(ctx context.Context, id string, mutate UserMutation) (domain.User, error)
 }
+
+// UserMutation recibe el usuario actual y la cuenta de ADMIN activos, y devuelve
+// el usuario resultante o el error de negocio que impide el cambio.
+type UserMutation func(cur domain.User, activeAdmins int) (domain.User, error)
 
 // PasswordHasher calcula y verifica hashes de contraseñas.
 type PasswordHasher interface {

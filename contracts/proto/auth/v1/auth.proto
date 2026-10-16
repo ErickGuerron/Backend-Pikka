@@ -25,6 +25,13 @@ service AuthService {
 
   // ListUsers devuelve todos los usuarios del sistema. Solo ADMIN.
   rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+
+  // UpdateUser edita nombre y/o rol de un usuario. Solo ADMIN. Las reglas de
+  // dominio (último ADMIN activo, rol CUSTOMER inmutable) las aplica auth-service.
+  rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse);
+
+  // DeactivateUser hace borrado lógico (active=false). Solo ADMIN. Es idempotente.
+  rpc DeactivateUser(DeactivateUserRequest) returns (DeactivateUserResponse);
 }
 
 enum Role {
@@ -102,4 +109,23 @@ message ListUsersRequest {}
 
 message ListUsersResponse {
   repeated User users = 1;
+}
+
+message UpdateUserRequest {
+  string id = 1;
+  // Campos opcionales: ausente significa "no cambiar".
+  optional string full_name = 2;
+  optional Role role = 3;
+}
+
+message UpdateUserResponse {
+  User user = 1;
+}
+
+message DeactivateUserRequest {
+  string id = 1;
+}
+
+message DeactivateUserResponse {
+  User user = 1;
 }

@@ -31,6 +31,8 @@ type UseCases struct {
 	ValidateToken  *application.ValidateToken
 	SignupCustomer *application.SignupCustomer
 	ListUsers      *application.ListUsers
+	UpdateUser     *application.UpdateUser
+	DeactivateUser *application.DeactivateUser
 }
 
 // Server implementa authv1.AuthServiceServer. Solo traduce; no contiene reglas de negocio.
@@ -129,6 +131,43 @@ func (s *Server) ListUsers(ctx context.Context, _ *authv1.ListUsersRequest) (*au
 	return &authv1.ListUsersResponse{Users: out}, nil
 }
 
+// UpdateUser edita nombre y/o rol. Los campos ausentes no cambian; un rol
+// desconocido llega como ROLE_UNSPECIFIED y se rechaza como InvalidArgument.
+func (s *Server) UpdateUser(ctx context.Context, req *authv1.UpdateUserRequest) (*authv1.UpdateUserResponse, error) {
+	if s.uc.UpdateUser == nil {
+		return nil, status.Error(codes.Unimplemented, "update user is not wired")
+	}
+	in := domain.UserUpdate{}
+	if req.FullName != nil {
+		name := req.GetFullName()
+		in.FullName = &name
+	}
+	if req.Role != nil {
+		role, ok := fromProtoRole(req.GetRole())
+		if !ok {
+			return nil, status.Error(codes.InvalidArgument, domain.ErrInvalidRole.Error())
+		}
+		in.Role = &role
+	}
+	u, err := s.uc.UpdateUser.Execute(ctx, callerFrom(ctx), req.GetId(), in)
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	return &authv1.UpdateUserResponse{User: toProtoUser(u)}, nil
+}
+
+// DeactivateUser hace borrado lógico del usuario indicado.
+func (s *Server) DeactivateUser(ctx context.Context, req *authv1.DeactivateUserRequest) (*authv1.DeactivateUserResponse, error) {
+	if s.uc.DeactivateUser == nil {
+		return nil, status.Error(codes.Unimplemented, "deactivate user is not wired")
+	}
+	u, err := s.uc.DeactivateUser.Execute(ctx, callerFrom(ctx), req.GetId())
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	return &authv1.DeactivateUserResponse{User: toProtoUser(u)}, nil
+}
+
 func callerFrom(ctx context.Context) ports.Caller {
 	md, _ := metadata.FromIncomingContext(ctx)
 	first := func(k string) string {
@@ -149,8 +188,14 @@ func toStatus(err error) error {
 	case errors.Is(err, domain.ErrInvalidEmail),
 		errors.Is(err, domain.ErrInvalidPassword),
 		errors.Is(err, domain.ErrInvalidFullName),
-		errors.Is(err, domain.ErrInvalidRole):
+		errors.Is(err, domain.ErrInvalidRole),
+		errors.Is(err, domain.ErrNothingToUpdate),
+		errors.Is(err, domain.ErrCustomerRoleNotAssignable):
 		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, domain.ErrCustomerRoleLocked),
+		errors.Is(err, domain.ErrLastActiveAdmin),
+		errors.Is(err, domain.ErrSelfDeactivation):
+		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, domain.ErrInvalidCredentials), errors.Is(err, domain.ErrInvalidToken):
 		return status.Error(codes.Unauthenticated, "invalid credentials")
 	case errors.Is(err, domain.ErrUserInactive):

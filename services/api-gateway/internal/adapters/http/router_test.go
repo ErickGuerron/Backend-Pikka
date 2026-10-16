@@ -27,8 +27,10 @@ import (
 var secret = strings.Repeat("k", 32)
 
 type fakeAuth struct {
-	lastMeta grpcclient.CallMeta
-	err      error
+	lastMeta       grpcclient.CallMeta
+	lastUpdate     *authv1.UpdateUserRequest
+	lastDeactivate *authv1.DeactivateUserRequest
+	err            error
 }
 
 func (f *fakeAuth) Login(_ context.Context, m grpcclient.CallMeta, req *authv1.LoginRequest) (*authv1.LoginResponse, error) {
@@ -87,6 +89,30 @@ func (f *fakeAuth) ListUsers(_ context.Context, m grpcclient.CallMeta, _ *authv1
 			{Id: "u-customer", Email: "cliente@example.com", FullName: "Cliente", Role: authv1.Role_ROLE_CUSTOMER, Active: true, CreatedAt: "2026-01-02T00:00:00Z"},
 		},
 	}, nil
+}
+
+// UpdateUser refleja el reenvío: guarda la petición para que el test compruebe
+// qué campos llegaron. Rol UNSPECIFIED (CUSTOMER o inválido) se rechaza como
+// lo hace auth-service.
+func (f *fakeAuth) UpdateUser(_ context.Context, m grpcclient.CallMeta, req *authv1.UpdateUserRequest) (*authv1.UpdateUserResponse, error) {
+	f.lastMeta = m
+	f.lastUpdate = req
+	if f.err != nil {
+		return nil, f.err
+	}
+	if req.Role != nil && req.GetRole() == authv1.Role_ROLE_UNSPECIFIED {
+		return nil, status.Error(codes.InvalidArgument, "invalid role")
+	}
+	return &authv1.UpdateUserResponse{User: &authv1.User{Id: req.GetId(), FullName: req.GetFullName(), Role: authv1.Role_ROLE_DRIVER, Active: true}}, nil
+}
+
+func (f *fakeAuth) DeactivateUser(_ context.Context, m grpcclient.CallMeta, req *authv1.DeactivateUserRequest) (*authv1.DeactivateUserResponse, error) {
+	f.lastMeta = m
+	f.lastDeactivate = req
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &authv1.DeactivateUserResponse{User: &authv1.User{Id: req.GetId(), Role: authv1.Role_ROLE_DRIVER, Active: false}}, nil
 }
 
 func token(t *testing.T, sub, role string) string {

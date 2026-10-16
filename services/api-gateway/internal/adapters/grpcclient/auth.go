@@ -97,6 +97,20 @@ func (a *Auth) ListUsers(ctx context.Context, m CallMeta, req *authv1.ListUsersR
 	return a.client.ListUsers(ctx, req)
 }
 
+// UpdateUser edita nombre y/o rol. Solo ADMIN; la autorización final la valida auth-service.
+func (a *Auth) UpdateUser(ctx context.Context, m CallMeta, req *authv1.UpdateUserRequest) (*authv1.UpdateUserResponse, error) {
+	ctx, cancel := a.outgoing(ctx, m)
+	defer cancel()
+	return a.client.UpdateUser(ctx, req)
+}
+
+// DeactivateUser hace borrado lógico de un usuario. Solo ADMIN.
+func (a *Auth) DeactivateUser(ctx context.Context, m CallMeta, req *authv1.DeactivateUserRequest) (*authv1.DeactivateUserResponse, error) {
+	ctx, cancel := a.outgoing(ctx, m)
+	defer cancel()
+	return a.client.DeactivateUser(ctx, req)
+}
+
 // Ready verifica con el protocolo estándar de health de gRPC que el servicio atiende.
 func (a *Auth) Ready(ctx context.Context) bool {
 	if a.health == nil {
