@@ -405,3 +405,7 @@ func TestListMyOrdersReturnsOnlyTheCallersOrders(t *testing.T) {
 func (f *fakeOrders) CancelForCustomer(_ context.Context, _ string, _ uuid.UUID, _ func(domain.Order) (domain.Order, error)) (domain.Order, error) {
 	return domain.Order{}, domain.ErrOrderNotFound
 }
+
+func (f *fakeOrders) GetForCustomer(_ context.Context, _ string, _ uuid.UUID) (domain.Order, error) {
+	return domain.Order{}, domain.ErrOrderNotFound
+}

@@ -92,6 +92,24 @@ func (r *OrderRepository) ListByCustomer(ctx context.Context, customerID uuid.UU
 		customerID)
 }
 
+// GetForCustomer lee un pedido filtrando por cliente en la propia consulta (BOLA): un pedido ajeno
+// o inexistente responde domain.ErrOrderNotFound, sin leer la fila de otro cliente.
+func (r *OrderRepository) GetForCustomer(ctx context.Context, orderID string, customerID uuid.UUID) (domain.Order, error) {
+	id, err := uuid.Parse(orderID)
+	if err != nil {
+		return domain.Order{}, domain.ErrOrderNotFound
+	}
+	order, err := scanOrder(r.pool.QueryRow(ctx,
+		`SELECT `+orderColumns+` FROM orders WHERE id = $1 AND customer_id = $2`, id, customerID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Order{}, domain.ErrOrderNotFound
+	}
+	if err != nil {
+		return domain.Order{}, fmt.Errorf("get order: %w", err)
+	}
+	return order, nil
+}
+
 // listAllLimit acota ListAll: la pantalla del personal pagina en el cliente.
 const listAllLimit = 500
 

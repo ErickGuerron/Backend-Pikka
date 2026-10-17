@@ -28,6 +28,7 @@ const (
 	OrderService_ListMyOrders_FullMethodName        = "/orders.v1.OrderService/ListMyOrders"
 	OrderService_ListMyNotifications_FullMethodName = "/orders.v1.OrderService/ListMyNotifications"
 	OrderService_CancelOrder_FullMethodName         = "/orders.v1.OrderService/CancelOrder"
+	OrderService_GetMyOrder_FullMethodName          = "/orders.v1.OrderService/GetMyOrder"
 	OrderService_AssignOrdersToRoute_FullMethodName = "/orders.v1.OrderService/AssignOrdersToRoute"
 )
 
@@ -62,6 +63,9 @@ type OrderServiceClient interface {
 	// CancelOrder cancels an order of the authenticated CUSTOMER. Only PENDING or ROUTE_ASSIGNED can be
 	// cancelled; another state returns ABORTED (HTTP 409). An order of another customer returns NOT_FOUND.
 	CancelOrder(ctx context.Context, in *CancelOrderRequest, opts ...grpc.CallOption) (*CancelOrderResponse, error)
+	// GetMyOrder returns one order of the authenticated CUSTOMER. An order of another customer
+	// or an unknown ID returns NOT_FOUND (never PERMISSION_DENIED). Only the CUSTOMER role can call it.
+	GetMyOrder(ctx context.Context, in *GetMyOrderRequest, opts ...grpc.CallOption) (*GetMyOrderResponse, error)
 	// AssignOrdersToRoute moves every listed order from PENDING to ROUTE_ASSIGNED
 	// in one transaction. Internal, called by Routing. Blank route_id or empty
 	// order_ids returns INVALID_ARGUMENT; an unknown ID returns NOT_FOUND; any
@@ -167,6 +171,16 @@ func (c *orderServiceClient) CancelOrder(ctx context.Context, in *CancelOrderReq
 	return out, nil
 }
 
+func (c *orderServiceClient) GetMyOrder(ctx context.Context, in *GetMyOrderRequest, opts ...grpc.CallOption) (*GetMyOrderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetMyOrderResponse)
+	err := c.cc.Invoke(ctx, OrderService_GetMyOrder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *orderServiceClient) AssignOrdersToRoute(ctx context.Context, in *AssignOrdersToRouteRequest, opts ...grpc.CallOption) (*AssignOrdersToRouteResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AssignOrdersToRouteResponse)
@@ -208,6 +222,9 @@ type OrderServiceServer interface {
 	// CancelOrder cancels an order of the authenticated CUSTOMER. Only PENDING or ROUTE_ASSIGNED can be
 	// cancelled; another state returns ABORTED (HTTP 409). An order of another customer returns NOT_FOUND.
 	CancelOrder(context.Context, *CancelOrderRequest) (*CancelOrderResponse, error)
+	// GetMyOrder returns one order of the authenticated CUSTOMER. An order of another customer
+	// or an unknown ID returns NOT_FOUND (never PERMISSION_DENIED). Only the CUSTOMER role can call it.
+	GetMyOrder(context.Context, *GetMyOrderRequest) (*GetMyOrderResponse, error)
 	// AssignOrdersToRoute moves every listed order from PENDING to ROUTE_ASSIGNED
 	// in one transaction. Internal, called by Routing. Blank route_id or empty
 	// order_ids returns INVALID_ARGUMENT; an unknown ID returns NOT_FOUND; any
@@ -249,6 +266,9 @@ func (UnimplementedOrderServiceServer) ListMyNotifications(context.Context, *Lis
 }
 func (UnimplementedOrderServiceServer) CancelOrder(context.Context, *CancelOrderRequest) (*CancelOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CancelOrder not implemented")
+}
+func (UnimplementedOrderServiceServer) GetMyOrder(context.Context, *GetMyOrderRequest) (*GetMyOrderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMyOrder not implemented")
 }
 func (UnimplementedOrderServiceServer) AssignOrdersToRoute(context.Context, *AssignOrdersToRouteRequest) (*AssignOrdersToRouteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AssignOrdersToRoute not implemented")
@@ -436,6 +456,24 @@ func _OrderService_CancelOrder_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _OrderService_GetMyOrder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMyOrderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).GetMyOrder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_GetMyOrder_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).GetMyOrder(ctx, req.(*GetMyOrderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _OrderService_AssignOrdersToRoute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(AssignOrdersToRouteRequest)
 	if err := dec(in); err != nil {
@@ -496,6 +534,10 @@ var OrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CancelOrder",
 			Handler:    _OrderService_CancelOrder_Handler,
+		},
+		{
+			MethodName: "GetMyOrder",
+			Handler:    _OrderService_GetMyOrder_Handler,
 		},
 		{
 			MethodName: "AssignOrdersToRoute",
