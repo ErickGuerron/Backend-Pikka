@@ -87,6 +87,20 @@ func (f *fakeOrders) ListByCustomer(_ context.Context, customerID uuid.UUID) ([]
 	return out, nil
 }
 
+func (f *fakeOrders) ListAll(_ context.Context, filter ports.OrderFilter) ([]domain.Order, error) {
+	var out []domain.Order
+	for _, o := range f.saved {
+		if filter.Status != "" && o.Status != filter.Status {
+			continue
+		}
+		if filter.DeliveryDate != "" && o.DeliveryDate.String() != filter.DeliveryDate {
+			continue
+		}
+		out = append(out, o)
+	}
+	return out, nil
+}
+
 func (f *fakeOrders) ListExceptions(_ context.Context) ([]domain.Order, error) {
 	var out []domain.Order
 	for _, o := range f.saved {
