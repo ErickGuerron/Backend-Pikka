@@ -32,6 +32,8 @@ type DriverRepository interface {
 	Save(ctx context.Context, d *domain.Driver, expectedVersion int) error
 	// FindAvailable devuelve hasta limit repartidores activos y AVAILABLE, en orden de ID.
 	FindAvailable(ctx context.Context, limit int) ([]*domain.Driver, error)
+	// List devuelve hasta limit repartidores, activos o no, ordenados por apellido, nombre e ID.
+	List(ctx context.Context, limit int) ([]*domain.Driver, error)
 }
 
 // ErrDeliveryAlreadyRecorded indica que la parada ya tiene un registro de entrega en esa ruta.

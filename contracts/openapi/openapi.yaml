@@ -365,6 +365,8 @@ paths:
         La fecha de entrega debe ser hoy o posterior en la zona horaria de operación.
         La ventana no cruza medianoche: windowEnd debe ser posterior a windowStart.
         Si Zone Service no responde, no se registra el pedido y se devuelve 503.
+        ADMIN, OPERATOR y DRIVER reciben 403 antes de que se valide el cuerpo: el personal revisa
+        los pedidos de los clientes pero no los registra.
       requestBody:
         required: true
         content:
@@ -1000,13 +1002,40 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
   /api/v1/drivers:
+    get:
+      tags: [drivers]
+      operationId: listDrivers
+      summary: Lista la flota de repartidores (ADMIN y OPERATOR)
+      description: |
+        Devuelve todos los repartidores, activos e inactivos y en cualquier estado, ordenados por
+        apellido y nombre, hasta un m├íximo de 500. No incluye fecha de nacimiento ni documento de
+        identidad. Sin repartidores devuelve un arreglo vac├¡o.
+      responses:
+        "200":
+          description: Flota de repartidores
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DriverListItem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503":
+          description: Driver Service no disponible. C├│digo UPSTREAM_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
     post:
       tags: [drivers]
       operationId: createDriver
-      summary: Create the driver profile of a user with the DRIVER role (ADMIN only)
+      summary: Da de alta un repartidor (solo ADMIN)
       description: |
-        Creates the profile active and AVAILABLE. The user must exist and have the DRIVER role; otherwise the
-        response is 422 (FAILED_PRECONDITION). A user who already has a driver profile gets 409 (CONFLICT).
+        Crea el usuario con rol DRIVER en Auth Service y su perfil en Driver Service. Son dos
+        servicios con base de datos propia, sin transacci├│n com├║n: si el perfil falla (datos
+        inv├ílidos, identificador o placa repetidos), el Gateway desactiva el usuario reci├⌐n creado
+        y responde con el error del perfil. Auth Service no borra usuarios, as├¡ que el correo de un
+        alta fallida queda reservado y hay que usar otro. Las formas inv├ílidas de `birthDate` y
+        `vehicleType` se rechazan con 400 antes de crear nada. El repartidor nace activo y AVAILABLE.
       requestBody:
         required: true
         content:
@@ -1014,27 +1043,20 @@ paths:
             schema: { $ref: "#/components/schemas/CreateDriverRequest" }
       responses:
         "201":
-          description: Driver created
+          description: Repartidor creado
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Driver" }
+              schema: { $ref: "#/components/schemas/CreateDriverResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { $ref: "#/components/responses/Conflict" }
-        "415":
-          description: Content-Type is not application/json. Code UNSUPPORTED_MEDIA_TYPE
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Error" }
-        "422":
-          description: The user does not have the DRIVER role. Code FAILED_PRECONDITION
+        "409":
+          description: Correo, identificador o placa ya registrados. C├│digo CONFLICT
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "503":
-          description: Auth Service or Driver Service unavailable. Code UPSTREAM_UNAVAILABLE
+          description: Auth Service o Driver Service no disponible. C├│digo UPSTREAM_UNAVAILABLE
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -1532,22 +1554,59 @@ components:
         routes: { type: array, items: { $ref: "#/components/schemas/PlannedRoute" } }
     CreateDriverRequest:
       type: object
-      required: [userId, fullName, phone]
+      required: [email, password, firstName, lastName, birthDate, phone, vehicleType, identifier, plate, city]
       properties:
-        userId: { type: string, format: uuid, description: User of Auth Service with the DRIVER role }
-        fullName: { type: string, minLength: 1, maxLength: 120 }
-        phone: { type: string, example: "+593991234567", description: "7 to 15 digits with an optional leading +. Spaces and hyphens are removed" }
-    Driver:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8, maxLength: 72 }
+        firstName: { type: string, maxLength: 50 }
+        lastName: { type: string, maxLength: 50 }
+        birthDate: { type: string, format: date, description: "YYYY-MM-DD. M├¡nimo 18 a├▒os cumplidos" }
+        phone: { type: string, description: "N├║mero de contacto, 7 a 15 d├¡gitos y un + opcional al inicio" }
+        vehicleType: { $ref: "#/components/schemas/VehicleType" }
+        identifier: { type: string, description: "Documento de identidad, 5 a 20 letras o d├¡gitos, ├║nico" }
+        plate: { type: string, description: "Placa del veh├¡culo, 5 a 8 letras o d├¡gitos (se aceptan guiones), ├║nica" }
+        city: { type: string, maxLength: 80 }
+    VehicleType:
+      type: string
+      enum: [MOTORIZADO, AUTOMOVIL, SUV]
+    DriverProfile:
       type: object
-      required: [id, userId, fullName, phone, active, status, createdAt]
+      required: [id, userId, firstName, lastName, birthDate, phone, vehicleType, identifier, plate, city, active, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        firstName: { type: string }
+        lastName: { type: string }
+        birthDate: { type: string, format: date }
+        phone: { type: string }
+        vehicleType: { $ref: "#/components/schemas/VehicleType" }
+        identifier: { type: string }
+        plate: { type: string }
+        city: { type: string }
+        active: { type: boolean }
+        status: { type: string, enum: [AVAILABLE, ASSIGNED, ON_ROUTE, OFFLINE] }
+        createdAt: { type: string, format: date-time }
+    DriverListItem:
+      type: object
+      required: [id, userId, fullName, firstName, lastName, phone, city, vehicleType, plate, active, status]
       properties:
         id: { type: string, format: uuid }
         userId: { type: string, format: uuid }
         fullName: { type: string }
+        firstName: { type: string }
+        lastName: { type: string }
         phone: { type: string }
+        city: { type: string }
+        vehicleType: { $ref: "#/components/schemas/VehicleType" }
+        plate: { type: string }
         active: { type: boolean }
         status: { type: string, enum: [AVAILABLE, ASSIGNED, ON_ROUTE, OFFLINE] }
-        createdAt: { type: string, format: date-time }
+    CreateDriverResponse:
+      type: object
+      required: [user, driver]
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        driver: { $ref: "#/components/schemas/DriverProfile" }
     TrackingSnapshot:
       type: object
       description: Customer view of one order. Field names are snake_case, as the Gateway emits them. Never includes driver identity, route, other orders or coordinates.

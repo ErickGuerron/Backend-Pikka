@@ -36,7 +36,7 @@ func (f *fakeCustomers) GetByID(_ context.Context, id uuid.UUID) (domain.Custome
 	return c, nil
 }
 
-// fakeZones cuenta las llamadas para verificar cuándo no se consulta la zona.
+// fakeZones cuenta las llamadas para verificar cuÃ¡ndo no se consulta la zona.
 type fakeZones struct {
 	zoneID string
 	err    error
@@ -93,6 +93,20 @@ func (f *fakeOrders) AdvanceRouteStop(_ context.Context, _, _ string, _ func(dom
 	return domain.Order{}, domain.ErrOrderNotFound
 }
 
+func (f *fakeOrders) ListAll(_ context.Context, filter ports.OrderFilter) ([]domain.Order, error) {
+	var out []domain.Order
+	for _, o := range f.saved {
+		if filter.Status != "" && o.Status != filter.Status {
+			continue
+		}
+		if filter.DeliveryDate != "" && o.DeliveryDate.String() != filter.DeliveryDate {
+			continue
+		}
+		out = append(out, o)
+	}
+	return out, nil
+}
+
 func (f *fakeOrders) ListExceptions(_ context.Context) ([]domain.Order, error) {
 	var out []domain.Order
 	for _, o := range f.saved {
@@ -107,7 +121,7 @@ func (f *fakeOrders) Review(_ context.Context, _ string, _ func(domain.Order) (d
 	return domain.Order{}, errors.New("not used by create tests")
 }
 
-// fakeCatalog devuelve los productos de muestra por id, como el catálogo de la base.
+// fakeCatalog devuelve los productos de muestra por id, como el catÃ¡logo de la base.
 type fakeCatalog struct {
 	ports.CatalogRepository
 	products map[uuid.UUID]domain.Product
@@ -121,7 +135,7 @@ func (f *fakeCatalog) GetProduct(_ context.Context, id uuid.UUID) (domain.Produc
 	return p, nil
 }
 
-// fakePlacer guarda el pedido como la base: en la tabla de fakeOrders, y registra sus líneas.
+// fakePlacer guarda el pedido como la base: en la tabla de fakeOrders, y registra sus lÃ­neas.
 type fakePlacer struct {
 	orders *fakeOrders
 	lines  [][]domain.OrderLine
@@ -140,7 +154,7 @@ var (
 	appleID      = uuid.New()
 )
 
-// appleProduct es un producto activo del catálogo de muestra, a 0.50 USD.
+// appleProduct es un producto activo del catÃ¡logo de muestra, a 0.50 USD.
 func appleProduct() domain.Product {
 	return domain.Product{ID: appleID, Name: "Manzana", UnitPrice: decimal.RequireFromString("0.50"), Active: true}
 }
@@ -209,7 +223,7 @@ func TestCreateOrderCoveredActiveCustomerIsPlannable(t *testing.T) {
 		t.Fatal("el punto del mapa no debe geocodificarse de nuevo")
 	}
 	if len(f.orders.notices) != 0 {
-		t.Fatal("un pedido sin revisión no genera aviso")
+		t.Fatal("un pedido sin revisiÃ³n no genera aviso")
 	}
 }
 

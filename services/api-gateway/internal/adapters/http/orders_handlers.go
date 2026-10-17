@@ -18,6 +18,7 @@ type OrderClient interface {
 	CreateOrder(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.CreateOrderRequest) (*ordersv1.CreateOrderResponse, error)
 	ListMyOrders(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ListMyOrdersRequest) (*ordersv1.ListMyOrdersResponse, error)
 	ListMyNotifications(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ListMyNotificationsRequest) (*ordersv1.ListMyNotificationsResponse, error)
+	ListOrders(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ListOrdersRequest) (*ordersv1.ListOrdersResponse, error)
 	ListOrderExceptions(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ListOrderExceptionsRequest) (*ordersv1.ListOrderExceptionsResponse, error)
 	ReviewOrder(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ReviewOrderRequest) (*ordersv1.ReviewOrderResponse, error)
 	CancelOrder(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.CancelOrderRequest) (*ordersv1.CancelOrderResponse, error)
@@ -168,6 +169,36 @@ func (h *ordersHandlers) listMine(c echo.Context) error {
 		return err
 	}
 	return c.JSON(http.StatusOK, listOrdersResponse{Orders: toOrderDTOs(res.GetOrders())})
+}
+
+// list devuelve los pedidos de todos los clientes (ADMIN y OPERATOR), con filtros opcionales
+// deliveryDate (YYYY-MM-DD) y status. El Order Service valida la fecha y el permiso. Responde un
+// arreglo plano, como declara el OpenAPI y espera la web (a diferencia de /orders/exceptions).
+func (h *ordersHandlers) list(c echo.Context) error {
+	filter, ok := orderStatusFilter(c.QueryParam("status"))
+	if !ok {
+		return echo.NewHTTPError(http.StatusBadRequest, "status is not a valid order status")
+	}
+	res, err := h.orders.ListOrders(c.Request().Context(), callMeta(c), &ordersv1.ListOrdersRequest{
+		DeliveryDate: strings.TrimSpace(c.QueryParam("deliveryDate")),
+		Status:       filter,
+	})
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, toOrderDTOs(res.GetOrders()))
+}
+
+// orderStatusFilter traduce el parámetro status. Vacío no filtra; un valor desconocido no es válido.
+func orderStatusFilter(raw string) (ordersv1.OrderStatus, bool) {
+	raw = strings.ToUpper(strings.TrimSpace(raw))
+	if raw == "" {
+		return ordersv1.OrderStatus_ORDER_STATUS_UNSPECIFIED, true
+	}
+	if v, ok := ordersv1.OrderStatus_value["ORDER_STATUS_"+raw]; ok && v != 0 {
+		return ordersv1.OrderStatus(v), true
+	}
+	return ordersv1.OrderStatus_ORDER_STATUS_UNSPECIFIED, false
 }
 
 func (h *ordersHandlers) listExceptions(c echo.Context) error {

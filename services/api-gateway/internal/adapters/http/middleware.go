@@ -75,23 +75,6 @@ func DriverOnly() echo.MiddlewareFunc {
 	}
 }
 
-// CustomerOnly exige rol CUSTOMER. Igual que DriverOnly, corta con 403 antes del handler. Un pedido
-// ajeno o inexistente no llega aquí: el servicio responde 404 (ADR 0007, ADR 0008 §3).
-func CustomerOnly() echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			id, ok := identityFrom(c)
-			if !ok {
-				return echo.NewHTTPError(http.StatusUnauthorized, "missing identity")
-			}
-			if !strings.EqualFold(id.Role, "CUSTOMER") {
-				return echo.NewHTTPError(http.StatusForbidden, "customer role required")
-			}
-			return next(c)
-		}
-	}
-}
-
 // StaffOnly deja pasar a ADMIN y OPERATOR (ADR 0008). Igual que AdminOnly, corta con 403 antes
 // del handler; las reglas finas del catálogo las aplica el servicio interno.
 func StaffOnly() echo.MiddlewareFunc {
@@ -103,6 +86,24 @@ func StaffOnly() echo.MiddlewareFunc {
 			}
 			if !strings.EqualFold(id.Role, "ADMIN") && !strings.EqualFold(id.Role, "OPERATOR") {
 				return echo.NewHTTPError(http.StatusForbidden, "staff role required")
+			}
+			return next(c)
+		}
+	}
+}
+
+// CustomerOnly exige rol CUSTOMER. Solo el cliente registra pedidos (ADR 0007): el personal los
+// revisa pero no los crea. Corta con 403 antes de validar el cuerpo y de llamar al servicio interno,
+// que repite la regla por su cuenta.
+func CustomerOnly() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			id, ok := identityFrom(c)
+			if !ok {
+				return echo.NewHTTPError(http.StatusUnauthorized, "missing identity")
+			}
+			if !strings.EqualFold(id.Role, "CUSTOMER") {
+				return echo.NewHTTPError(http.StatusForbidden, "customer role required")
 			}
 			return next(c)
 		}

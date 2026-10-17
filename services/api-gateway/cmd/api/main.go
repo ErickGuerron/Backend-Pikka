@@ -101,7 +101,6 @@ func run(log *slog.Logger) error {
 		Tracking:             tracking,
 		TrackingPollInterval: cfg.TrackingPollInterval,
 		Routing:              routing,
-		DriverCreator:        drivers,
 	}, jwt.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer), auth, zones, func(ctx context.Context) bool {
 		// El gateway solo está listo si puede llegar a sus dependencias gRPC.
 		return auth.Ready(ctx) && zones.Ready(ctx)

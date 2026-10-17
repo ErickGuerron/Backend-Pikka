@@ -3,6 +3,7 @@ package driver
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"strings"
@@ -33,6 +34,30 @@ type Service struct {
 // NewService crea el servicio. now se inyecta para que las pruebas controlen el reloj.
 func NewService(repo ports.DriverRepository, now func() time.Time) *Service {
 	return &Service{repo: repo, now: now}
+}
+
+// Create registra un repartidor nuevo con su perfil. Los datos duplicados (usuario,
+// identificador o placa) los rechaza el repositorio con ports.ErrDriverExists.
+func (s *Service) Create(ctx context.Context, in domain.NewDriverInput) (*domain.Driver, error) {
+	d, err := domain.NewDriver(newID(), in, s.now())
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.Create(ctx, d); err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
+// newID genera un UUID v4.
+func newID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		panic(err) // sin entropía del sistema no se puede continuar
+	}
+	b[6] = b[6]&0x0f | 0x40
+	b[8] = b[8]&0x3f | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
 // SetActive activa o desactiva al repartidor. Es idempotente.
@@ -69,24 +94,6 @@ func (s *Service) ReserveDriver(ctx context.Context, id, routeID string) (*domai
 	})
 }
 
-// CreateDriver registers a new driver that is active and AVAILABLE for in.UserID. The id is
-// generated here, so callers cannot choose it. A user that already has a driver profile is
-// rejected with ports.ErrDriverExists.
-func (s *Service) CreateDriver(ctx context.Context, in domain.NewDriverInput) (*domain.Driver, error) {
-	id, err := newID()
-	if err != nil {
-		return nil, fmt.Errorf("generate driver id: %w", err)
-	}
-	d, err := domain.NewDriver(id, in, s.now())
-	if err != nil {
-		return nil, err
-	}
-	if err := s.repo.Create(ctx, d); err != nil {
-		return nil, err
-	}
-	return d, nil
-}
-
 // ReleaseDriver frees the reservation of driver id for routeID. It is idempotent; see
 // domain.Driver.ReleaseRoute.
 func (s *Service) ReleaseDriver(ctx context.Context, id, routeID string) (*domain.Driver, error) {
@@ -108,6 +115,14 @@ func (s *Service) FindByRouteID(ctx context.Context, routeID string) (*domain.Dr
 		return nil, domain.ErrInvalidRouteID
 	}
 	return s.repo.FindByRouteID(ctx, routeID)
+}
+
+// ListLimit es el máximo de repartidores que devuelve List.
+const ListLimit = 500
+
+// List devuelve la flota completa (activos e inactivos) para el personal, hasta ListLimit.
+func (s *Service) List(ctx context.Context) ([]*domain.Driver, error) {
+	return s.repo.List(ctx, ListLimit)
 }
 
 // FindAvailableDrivers devuelve repartidores activos y disponibles. limit 0 usa el valor

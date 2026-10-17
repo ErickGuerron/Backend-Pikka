@@ -41,8 +41,6 @@ type Options struct {
 	Tracking TrackingClient
 	// Routing, if not nil, enables POST /routes/plan (ADMIN and OPERATOR).
 	Routing RoutingClient
-	// DriverCreator, if not nil, enables POST /drivers (ADMIN). The DRIVER role is checked through Auth.
-	DriverCreator DriverCreator
 	// TrackingPollInterval es cada cuánto el WebSocket de seguimiento consulta el snapshot. Cero usa 5 s.
 	TrackingPollInterval time.Duration
 	// TrackingTicker crea el reloj de sondeo de cada socket. Nil usa time.NewTicker; los tests lo inyectan.
@@ -144,12 +142,6 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 		adminOnly.PATCH("/customers/:id/status", ch.setStatus)
 	}
 
-	// Driver creation: ADMIN only. The handler checks the DRIVER role of the user through Auth.
-	if opts.DriverCreator != nil {
-		da := &driverAdminHandlers{auth: auth, drivers: opts.DriverCreator}
-		adminOnly.POST("/drivers", da.create)
-	}
-
 	// Route plan generation: ADMIN and OPERATOR (ADR 0008). The Routing Service validates role and date.
 	if opts.Routing != nil {
 		rp := &routePlanHandlers{routing: opts.Routing}
@@ -160,7 +152,8 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 	// Pedidos del cliente (ADR 0007). La autorización por rol la aplica Order Service.
 	if opts.Orders != nil {
 		o := &ordersHandlers{orders: opts.Orders}
-		authed.POST("/orders", o.create)
+		authed.POST("/orders", o.create, CustomerOnly())
+		authed.GET("/orders", o.list, StaffOnly())
 		authed.GET("/orders/mine", o.listMine)
 		authed.GET("/orders/exceptions", o.listExceptions)
 		authed.POST("/orders/:id/review", o.review)
@@ -185,6 +178,9 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 
 	// Rutas del repartidor (ADR 0007). Solo rol DRIVER; el backend de ruta y parada aún no existe.
 	if opts.Drivers != nil {
+		driverAdmin := &driverAdminHandlers{auth: auth, drivers: opts.Drivers, log: log}
+		adminOnly.POST("/drivers", driverAdmin.create)
+		authed.GET("/drivers", driverAdmin.list, StaffOnly())
 		driverOnly := authed.Group("", DriverOnly())
 		driverOnly.GET("/drivers/me/route", driverRouteNotImplemented)
 		if opts.Orders != nil {
@@ -232,6 +228,13 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 	authed.GET("/zones/:id", z.get)
 	// Cobertura: cualquier rol autenticado ve las zonas activas (ADR 0008). /zones sigue siendo de staff.
 	authed.GET("/coverage/zones", z.coverage)
+
+	// Cada Group con middleware registra su propio "ruta no encontrada" envuelto en ese middleware y
+	// la última registrada gana: el grupo del repartidor atrapaba toda ruta inexistente y respondía
+	// 403 "driver role required" a un ADMIN. Este registro final devuelve 404 para cualquiera.
+	notFound := func(echo.Context) error { return echo.ErrNotFound }
+	api.RouteNotFound("", notFound)
+	api.RouteNotFound("/*", notFound)
 
 	return e
 }

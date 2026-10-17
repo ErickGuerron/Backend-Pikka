@@ -22,8 +22,22 @@ type fakeOrderClient struct {
 	createRes *ordersv1.CreateOrderResponse
 	reviewReq *ordersv1.ReviewOrderRequest
 	cancelReq *ordersv1.CancelOrderRequest
+	listReq   *ordersv1.ListOrdersRequest
+	listCalls int
 	meta      grpcclient.CallMeta
 	err       error
+}
+
+func (f *fakeOrderClient) ListOrders(_ context.Context, m grpcclient.CallMeta, req *ordersv1.ListOrdersRequest) (*ordersv1.ListOrdersResponse, error) {
+	f.listReq, f.meta = req, m
+	f.listCalls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &ordersv1.ListOrdersResponse{Orders: []*ordersv1.Order{
+		{Id: "o-1", Status: ordersv1.OrderStatus_ORDER_STATUS_PENDING, DeliveryDate: "2026-10-20", AddressReference: "Casa azul", ContactPhone: "0991234567"},
+		{Id: "o-2", Status: ordersv1.OrderStatus_ORDER_STATUS_PENDING_REVIEW, DeliveryDate: "2026-10-21", AddressReference: "Edificio", ContactPhone: "0997654321"},
+	}}, nil
 }
 
 func (f *fakeOrderClient) CreateOrder(_ context.Context, m grpcclient.CallMeta, req *ordersv1.CreateOrderRequest) (*ordersv1.CreateOrderResponse, error) {
