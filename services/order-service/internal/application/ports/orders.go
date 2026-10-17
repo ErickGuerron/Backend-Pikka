@@ -8,6 +8,13 @@ import (
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/domain"
 )
 
+// OrderFilter acota ListAll. Un campo vacío no filtra.
+type OrderFilter struct {
+	// DeliveryDate es YYYY-MM-DD y filtra por fecha de entrega, no por creación.
+	DeliveryDate string
+	Status       domain.Status
+}
+
 // OrderRepository es el contrato de persistencia de Order.
 // La implementación vive en internal/adapters/persistence.
 type OrderRepository interface {
@@ -17,6 +24,10 @@ type OrderRepository interface {
 
 	// ListByCustomer devuelve los pedidos del cliente, del más reciente al más antiguo.
 	ListByCustomer(ctx context.Context, customerID uuid.UUID) ([]domain.Order, error)
+
+	// ListAll devuelve los pedidos que cumplen el filtro, del más reciente al más antiguo y con
+	// desempate por id, hasta un máximo que fija la implementación.
+	ListAll(ctx context.Context, filter OrderFilter) ([]domain.Order, error)
 
 	// ListExceptions devuelve la cola de excepciones: pedidos en PENDING_REVIEW, del más antiguo al más reciente.
 	ListExceptions(ctx context.Context) ([]domain.Order, error)

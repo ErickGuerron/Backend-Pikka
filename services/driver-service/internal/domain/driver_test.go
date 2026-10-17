@@ -20,7 +20,10 @@ var (
 )
 
 func validInput() domain.NewDriverInput {
-	return domain.NewDriverInput{UserID: "user-1", FullName: " Carlos Pérez ", Phone: "+593 99-123 4567"}
+	return domain.NewDriverInput{
+		UserID: "user-1", FirstName: " Carlos ", LastName: "Pérez ", BirthDate: time.Date(1999, 3, 15, 13, 0, 0, 0, time.UTC),
+		Phone: "+593 99-123 4567", VehicleType: " suv ", Identifier: "17-1234 5678", Plate: "pba-1234", City: " Quito ",
+	}
 }
 
 func newDriver(t *testing.T, status domain.Status) *domain.Driver {
@@ -35,19 +38,37 @@ func newDriver(t *testing.T, status domain.Status) *domain.Driver {
 }
 
 func TestNewDriverInputValidate(t *testing.T) {
-	got, err := validInput().Validate()
+	got, err := validInput().Validate(t0)
 	require.NoError(t, err)
 	assert.Equal(t, "Carlos Pérez", got.FullName)
 	assert.Equal(t, "+593991234567", got.Phone)
 	assert.Equal(t, "user-1", got.UserID)
+	assert.Equal(t, "Carlos", got.FirstName)
+	assert.Equal(t, "Pérez", got.LastName)
+	assert.Equal(t, time.Date(1999, 3, 15, 0, 0, 0, 0, time.UTC), got.BirthDate)
+	assert.Equal(t, domain.VehicleSUV, got.VehicleType)
+	assert.Equal(t, "1712345678", got.Identifier)
+	assert.Equal(t, "PBA1234", got.Plate)
+	assert.Equal(t, "Quito", got.City)
 
 	tests := []struct {
 		name   string
 		mutate func(*domain.NewDriverInput)
 		want   error
 	}{
-		{name: "nombre vacío", mutate: func(in *domain.NewDriverInput) { in.FullName = "   " }, want: domain.ErrInvalidFullName},
-		{name: "nombre demasiado largo", mutate: func(in *domain.NewDriverInput) { in.FullName = strings.Repeat("á", domain.MaxFullNameRunes+1) }, want: domain.ErrInvalidFullName},
+		{name: "nombre vacío", mutate: func(in *domain.NewDriverInput) { in.FirstName = "   " }, want: domain.ErrInvalidFirstName},
+		{name: "nombre demasiado largo", mutate: func(in *domain.NewDriverInput) { in.FirstName = strings.Repeat("á", domain.MaxNameRunes+1) }, want: domain.ErrInvalidFirstName},
+		{name: "apellido vacío", mutate: func(in *domain.NewDriverInput) { in.LastName = "" }, want: domain.ErrInvalidLastName},
+		{name: "sin fecha de nacimiento", mutate: func(in *domain.NewDriverInput) { in.BirthDate = time.Time{} }, want: domain.ErrInvalidBirthDate},
+		{name: "fecha de nacimiento futura", mutate: func(in *domain.NewDriverInput) { in.BirthDate = t0.AddDate(1, 0, 0) }, want: domain.ErrInvalidBirthDate},
+		{name: "menor de 18 años por un día", mutate: func(in *domain.NewDriverInput) { in.BirthDate = t0.AddDate(-domain.MinDriverAge, 0, 1) }, want: domain.ErrInvalidBirthDate},
+		{name: "vehículo desconocido", mutate: func(in *domain.NewDriverInput) { in.VehicleType = "BICICLETA" }, want: domain.ErrInvalidVehicleType},
+		{name: "vehículo vacío", mutate: func(in *domain.NewDriverInput) { in.VehicleType = "" }, want: domain.ErrInvalidVehicleType},
+		{name: "identificador corto", mutate: func(in *domain.NewDriverInput) { in.Identifier = "1234" }, want: domain.ErrInvalidIdentifier},
+		{name: "identificador con símbolos", mutate: func(in *domain.NewDriverInput) { in.Identifier = "17123456*8" }, want: domain.ErrInvalidIdentifier},
+		{name: "placa corta", mutate: func(in *domain.NewDriverInput) { in.Plate = "AB12" }, want: domain.ErrInvalidPlate},
+		{name: "placa demasiado larga", mutate: func(in *domain.NewDriverInput) { in.Plate = "ABCD12345" }, want: domain.ErrInvalidPlate},
+		{name: "ciudad vacía", mutate: func(in *domain.NewDriverInput) { in.City = " " }, want: domain.ErrInvalidCity},
 		{name: "teléfono vacío", mutate: func(in *domain.NewDriverInput) { in.Phone = "" }, want: domain.ErrInvalidPhone},
 		{name: "teléfono con letras", mutate: func(in *domain.NewDriverInput) { in.Phone = "099abc4567" }, want: domain.ErrInvalidPhone},
 		{name: "teléfono demasiado corto", mutate: func(in *domain.NewDriverInput) { in.Phone = "123456" }, want: domain.ErrInvalidPhone},
@@ -59,16 +80,36 @@ func TestNewDriverInputValidate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			in := validInput()
 			tt.mutate(&in)
-			_, err := in.Validate()
+			_, err := in.Validate(t0)
 			assert.ErrorIs(t, err, tt.want)
 		})
+	}
+}
+
+func TestNewDriverInputValidateAceptaExactamente18Anios(t *testing.T) {
+	in := validInput()
+	in.BirthDate = t0.AddDate(-domain.MinDriverAge, 0, 0)
+	_, err := in.Validate(t0)
+	require.NoError(t, err)
+}
+
+func TestParseVehicleType(t *testing.T) {
+	for _, tt := range []struct {
+		raw  string
+		want domain.VehicleType
+	}{
+		{"motorizado", domain.VehicleMotorbike}, {" AUTOMOVIL ", domain.VehicleCar}, {"Suv", domain.VehicleSUV},
+	} {
+		got, err := domain.ParseVehicleType(tt.raw)
+		require.NoError(t, err)
+		assert.Equal(t, tt.want, got)
 	}
 }
 
 func TestNewDriverInputValidateAceptaTelefonoSinPrefijo(t *testing.T) {
 	in := validInput()
 	in.Phone = "0991234567"
-	got, err := in.Validate()
+	got, err := in.Validate(t0)
 	require.NoError(t, err)
 	assert.Equal(t, "0991234567", got.Phone)
 }
@@ -86,9 +127,9 @@ func TestNewDriver(t *testing.T) {
 	assert.Equal(t, t0, d.UpdatedAt)
 
 	in := validInput()
-	in.FullName = ""
+	in.FirstName = ""
 	_, err = domain.NewDriver("driver-1", in, t0)
-	assert.ErrorIs(t, err, domain.ErrInvalidFullName)
+	assert.ErrorIs(t, err, domain.ErrInvalidFirstName)
 }
 
 func TestNewDriverIDInvalido(t *testing.T) {
