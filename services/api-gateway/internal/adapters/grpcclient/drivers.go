@@ -49,3 +49,10 @@ func (d *Drivers) RegisterDelivery(ctx context.Context, m CallMeta, req *drivers
 	defer cancel()
 	return d.client.RegisterDelivery(ctx, req)
 }
+
+// CreateDriver registra el perfil de un repartidor cuyo usuario DRIVER ya existe.
+func (d *Drivers) CreateDriver(ctx context.Context, m CallMeta, req *driversv1.CreateDriverRequest) (*driversv1.CreateDriverResponse, error) {
+	ctx, cancel := d.outgoing(ctx, m)
+	defer cancel()
+	return d.client.CreateDriver(ctx, req)
+}
