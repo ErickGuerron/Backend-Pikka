@@ -140,6 +140,7 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 	if opts.Orders != nil {
 		o := &ordersHandlers{orders: opts.Orders}
 		authed.POST("/orders", o.create)
+		authed.GET("/orders", o.list, StaffOnly())
 		authed.GET("/orders/mine", o.listMine)
 		authed.GET("/orders/exceptions", o.listExceptions)
 		authed.POST("/orders/:id/review", o.review)
@@ -184,6 +185,13 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 	authed.GET("/zones/:id", z.get)
 	// Cobertura: cualquier rol autenticado ve las zonas activas (ADR 0008). /zones sigue siendo de staff.
 	authed.GET("/coverage/zones", z.coverage)
+
+	// Cada Group con middleware registra su propio "ruta no encontrada" envuelto en ese middleware y
+	// la última registrada gana: el grupo del repartidor atrapaba toda ruta inexistente y respondía
+	// 403 "driver role required" a un ADMIN. Este registro final devuelve 404 para cualquiera.
+	notFound := func(echo.Context) error { return echo.ErrNotFound }
+	api.RouteNotFound("", notFound)
+	api.RouteNotFound("/*", notFound)
 
 	return e
 }

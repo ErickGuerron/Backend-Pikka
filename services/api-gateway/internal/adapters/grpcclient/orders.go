@@ -77,3 +77,10 @@ func (o *Orders) CancelOrder(ctx context.Context, m CallMeta, req *ordersv1.Canc
 	defer cancel()
 	return o.client.CancelOrder(ctx, req)
 }
+
+// ListOrders devuelve los pedidos de todos los clientes para el personal.
+func (o *Orders) ListOrders(ctx context.Context, m CallMeta, req *ordersv1.ListOrdersRequest) (*ordersv1.ListOrdersResponse, error) {
+	ctx, cancel := o.outgoing(ctx, m)
+	defer cancel()
+	return o.client.ListOrders(ctx, req)
+}
