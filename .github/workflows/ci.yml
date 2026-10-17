@@ -97,7 +97,7 @@ jobs:
         working-directory: services/driver-service
         env:
           DRIVER_TEST_DATABASE_URL: postgres://driver_service_user:x@localhost:5432/last_mile?sslmode=disable&search_path=drivers,public
-        run: go test -race -tags integration -count=1 ./...
+        run: go test -race -p 1 -tags integration -count=1 ./...
 
   contracts:
     name: Contracts (proto + OpenAPI)
