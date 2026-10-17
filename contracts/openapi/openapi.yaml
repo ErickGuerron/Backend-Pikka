@@ -866,6 +866,65 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/drivers:
+    get:
+      tags: [drivers]
+      operationId: listDrivers
+      summary: Lista la flota de repartidores (ADMIN y OPERATOR)
+      description: |
+        Devuelve todos los repartidores, activos e inactivos y en cualquier estado, ordenados por
+        apellido y nombre, hasta un máximo de 500. No incluye fecha de nacimiento ni documento de
+        identidad. Sin repartidores devuelve un arreglo vacío.
+      responses:
+        "200":
+          description: Flota de repartidores
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DriverListItem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503":
+          description: Driver Service no disponible. Código UPSTREAM_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    post:
+      tags: [drivers]
+      operationId: createDriver
+      summary: Da de alta un repartidor (solo ADMIN)
+      description: |
+        Crea el usuario con rol DRIVER en Auth Service y su perfil en Driver Service. Son dos
+        servicios con base de datos propia, sin transacción común: si el perfil falla (datos
+        inválidos, identificador o placa repetidos), el Gateway desactiva el usuario recién creado
+        y responde con el error del perfil. Auth Service no borra usuarios, así que el correo de un
+        alta fallida queda reservado y hay que usar otro. Las formas inválidas de `birthDate` y
+        `vehicleType` se rechazan con 400 antes de crear nada. El repartidor nace activo y AVAILABLE.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateDriverRequest" }
+      responses:
+        "201":
+          description: Repartidor creado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreateDriverResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: Correo, identificador o placa ya registrados. Código CONFLICT
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: Auth Service o Driver Service no disponible. Código UPSTREAM_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /api/v1/drivers/me/route:
     get:
       tags: [drivers]
@@ -1317,6 +1376,61 @@ components:
           type: string
           format: date-time
           description: Momento del fix en el dispositivo, RFC 3339 en UTC. Más de 30 s en el futuro responde 400
+    CreateDriverRequest:
+      type: object
+      required: [email, password, firstName, lastName, birthDate, phone, vehicleType, identifier, plate, city]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8, maxLength: 72 }
+        firstName: { type: string, maxLength: 50 }
+        lastName: { type: string, maxLength: 50 }
+        birthDate: { type: string, format: date, description: "YYYY-MM-DD. Mínimo 18 años cumplidos" }
+        phone: { type: string, description: "Número de contacto, 7 a 15 dígitos y un + opcional al inicio" }
+        vehicleType: { $ref: "#/components/schemas/VehicleType" }
+        identifier: { type: string, description: "Documento de identidad, 5 a 20 letras o dígitos, único" }
+        plate: { type: string, description: "Placa del vehículo, 5 a 8 letras o dígitos (se aceptan guiones), única" }
+        city: { type: string, maxLength: 80 }
+    VehicleType:
+      type: string
+      enum: [MOTORIZADO, AUTOMOVIL, SUV]
+    DriverProfile:
+      type: object
+      required: [id, userId, firstName, lastName, birthDate, phone, vehicleType, identifier, plate, city, active, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        firstName: { type: string }
+        lastName: { type: string }
+        birthDate: { type: string, format: date }
+        phone: { type: string }
+        vehicleType: { $ref: "#/components/schemas/VehicleType" }
+        identifier: { type: string }
+        plate: { type: string }
+        city: { type: string }
+        active: { type: boolean }
+        status: { type: string, enum: [AVAILABLE, ASSIGNED, ON_ROUTE, OFFLINE] }
+        createdAt: { type: string, format: date-time }
+    DriverListItem:
+      type: object
+      required: [id, userId, fullName, firstName, lastName, phone, city, vehicleType, plate, active, status]
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        fullName: { type: string }
+        firstName: { type: string }
+        lastName: { type: string }
+        phone: { type: string }
+        city: { type: string }
+        vehicleType: { $ref: "#/components/schemas/VehicleType" }
+        plate: { type: string }
+        active: { type: boolean }
+        status: { type: string, enum: [AVAILABLE, ASSIGNED, ON_ROUTE, OFFLINE] }
+    CreateDriverResponse:
+      type: object
+      required: [user, driver]
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        driver: { $ref: "#/components/schemas/DriverProfile" }
     Error:
       type: object
       required: [error]

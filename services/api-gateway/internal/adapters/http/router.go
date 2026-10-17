@@ -164,6 +164,9 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 
 	// Rutas del repartidor (ADR 0007). Solo rol DRIVER; el backend de ruta y parada aún no existe.
 	if opts.Drivers != nil {
+		driverAdmin := &driverAdminHandlers{auth: auth, drivers: opts.Drivers, log: log}
+		adminOnly.POST("/drivers", driverAdmin.create)
+		authed.GET("/drivers", driverAdmin.list, StaffOnly())
 		driverOnly := authed.Group("", DriverOnly())
 		driverOnly.GET("/drivers/me/route", driverRouteNotImplemented)
 		driverOnly.PATCH("/drivers/me/routes/:routeId/stops/:stopId/status", driverRouteNotImplemented)
