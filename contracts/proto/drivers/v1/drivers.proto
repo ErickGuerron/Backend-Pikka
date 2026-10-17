@@ -79,6 +79,11 @@ service DriverService {
   //     de la lista, o menor de 18 años.
   //   - ALREADY_EXISTS: el usuario, el identificador o la placa ya pertenecen a otro repartidor.
   rpc CreateDriver(CreateDriverRequest) returns (CreateDriverResponse);
+
+  // ListDrivers devuelve la flota para el personal de la web: activos e inactivos, en cualquier
+  // estado, ordenados por apellido y nombre. Cada elemento omite fecha de nacimiento e
+  // identificador (minimización de datos). Devuelve como máximo 500 repartidores.
+  rpc ListDrivers(ListDriversRequest) returns (ListDriversResponse);
 }
 
 enum DriverStatus {
@@ -222,4 +227,23 @@ message DriverProfile {
 
 message CreateDriverResponse {
   DriverProfile driver = 1;
+}
+
+message ListDriversRequest {}
+
+message DriverListItem {
+  string id = 1;
+  string user_id = 2;
+  string first_name = 3;
+  string last_name = 4;
+  string phone = 5;
+  string city = 6;
+  VehicleType vehicle_type = 7;
+  string plate = 8;
+  bool active = 9;
+  DriverStatus status = 10;
+}
+
+message ListDriversResponse {
+  repeated DriverListItem drivers = 1;
 }

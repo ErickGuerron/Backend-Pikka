@@ -189,3 +189,23 @@ func TestCreateDriverCodigosDeError(t *testing.T) {
 		})
 	}
 }
+
+func TestListDriversIncluyeInactivosYNoExponeDatosPersonales(t *testing.T) {
+	client, _ := setup(t)
+	ctx := context.Background()
+	_, err := client.CreateDriver(ctx, createRequest())
+	require.NoError(t, err)
+
+	resp, err := client.ListDrivers(ctx, &driversv1.ListDriversRequest{})
+
+	require.NoError(t, err)
+	require.Len(t, resp.GetDrivers(), 1)
+	item := resp.GetDrivers()[0]
+	assert.Equal(t, "Lucas", item.GetFirstName())
+	assert.Equal(t, "Martinez", item.GetLastName())
+	assert.Equal(t, "Quito", item.GetCity())
+	assert.Equal(t, "PBA1234", item.GetPlate())
+	assert.Equal(t, driversv1.VehicleType_VEHICLE_TYPE_CAR, item.GetVehicleType())
+	assert.Equal(t, driversv1.DriverStatus_DRIVER_STATUS_AVAILABLE, item.GetStatus())
+	assert.True(t, item.GetActive())
+}

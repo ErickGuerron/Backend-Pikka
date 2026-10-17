@@ -105,6 +105,39 @@ func (h *driverAdminHandlers) create(c echo.Context) error {
 	return c.JSON(http.StatusCreated, createDriverResponse{User: toUserDTO(user), Driver: toDriverProfileDTO(profile.GetDriver())})
 }
 
+// driverListItemDTO es la vista de la flota para el personal: sin fecha de nacimiento ni identificador.
+type driverListItemDTO struct {
+	ID          string `json:"id"`
+	UserID      string `json:"userId"`
+	FullName    string `json:"fullName"`
+	FirstName   string `json:"firstName"`
+	LastName    string `json:"lastName"`
+	Phone       string `json:"phone"`
+	City        string `json:"city"`
+	VehicleType string `json:"vehicleType"`
+	Plate       string `json:"plate"`
+	Active      bool   `json:"active"`
+	Status      string `json:"status"`
+}
+
+// list responde un arreglo (vacío si no hay repartidores) con la flota completa.
+func (h *driverAdminHandlers) list(c echo.Context) error {
+	res, err := h.drivers.ListDrivers(c.Request().Context(), callMeta(c), &driversv1.ListDriversRequest{})
+	if err != nil {
+		return err
+	}
+	out := make([]driverListItemDTO, 0, len(res.GetDrivers()))
+	for _, d := range res.GetDrivers() {
+		out = append(out, driverListItemDTO{
+			ID: d.GetId(), UserID: d.GetUserId(), FullName: d.GetFirstName() + " " + d.GetLastName(),
+			FirstName: d.GetFirstName(), LastName: d.GetLastName(), Phone: d.GetPhone(), City: d.GetCity(),
+			VehicleType: vehicleFromProto(d.GetVehicleType()), Plate: d.GetPlate(), Active: d.GetActive(),
+			Status: driverStatusFromProto(d.GetStatus()),
+		})
+	}
+	return c.JSON(http.StatusOK, out)
+}
+
 func toDriverProfileDTO(p *driversv1.DriverProfile) driverProfileDTO {
 	return driverProfileDTO{
 		ID: p.GetId(), UserID: p.GetUserId(), FirstName: p.GetFirstName(), LastName: p.GetLastName(),

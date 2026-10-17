@@ -121,6 +121,22 @@ func (s *DriverServer) CreateDriver(ctx context.Context, req *driversv1.CreateDr
 	return &driversv1.CreateDriverResponse{Driver: toProtoProfile(d)}, nil
 }
 
+// ListDrivers devuelve la flota para el personal, sin fecha de nacimiento ni identificador.
+func (s *DriverServer) ListDrivers(ctx context.Context, _ *driversv1.ListDriversRequest) (*driversv1.ListDriversResponse, error) {
+	list, err := s.svc.List(ctx)
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	out := make([]*driversv1.DriverListItem, 0, len(list))
+	for _, d := range list {
+		out = append(out, &driversv1.DriverListItem{
+			Id: d.ID, UserId: d.UserID, FirstName: d.FirstName, LastName: d.LastName, Phone: d.Phone, City: d.City,
+			VehicleType: toProtoVehicle(d.VehicleType), Plate: d.Plate, Active: d.Active, Status: toProtoStatus(d.Status),
+		})
+	}
+	return &driversv1.ListDriversResponse{Drivers: out}, nil
+}
+
 // FindAvailableDrivers devuelve solo identificadores de repartidores activos y disponibles.
 func (s *DriverServer) FindAvailableDrivers(ctx context.Context, req *driversv1.FindAvailableDriversRequest) (*driversv1.FindAvailableDriversResponse, error) {
 	list, err := s.svc.FindAvailableDrivers(ctx, int(req.GetLimit()))

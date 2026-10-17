@@ -112,6 +112,24 @@ func (r *DriverRepository) FindAvailable(ctx context.Context, limit int) ([]*dom
 	return out, rows.Err()
 }
 
+// List devuelve hasta limit repartidores, activos o no, ordenados por apellido, nombre e ID.
+func (r *DriverRepository) List(ctx context.Context, limit int) ([]*domain.Driver, error) {
+	rows, err := r.pool.Query(ctx, selectColumns+` ORDER BY last_name, first_name, id LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]*domain.Driver, 0, 64)
+	for rows.Next() {
+		d, err := scanDriver(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
 const selectColumns = `SELECT id::text, user_id::text, full_name, first_name, last_name, birth_date, phone,
 	vehicle_type, identifier, plate, city, active, status, route_id, version, created_at, updated_at FROM drivers`
 

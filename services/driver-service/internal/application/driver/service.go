@@ -98,6 +98,14 @@ func (s *Service) FindByUserID(ctx context.Context, userID string) (*domain.Driv
 	return s.repo.FindByUserID(ctx, userID)
 }
 
+// ListLimit es el máximo de repartidores que devuelve List.
+const ListLimit = 500
+
+// List devuelve la flota completa (activos e inactivos) para el personal, hasta ListLimit.
+func (s *Service) List(ctx context.Context) ([]*domain.Driver, error) {
+	return s.repo.List(ctx, ListLimit)
+}
+
 // FindAvailableDrivers devuelve repartidores activos y disponibles. limit 0 usa el valor
 // por defecto (50), un valor mayor que 100 se recorta a 100 y un negativo se rechaza. Así
 // lo define el contrato drivers.v1.

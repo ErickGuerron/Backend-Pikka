@@ -62,6 +62,30 @@ func (r *DriverRepository) FindByUserID(_ context.Context, userID string) (*doma
 	return nil, ports.ErrDriverNotFound
 }
 
+// List devuelve copias ordenadas por apellido, nombre e ID, hasta limit.
+func (r *DriverRepository) List(_ context.Context, limit int) ([]*domain.Driver, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]*domain.Driver, 0, len(r.drivers))
+	for _, d := range r.drivers {
+		out = append(out, &d)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.LastName != b.LastName {
+			return a.LastName < b.LastName
+		}
+		if a.FirstName != b.FirstName {
+			return a.FirstName < b.FirstName
+		}
+		return a.ID < b.ID
+	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
 // Save reemplaza el repartidor solo si la versión almacenada es expectedVersion.
 func (r *DriverRepository) Save(_ context.Context, d *domain.Driver, expectedVersion int) error {
 	r.mu.Lock()

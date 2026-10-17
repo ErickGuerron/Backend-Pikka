@@ -244,3 +244,27 @@ func TestCreateRechazaDatosInvalidosYDuplicados(t *testing.T) {
 	_, err = svc.Create(ctx, dupID)
 	assert.ErrorIs(t, err, ports.ErrDriverExists, "mismo identificador")
 }
+
+func TestListDevuelveTodosOrdenadosPorApellidoYNombre(t *testing.T) {
+	ctx := context.Background()
+	svc := driver.NewService(memory.NewDriverRepository(), fixedClock())
+	for _, n := range []struct{ user, first, last string }{
+		{"user-1", "Zoe", "Vera"}, {"user-2", "Ana", "Vera"}, {"user-3", "Luis", "Andrade"},
+	} {
+		in := domaintest.Input(n.user)
+		in.FirstName, in.LastName = n.first, n.last
+		_, err := svc.Create(ctx, in)
+		require.NoError(t, err)
+	}
+	all, err := svc.List(ctx)
+	require.NoError(t, err)
+	require.Len(t, all, 3)
+	assert.Equal(t, []string{"Luis Andrade", "Ana Vera", "Zoe Vera"}, []string{all[0].FullName, all[1].FullName, all[2].FullName})
+
+	_, err = svc.SetActive(ctx, all[0].ID, false)
+	require.NoError(t, err)
+	again, err := svc.List(ctx)
+	require.NoError(t, err)
+	assert.Len(t, again, 3, "los inactivos también aparecen en la lista")
+	assert.False(t, again[0].Active)
+}

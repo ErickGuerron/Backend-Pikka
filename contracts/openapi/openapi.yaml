@@ -867,6 +867,29 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/drivers:
+    get:
+      tags: [drivers]
+      operationId: listDrivers
+      summary: Lista la flota de repartidores (ADMIN y OPERATOR)
+      description: |
+        Devuelve todos los repartidores, activos e inactivos y en cualquier estado, ordenados por
+        apellido y nombre, hasta un máximo de 500. No incluye fecha de nacimiento ni documento de
+        identidad. Sin repartidores devuelve un arreglo vacío.
+      responses:
+        "200":
+          description: Flota de repartidores
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DriverListItem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503":
+          description: Driver Service no disponible. Código UPSTREAM_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
     post:
       tags: [drivers]
       operationId: createDriver
@@ -1387,6 +1410,21 @@ components:
         active: { type: boolean }
         status: { type: string, enum: [AVAILABLE, ASSIGNED, ON_ROUTE, OFFLINE] }
         createdAt: { type: string, format: date-time }
+    DriverListItem:
+      type: object
+      required: [id, userId, fullName, firstName, lastName, phone, city, vehicleType, plate, active, status]
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        fullName: { type: string }
+        firstName: { type: string }
+        lastName: { type: string }
+        phone: { type: string }
+        city: { type: string }
+        vehicleType: { $ref: "#/components/schemas/VehicleType" }
+        plate: { type: string }
+        active: { type: boolean }
+        status: { type: string, enum: [AVAILABLE, ASSIGNED, ON_ROUTE, OFFLINE] }
     CreateDriverResponse:
       type: object
       required: [user, driver]

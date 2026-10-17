@@ -57,6 +57,10 @@ func (f *fakeDriverLookup) CreateDriver(_ context.Context, _ grpcclient.CallMeta
 	return nil, errUnexpectedDriverCall
 }
 
+func (f *fakeDriverLookup) ListDrivers(_ context.Context, _ grpcclient.CallMeta, _ *driversv1.ListDriversRequest) (*driversv1.ListDriversResponse, error) {
+	return nil, errUnexpectedDriverCall
+}
+
 // fakeTrackingClient guarda la última posición recibida y cuenta las llamadas.
 type fakeTrackingClient struct {
 	calls int
