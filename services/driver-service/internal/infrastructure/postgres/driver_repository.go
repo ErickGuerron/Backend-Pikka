@@ -35,9 +35,11 @@ func NewDriverRepository(pool *pgxpool.Pool) *DriverRepository {
 // Create inserta un repartidor nuevo.
 func (r *DriverRepository) Create(ctx context.Context, d *domain.Driver) error {
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO drivers (id, user_id, full_name, phone, active, status, route_id, version, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-		d.ID, d.UserID, d.FullName, d.Phone, d.Active, string(d.Status), d.RouteID, d.Version, d.CreatedAt, d.UpdatedAt,
+		INSERT INTO drivers (id, user_id, full_name, first_name, last_name, birth_date, phone, vehicle_type,
+			identifier, plate, city, active, status, route_id, version, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+		d.ID, d.UserID, d.FullName, d.FirstName, d.LastName, d.BirthDate, d.Phone, string(d.VehicleType),
+		d.Identifier, d.Plate, d.City, d.Active, string(d.Status), d.RouteID, d.Version, d.CreatedAt, d.UpdatedAt,
 	)
 	if isPgError(err, pgUniqueViolation) {
 		return ports.ErrDriverExists
@@ -110,8 +112,8 @@ func (r *DriverRepository) FindAvailable(ctx context.Context, limit int) ([]*dom
 	return out, rows.Err()
 }
 
-const selectColumns = `SELECT id::text, user_id::text, full_name, phone, active, status, route_id,
-	version, created_at, updated_at FROM drivers`
+const selectColumns = `SELECT id::text, user_id::text, full_name, first_name, last_name, birth_date, phone,
+	vehicle_type, identifier, plate, city, active, status, route_id, version, created_at, updated_at FROM drivers`
 
 type scanner interface {
 	Scan(dest ...any) error
@@ -119,16 +121,19 @@ type scanner interface {
 
 func scanDriver(s scanner) (*domain.Driver, error) {
 	var (
-		d      domain.Driver
-		status string
-		vers   int64
-		create time.Time
-		update time.Time
+		d       domain.Driver
+		vehicle string
+		status  string
+		vers    int64
+		create  time.Time
+		update  time.Time
 	)
-	if err := s.Scan(&d.ID, &d.UserID, &d.FullName, &d.Phone, &d.Active, &status, &d.RouteID,
+	if err := s.Scan(&d.ID, &d.UserID, &d.FullName, &d.FirstName, &d.LastName, &d.BirthDate, &d.Phone,
+		&vehicle, &d.Identifier, &d.Plate, &d.City, &d.Active, &status, &d.RouteID,
 		&vers, &create, &update); err != nil {
 		return nil, err
 	}
+	d.VehicleType = domain.VehicleType(vehicle)
 	d.Status = domain.Status(status)
 	d.Version = int(vers)
 	d.CreatedAt = create

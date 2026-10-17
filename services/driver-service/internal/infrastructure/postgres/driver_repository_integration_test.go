@@ -18,6 +18,7 @@ import (
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/application/driver"
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/application/ports"
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/domain"
+	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/domain/domaintest"
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/infrastructure/postgres"
 )
 
@@ -50,7 +51,7 @@ func openRepo(t *testing.T) (*postgres.DriverRepository, *pgxpool.Pool) {
 
 func newDriver(t *testing.T, id string) *domain.Driver {
 	t.Helper()
-	d, err := domain.NewDriver(id, domain.NewDriverInput{UserID: userA, FullName: "Ana Ruiz", Phone: "0991234567"}, t0)
+	d, err := domain.NewDriver(id, domaintest.Input(userA), t0)
 	require.NoError(t, err)
 	return d
 }

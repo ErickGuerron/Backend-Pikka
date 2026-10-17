@@ -94,6 +94,33 @@ func (s *DriverServer) RegisterDelivery(ctx context.Context, req *driversv1.Regi
 	}, nil
 }
 
+// CreateDriver registra el perfil de un repartidor nuevo.
+func (s *DriverServer) CreateDriver(ctx context.Context, req *driversv1.CreateDriverRequest) (*driversv1.CreateDriverResponse, error) {
+	birth, err := time.Parse(time.DateOnly, strings.TrimSpace(req.GetBirthDate()))
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "birth_date must be YYYY-MM-DD")
+	}
+	vehicle, err := fromProtoVehicle(req.GetVehicleType())
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	d, err := s.svc.Create(ctx, domain.NewDriverInput{
+		UserID:      req.GetUserId(),
+		FirstName:   req.GetFirstName(),
+		LastName:    req.GetLastName(),
+		BirthDate:   birth,
+		Phone:       req.GetPhone(),
+		VehicleType: string(vehicle),
+		Identifier:  req.GetIdentifier(),
+		Plate:       req.GetPlate(),
+		City:        req.GetCity(),
+	})
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	return &driversv1.CreateDriverResponse{Driver: toProtoProfile(d)}, nil
+}
+
 // FindAvailableDrivers devuelve solo identificadores de repartidores activos y disponibles.
 func (s *DriverServer) FindAvailableDrivers(ctx context.Context, req *driversv1.FindAvailableDriversRequest) (*driversv1.FindAvailableDriversResponse, error) {
 	list, err := s.svc.FindAvailableDrivers(ctx, int(req.GetLimit()))
@@ -150,6 +177,14 @@ func toStatus(err error) error {
 		errors.Is(err, domain.ErrReasonNotAllowed), errors.Is(err, domain.ErrInvalidStopID),
 		errors.Is(err, domain.ErrInvalidCoordinates):
 		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, ports.ErrDriverExists):
+		return status.Error(codes.AlreadyExists, "user, identifier or plate already belongs to a driver")
+	case errors.Is(err, domain.ErrInvalidUserID), errors.Is(err, domain.ErrInvalidFirstName),
+		errors.Is(err, domain.ErrInvalidLastName), errors.Is(err, domain.ErrInvalidBirthDate),
+		errors.Is(err, domain.ErrInvalidPhone), errors.Is(err, domain.ErrInvalidVehicleType),
+		errors.Is(err, domain.ErrInvalidIdentifier), errors.Is(err, domain.ErrInvalidPlate),
+		errors.Is(err, domain.ErrInvalidCity):
+		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, ports.ErrVersionConflict):
 		// Tras los reintentos del servicio, otro cambio sigue ganando: el cliente debe reintentar.
 		return status.Error(codes.Aborted, "driver changed concurrently, retry the request")
@@ -167,6 +202,50 @@ func toProto(d *domain.Driver) *driversv1.Driver {
 		Active:    d.Active,
 		Status:    toProtoStatus(d.Status),
 		CreatedAt: d.CreatedAt.UTC().Format(time.RFC3339),
+	}
+}
+
+func toProtoProfile(d *domain.Driver) *driversv1.DriverProfile {
+	return &driversv1.DriverProfile{
+		Id:          d.ID,
+		UserId:      d.UserID,
+		FirstName:   d.FirstName,
+		LastName:    d.LastName,
+		BirthDate:   d.BirthDate.Format(time.DateOnly),
+		Phone:       d.Phone,
+		VehicleType: toProtoVehicle(d.VehicleType),
+		Identifier:  d.Identifier,
+		Plate:       d.Plate,
+		City:        d.City,
+		Active:      d.Active,
+		Status:      toProtoStatus(d.Status),
+		CreatedAt:   d.CreatedAt.UTC().Format(time.RFC3339),
+	}
+}
+
+func toProtoVehicle(v domain.VehicleType) driversv1.VehicleType {
+	switch v {
+	case domain.VehicleMotorbike:
+		return driversv1.VehicleType_VEHICLE_TYPE_MOTORBIKE
+	case domain.VehicleCar:
+		return driversv1.VehicleType_VEHICLE_TYPE_CAR
+	case domain.VehicleSUV:
+		return driversv1.VehicleType_VEHICLE_TYPE_SUV
+	default:
+		return driversv1.VehicleType_VEHICLE_TYPE_UNSPECIFIED
+	}
+}
+
+func fromProtoVehicle(v driversv1.VehicleType) (domain.VehicleType, error) {
+	switch v {
+	case driversv1.VehicleType_VEHICLE_TYPE_MOTORBIKE:
+		return domain.VehicleMotorbike, nil
+	case driversv1.VehicleType_VEHICLE_TYPE_CAR:
+		return domain.VehicleCar, nil
+	case driversv1.VehicleType_VEHICLE_TYPE_SUV:
+		return domain.VehicleSUV, nil
+	default:
+		return "", domain.ErrInvalidVehicleType
 	}
 }
 

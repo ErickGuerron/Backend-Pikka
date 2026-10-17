@@ -30,6 +30,11 @@ func (r *DriverRepository) Create(_ context.Context, d *domain.Driver) error {
 	if _, ok := r.drivers[d.ID]; ok {
 		return ports.ErrDriverExists
 	}
+	for _, other := range r.drivers {
+		if other.UserID == d.UserID || other.Identifier == d.Identifier || other.Plate == d.Plate {
+			return ports.ErrDriverExists
+		}
+	}
 	r.drivers[d.ID] = *d
 	return nil
 }

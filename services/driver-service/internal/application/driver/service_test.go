@@ -15,6 +15,7 @@ import (
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/application/driver"
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/application/ports"
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/domain"
+	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/domain/domaintest"
 )
 
 var t0 = time.Date(2026, 10, 13, 8, 0, 0, 0, time.UTC)
@@ -27,7 +28,7 @@ func fixedClock() func() time.Time {
 func seed(t *testing.T, id string) (*memory.DriverRepository, *driver.Service) {
 	t.Helper()
 	repo := memory.NewDriverRepository()
-	d, err := domain.NewDriver(id, domain.NewDriverInput{UserID: "user-" + id, FullName: "Ana Ruiz", Phone: "0991234567"}, t0)
+	d, err := domain.NewDriver(id, domaintest.Input("user-"+id), t0)
 	require.NoError(t, err)
 	require.NoError(t, repo.Create(context.Background(), d))
 	return repo, driver.NewService(repo, fixedClock())
@@ -151,7 +152,7 @@ func TestFindAvailableDriversFiltraYOrdena(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewDriverRepository()
 	for _, id := range []string{"d3", "d1", "d2"} {
-		d, err := domain.NewDriver(id, domain.NewDriverInput{UserID: "u-" + id, FullName: "Ana", Phone: "0991234567"}, t0)
+		d, err := domain.NewDriver(id, domaintest.Input("u-"+id), t0)
 		require.NoError(t, err)
 		require.NoError(t, repo.Create(ctx, d))
 	}
@@ -172,7 +173,7 @@ func TestFindAvailableDriversLimite(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewDriverRepository()
 	for _, id := range []string{"d1", "d2", "d3"} {
-		d, err := domain.NewDriver(id, domain.NewDriverInput{UserID: "u-" + id, FullName: "Ana", Phone: "0991234567"}, t0)
+		d, err := domain.NewDriver(id, domaintest.Input("u-"+id), t0)
 		require.NoError(t, err)
 		require.NoError(t, repo.Create(ctx, d))
 	}
@@ -197,4 +198,49 @@ func TestRepositorioDevuelveNoEncontrado(t *testing.T) {
 	_, err := svc.GoOnline(context.Background(), "missing")
 
 	assert.ErrorIs(t, err, ports.ErrDriverNotFound)
+}
+
+func TestCreateGuardaElPerfilCompleto(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewDriverRepository()
+	svc := driver.NewService(repo, fixedClock())
+
+	got, err := svc.Create(ctx, domaintest.Input("user-1"))
+
+	require.NoError(t, err)
+	assert.NotEmpty(t, got.ID)
+	assert.Equal(t, "Ana Ruiz", got.FullName)
+	assert.Equal(t, domain.VehicleMotorbike, got.VehicleType)
+	assert.True(t, got.Active)
+	assert.Equal(t, domain.StatusAvailable, got.Status)
+	stored, err := repo.Get(ctx, got.ID)
+	require.NoError(t, err)
+	assert.Equal(t, got.Plate, stored.Plate)
+}
+
+func TestCreateRechazaDatosInvalidosYDuplicados(t *testing.T) {
+	ctx := context.Background()
+	svc := driver.NewService(memory.NewDriverRepository(), fixedClock())
+	_, err := svc.Create(ctx, domaintest.Input("user-1"))
+	require.NoError(t, err)
+
+	bad := domaintest.Input("user-2")
+	bad.VehicleType = "BICICLETA"
+	_, err = svc.Create(ctx, bad)
+	assert.ErrorIs(t, err, domain.ErrInvalidVehicleType)
+
+	dupUser := domaintest.Input("user-1")
+	dupUser.Identifier, dupUser.Plate = "OTRO12345", "OTRA123"
+	_, err = svc.Create(ctx, dupUser)
+	assert.ErrorIs(t, err, ports.ErrDriverExists, "mismo usuario")
+
+	dupPlate := domaintest.Input("user-3")
+	dupPlate.Plate = domaintest.Input("user-1").Plate
+	_, err = svc.Create(ctx, dupPlate)
+	assert.ErrorIs(t, err, ports.ErrDriverExists, "misma placa")
+
+	dupID := domaintest.Input("user-4")
+	dupID.Identifier = domaintest.Input("user-1").Identifier
+	_, err = svc.Create(ctx, dupID)
+	assert.ErrorIs(t, err, ports.ErrDriverExists, "mismo identificador")
 }
