@@ -29,6 +29,8 @@ type OrderUseCases struct {
 	Review        *orderapp.ReviewOrder
 	Notifications *orderapp.ListMyNotifications
 	Cancel        *orderapp.CancelOrder
+	// GetMine lee un pedido del cliente autenticado (GetMyOrder).
+	GetMine *orderapp.GetMyOrder
 	// RouteAssignment atiende a Routing: pedidos pendientes por fecha y asignación a ruta.
 	RouteAssignment *orderapp.RouteAssignment
 }
@@ -195,6 +197,26 @@ func (s *OrderServer) CancelOrder(ctx context.Context, req *ordersv1.CancelOrder
 	return &ordersv1.CancelOrderResponse{Order: orderToProto(order)}, nil
 }
 
+// GetMyOrder devuelve un pedido del cliente autenticado. Un pedido ajeno o inexistente responde NOT_FOUND.
+func (s *OrderServer) GetMyOrder(ctx context.Context, req *ordersv1.GetMyOrderRequest) (*ordersv1.GetMyOrderResponse, error) {
+	if s.useCases.GetMine == nil {
+		return nil, status.Error(codes.Unimplemented, "get my order is not wired")
+	}
+	userID, role, err := identityFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	order, err := s.useCases.GetMine.Run(ctx, orderapp.GetCommand{
+		UserID:  userID,
+		Role:    role,
+		OrderID: req.GetOrderId(),
+	})
+	if err != nil {
+		return nil, mapOrderError(err)
+	}
+	return &ordersv1.GetMyOrderResponse{Order: orderToProto(order)}, nil
+}
+
 // identityFrom lee la identidad propagada por el Gateway. Sin ella no hay
 // alcance posible, así que la petición se rechaza antes de tocar casos de uso.
 func identityFrom(ctx context.Context) (uuid.UUID, string, error) {
@@ -317,6 +339,7 @@ func orderToProto(o domain.Order) *ordersv1.Order {
 		ReviewReasons: reasons,
 		CreatedAt:     o.CreatedAt.UTC().Format(time.RFC3339),
 		ZoneId:        o.ZoneID,
+		RouteId:       o.RouteID,
 
 		AddressReference: o.AddressReference,
 		PostalCode:       o.PostalCode,

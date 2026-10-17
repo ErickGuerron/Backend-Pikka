@@ -100,6 +100,7 @@ func run(log *slog.Logger) error {
 	listExceptions := orderapp.NewListExceptions(orderRepo)
 	listMyNotifications := orderapp.NewListMyNotifications(customerRepo, notificationRepo)
 	cancelOrder := orderapp.NewCancelOrder(customerRepo, orderRepo)
+	getMyOrder := orderapp.NewGetMyOrder(customerRepo, orderRepo)
 	routeAssignment := orderapp.NewRouteAssignment(orderRepo)
 	log.Info("order use cases wired", "create", createOrder != nil, "review", reviewOrder != nil)
 
@@ -113,6 +114,7 @@ func run(log *slog.Logger) error {
 		Review:          reviewOrder,
 		Notifications:   listMyNotifications,
 		Cancel:          cancelOrder,
+		GetMine:         getMyOrder,
 		RouteAssignment: routeAssignment,
 	}))
 	// Catálogo de productos (ADR 0009): el operador administra, el cliente lee lo activo.

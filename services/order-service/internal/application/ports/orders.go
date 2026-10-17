@@ -18,6 +18,10 @@ type OrderRepository interface {
 	// ListByCustomer devuelve los pedidos del cliente, del más reciente al más antiguo.
 	ListByCustomer(ctx context.Context, customerID uuid.UUID) ([]domain.Order, error)
 
+	// GetForCustomer devuelve un pedido del cliente. Si el pedido no existe o es de otro cliente
+	// devuelve domain.ErrOrderNotFound en la misma consulta que filtra por cliente (BOLA, ADR 0007).
+	GetForCustomer(ctx context.Context, orderID string, customerID uuid.UUID) (domain.Order, error)
+
 	// ListExceptions devuelve la cola de excepciones: pedidos en PENDING_REVIEW, del más antiguo al más reciente.
 	ListExceptions(ctx context.Context) ([]domain.Order, error)
 

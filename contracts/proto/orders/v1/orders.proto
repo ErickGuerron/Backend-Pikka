@@ -31,6 +31,9 @@ service OrderService {
   // CancelOrder cancels an order of the authenticated CUSTOMER. Only PENDING or ROUTE_ASSIGNED can be
   // cancelled; another state returns ABORTED (HTTP 409). An order of another customer returns NOT_FOUND.
   rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse);
+  // GetMyOrder returns one order of the authenticated CUSTOMER. An order of another customer
+  // or an unknown ID returns NOT_FOUND (never PERMISSION_DENIED). Only the CUSTOMER role can call it.
+  rpc GetMyOrder(GetMyOrderRequest) returns (GetMyOrderResponse);
   // AssignOrdersToRoute moves every listed order from PENDING to ROUTE_ASSIGNED
   // in one transaction. Internal, called by Routing. Blank route_id or empty
   // order_ids returns INVALID_ARGUMENT; an unknown ID returns NOT_FOUND; any
@@ -93,6 +96,9 @@ message Order {
   string postal_code = 13;
   // Contact phone for the delivery, normalized (digits and optional leading "+"). Empty in old orders.
   string contact_phone = 14;
+  // Driver route the order was assigned to. Empty until Routing assigns it. Used internally to find
+  // the assigned driver. Internal field: the Gateway customer DTO must not expose it.
+  string route_id = 15;
 }
 
 message CreateOrderRequest {
@@ -229,6 +235,15 @@ message CancelOrderRequest {
 }
 
 message CancelOrderResponse {
+  Order order = 1;
+}
+
+message GetMyOrderRequest {
+  // Required UUID of an order owned by the caller.
+  string order_id = 1;
+}
+
+message GetMyOrderResponse {
   Order order = 1;
 }
 
