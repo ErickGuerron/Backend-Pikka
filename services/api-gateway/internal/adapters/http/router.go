@@ -139,7 +139,7 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 	// Pedidos del cliente (ADR 0007). La autorización por rol la aplica Order Service.
 	if opts.Orders != nil {
 		o := &ordersHandlers{orders: opts.Orders}
-		authed.POST("/orders", o.create)
+		authed.POST("/orders", o.create, CustomerOnly())
 		authed.GET("/orders/mine", o.listMine)
 		authed.GET("/orders/exceptions", o.listExceptions)
 		authed.POST("/orders/:id/review", o.review)
