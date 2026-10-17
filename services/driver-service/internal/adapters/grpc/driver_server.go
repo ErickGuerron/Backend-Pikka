@@ -56,6 +56,19 @@ func (s *DriverServer) GetDriverByUserID(ctx context.Context, req *driversv1.Get
 	return &driversv1.GetDriverByUserIDResponse{Driver: &driversv1.DriverSummary{Id: d.ID, UserId: d.UserID}}, nil
 }
 
+// GetDriverByRouteID devuelve solo los identificadores del repartidor reservado para la ruta.
+func (s *DriverServer) GetDriverByRouteID(ctx context.Context, req *driversv1.GetDriverByRouteIDRequest) (*driversv1.GetDriverByRouteIDResponse, error) {
+	routeID := strings.TrimSpace(req.GetRouteId())
+	if routeID == "" {
+		return nil, status.Error(codes.InvalidArgument, "route_id is required")
+	}
+	d, err := s.svc.FindByRouteID(ctx, routeID)
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	return &driversv1.GetDriverByRouteIDResponse{DriverId: d.ID, UserId: d.UserID}, nil
+}
+
 // RegisterDelivery registra el resultado de una parada. La parada la aporta la fuente de
 // paradas, nunca el llamador.
 func (s *DriverServer) RegisterDelivery(ctx context.Context, req *driversv1.RegisterDeliveryRequest) (*driversv1.RegisterDeliveryResponse, error) {
@@ -124,6 +137,41 @@ func (s *DriverServer) ReserveDriver(ctx context.Context, req *driversv1.Reserve
 	return &driversv1.ReserveDriverResponse{Driver: toProto(d)}, nil
 }
 
+// CreateDriver registers a driver profile. Only ADMIN may create drivers; the role is checked
+// before the request is read, so a refused caller learns nothing about the validation rules.
+func (s *DriverServer) CreateDriver(ctx context.Context, req *driversv1.CreateDriverRequest) (*driversv1.CreateDriverResponse, error) {
+	if err := requireRole(ctx, roleAdmin); err != nil {
+		return nil, err
+	}
+	d, err := s.svc.CreateDriver(ctx, domain.NewDriverInput{
+		UserID:   req.GetUserId(),
+		FullName: req.GetFullName(),
+		Phone:    req.GetPhone(),
+	})
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	return &driversv1.CreateDriverResponse{Driver: toProto(d)}, nil
+}
+
+// ReleaseDriver frees the reservation of driver_id for route_id. Like ReserveDriver, it has no
+// role gate: it is called by the Routing Service, which is internal.
+func (s *DriverServer) ReleaseDriver(ctx context.Context, req *driversv1.ReleaseDriverRequest) (*driversv1.ReleaseDriverResponse, error) {
+	driverID := strings.TrimSpace(req.GetDriverId())
+	routeID := strings.TrimSpace(req.GetRouteId())
+	if driverID == "" {
+		return nil, status.Error(codes.InvalidArgument, "driver_id is required")
+	}
+	if routeID == "" {
+		return nil, status.Error(codes.InvalidArgument, "route_id is required")
+	}
+	d, err := s.svc.ReleaseDriver(ctx, driverID, routeID)
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	return &driversv1.ReleaseDriverResponse{Driver: toProto(d)}, nil
+}
+
 // toStatus traduce errores de dominio y de aplicación a los códigos del contrato.
 // FAILED_PRECONDITION distingue sus tres causas con mensajes distintos.
 func toStatus(err error) error {
@@ -140,6 +188,10 @@ func toStatus(err error) error {
 		return status.Error(codes.FailedPrecondition, "driver is already reserved for another route")
 	case errors.Is(err, domain.ErrRouteMismatch), errors.Is(err, domain.ErrInvalidTransition):
 		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, ports.ErrDriverExists):
+		return status.Error(codes.AlreadyExists, "driver already exists for this user")
+	case errors.Is(err, domain.ErrInvalidUserID), errors.Is(err, domain.ErrInvalidFullName), errors.Is(err, domain.ErrInvalidPhone):
+		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, domain.ErrInvalidRouteID), errors.Is(err, domain.ErrInvalidDriverID):
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, ports.ErrStopNotFound):

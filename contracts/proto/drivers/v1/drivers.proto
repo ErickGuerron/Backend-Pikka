@@ -52,6 +52,16 @@ service DriverService {
   //   - NOT_FOUND: ningún repartidor tiene ese user_id.
   rpc GetDriverByUserID(GetDriverByUserIDRequest) returns (GetDriverByUserIDResponse);
 
+  // GetDriverByRouteID devuelve solo los identificadores del repartidor reservado para una
+  // ruta. Lo usa el Gateway para resolver la posición del repartidor de un pedido en
+  // seguimiento. No expone nombre ni teléfono.
+  //
+  // Códigos de estado gRPC que el servidor debe devolver:
+  //
+  //   - INVALID_ARGUMENT: route_id en blanco.
+  //   - NOT_FOUND: ningún repartidor tiene reservada esa ruta.
+  rpc GetDriverByRouteID(GetDriverByRouteIDRequest) returns (GetDriverByRouteIDResponse);
+
   // RegisterDelivery guarda el resultado de una parada (ADR 0007, sección 4) y su verificación
   // de llegada. El repartidor debe estar ON_ROUTE en route_id.
   //
@@ -68,6 +78,27 @@ service DriverService {
   //   - ALREADY_EXISTS: la parada ya tiene un registro en esa ruta.
   //   - UNIMPLEMENTED: la fuente de paradas aún no existe.
   rpc RegisterDelivery(RegisterDeliveryRequest) returns (RegisterDeliveryResponse);
+
+  // CreateDriver registers a new driver profile that is active and AVAILABLE.
+  // Only callers whose x-user-role metadata is ADMIN may create drivers.
+  //
+  // Status codes the server must return:
+  //
+  //   - PERMISSION_DENIED: the caller is not ADMIN.
+  //   - INVALID_ARGUMENT: user_id, full_name or phone is blank or invalid.
+  //   - ALREADY_EXISTS: a driver with this user_id already exists.
+  rpc CreateDriver(CreateDriverRequest) returns (CreateDriverResponse);
+
+  // ReleaseDriver frees the driver's reservation for route_id, so the driver can take
+  // another route. Idempotent: a driver that holds no reservation is left unchanged and
+  // the call succeeds. A driver reserved for a different route is not changed.
+  //
+  // Status codes the server must return:
+  //
+  //   - INVALID_ARGUMENT: driver_id or route_id is blank.
+  //   - NOT_FOUND: the driver does not exist.
+  //   - FAILED_PRECONDITION: the driver is reserved for a different route.
+  rpc ReleaseDriver(ReleaseDriverRequest) returns (ReleaseDriverResponse);
 }
 
 enum DriverStatus {
@@ -135,6 +166,18 @@ message GetDriverByUserIDResponse {
   DriverSummary driver = 1;
 }
 
+message GetDriverByRouteIDRequest {
+  // Ruta reservada por el repartidor; obligatorio.
+  string route_id = 1;
+}
+
+message GetDriverByRouteIDResponse {
+  // Identificadores del repartidor que tiene reservada la ruta. Sin nombre ni teléfono.
+  string driver_id = 1;
+  // Identificador del usuario en Auth Service con rol DRIVER.
+  string user_id = 2;
+}
+
 message RegisterDeliveryRequest {
   // Repartidor que registra; obligatorio.
   string driver_id = 1;
@@ -163,4 +206,26 @@ message RegisterDeliveryResponse {
   bool within_radius = 4;
   bool within_window = 5;
   double distance_meters = 6;
+}
+
+message CreateDriverRequest {
+  // Identifier of the user in Auth Service with the DRIVER role; required.
+  string user_id = 1;
+  string full_name = 2;
+  string phone = 3;
+}
+
+message CreateDriverResponse {
+  Driver driver = 1;
+}
+
+message ReleaseDriverRequest {
+  // Required; must not be blank.
+  string driver_id = 1;
+  // Route whose reservation is released; required.
+  string route_id = 2;
+}
+
+message ReleaseDriverResponse {
+  Driver driver = 1;
 }

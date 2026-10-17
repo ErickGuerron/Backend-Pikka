@@ -30,6 +30,12 @@ func (r *DriverRepository) Create(_ context.Context, d *domain.Driver) error {
 	if _, ok := r.drivers[d.ID]; ok {
 		return ports.ErrDriverExists
 	}
+	// Same rule as the unique index on drivers.user_id in PostgreSQL.
+	for _, existing := range r.drivers {
+		if existing.UserID == d.UserID {
+			return ports.ErrDriverExists
+		}
+	}
 	r.drivers[d.ID] = *d
 	return nil
 }
@@ -51,6 +57,22 @@ func (r *DriverRepository) FindByUserID(_ context.Context, userID string) (*doma
 	defer r.mu.Unlock()
 	for _, d := range r.drivers {
 		if d.UserID == userID {
+			return &d, nil
+		}
+	}
+	return nil, ports.ErrDriverNotFound
+}
+
+// FindByRouteID devuelve una copia del repartidor cuya ruta reservada coincide. Un
+// repartidor sin ruta (RouteID vacío) nunca coincide.
+func (r *DriverRepository) FindByRouteID(_ context.Context, routeID string) (*domain.Driver, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if routeID == "" {
+		return nil, ports.ErrDriverNotFound
+	}
+	for _, d := range r.drivers {
+		if d.RouteID == routeID {
 			return &d, nil
 		}
 	}
