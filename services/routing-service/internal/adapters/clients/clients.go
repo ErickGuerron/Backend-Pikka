@@ -10,6 +10,7 @@ import (
 
 	"google.golang.org/grpc/metadata"
 
+	driversv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/drivers/v1"
 	ordersv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/orders/v1"
 	zonesv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/zones/v1"
 	"github.com/ErickGuerron/Backend-Pikka/services/routing-service/internal/application/ports"
@@ -62,11 +63,64 @@ func (g *OrderGateway) PendingByDate(ctx context.Context, deliveryDate string) (
 	return out, nil
 }
 
-// AssignToRoute moves the orders to ROUTE_ASSIGNED for routeID, all or none.
-func (g *OrderGateway) AssignToRoute(ctx context.Context, routeID string, orderIDs []string) error {
+// AssignToRoute moves the orders of the stops to ROUTE_ASSIGNED for routeID, all or none.
+// It sends stops (with their sequence), not the legacy order_ids.
+func (g *OrderGateway) AssignToRoute(ctx context.Context, routeID string, stops []domain.RouteStop) error {
+	orderStops := make([]*ordersv1.OrderStop, 0, len(stops))
+	for _, stop := range stops {
+		orderStops = append(orderStops, &ordersv1.OrderStop{
+			OrderId:  stop.OrderID,
+			Sequence: int32(stop.Sequence),
+		})
+	}
 	_, err := g.client.AssignOrdersToRoute(forwardIdentity(ctx), &ordersv1.AssignOrdersToRouteRequest{
+		RouteId: routeID,
+		Stops:   orderStops,
+	})
+	return err
+}
+
+// DriverPool implements ports.DriverPool on top of Driver Service.
+type DriverPool struct {
+	client driversv1.DriverServiceClient
+}
+
+var _ ports.DriverPool = (*DriverPool)(nil)
+
+// NewDriverPool wraps the generated Driver Service client.
+func NewDriverPool(client driversv1.DriverServiceClient) *DriverPool {
+	return &DriverPool{client: client}
+}
+
+// FindAvailable returns the IDs of up to n AVAILABLE drivers, in the order Driver Service returns them.
+func (p *DriverPool) FindAvailable(ctx context.Context, n int) ([]string, error) {
+	res, err := p.client.FindAvailableDrivers(forwardIdentity(ctx), &driversv1.FindAvailableDriversRequest{Limit: int32(n)})
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(res.GetDrivers()))
+	for _, driver := range res.GetDrivers() {
+		ids = append(ids, driver.GetId())
+	}
+	return ids, nil
+}
+
+// Reserve binds driverID to routeID. Driver Service errors (for example FAILED_PRECONDITION
+// when the driver is already reserved) pass through with their gRPC code.
+func (p *DriverPool) Reserve(ctx context.Context, driverID, routeID string) error {
+	_, err := p.client.ReserveDriver(forwardIdentity(ctx), &driversv1.ReserveDriverRequest{
+		DriverId: driverID,
 		RouteId:  routeID,
-		OrderIds: orderIDs,
+	})
+	return err
+}
+
+// Release frees the reservation of routeID held by driverID. Driver Service errors pass
+// through with their gRPC code.
+func (p *DriverPool) Release(ctx context.Context, driverID, routeID string) error {
+	_, err := p.client.ReleaseDriver(forwardIdentity(ctx), &driversv1.ReleaseDriverRequest{
+		DriverId: driverID,
+		RouteId:  routeID,
 	})
 	return err
 }
