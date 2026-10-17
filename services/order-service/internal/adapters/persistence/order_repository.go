@@ -19,7 +19,7 @@ import (
 const orderColumns = `id::text, COALESCE(customer_id::text, ''), COALESCE(zone_id::text, ''), address, latitude, longitude,
 	to_char(delivery_date, 'YYYY-MM-DD'), to_char(window_start, 'HH24:MI'), to_char(window_end, 'HH24:MI'),
 	status, review_reasons, version, created_at, COALESCE(route_id, ''),
-	address_reference, postal_code, contact_phone`
+	address_reference, postal_code, contact_phone, COALESCE(stop_sequence, 0)`
 
 // OrderRepository es la implementación PostgreSQL de ports.OrderRepository.
 type OrderRepository struct {
@@ -222,6 +222,49 @@ func (r *OrderRepository) CancelForCustomer(ctx context.Context, orderID string,
 	return out, nil
 }
 
+// AdvanceRouteStop aplica un paso del conductor dentro de una transacción con bloqueo de fila
+// (SELECT ... FOR UPDATE), igual que Review. El filtro por ruta va en la consulta: un pedido de otra
+// ruta o inexistente responde domain.ErrOrderNotFound sin llegar a decide (ADR 0008, sección 3).
+func (r *OrderRepository) AdvanceRouteStop(ctx context.Context, orderID, routeID string, decide func(domain.Order) (domain.Order, error)) (domain.Order, error) {
+	id, err := uuid.Parse(orderID)
+	if err != nil {
+		return domain.Order{}, domain.ErrOrderNotFound
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return domain.Order{}, fmt.Errorf("advance route stop: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	current, err := scanOrder(tx.QueryRow(ctx,
+		`SELECT `+orderColumns+` FROM orders WHERE id = $1 AND route_id = $2 FOR UPDATE`, id, routeID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Order{}, domain.ErrOrderNotFound
+	}
+	if err != nil {
+		return domain.Order{}, fmt.Errorf("advance route stop: load: %w", err)
+	}
+
+	next, err := decide(current)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	out, err := scanOrder(tx.QueryRow(ctx,
+		`UPDATE orders
+		    SET status = $2, version = version + 1, updated_at = now()
+		  WHERE id = $1
+		RETURNING `+orderColumns,
+		id, string(next.Status),
+	))
+	if err != nil {
+		return domain.Order{}, fmt.Errorf("advance route stop: update: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return domain.Order{}, fmt.Errorf("advance route stop: commit: %w", err)
+	}
+	return out, nil
+}
+
 func (r *OrderRepository) queryOrders(ctx context.Context, sql string, args ...any) ([]domain.Order, error) {
 	rows, err := r.pool.Query(ctx, sql, args...)
 	if err != nil {
@@ -294,10 +337,11 @@ func scanOrder(row rowScanner) (domain.Order, error) {
 		reference, postalCode, contactPhone                                           string
 		version                                                                       int64
 		createdAt                                                                     time.Time
+		stopSequence                                                                  int32
 	)
 	if err := row.Scan(&id, &customerID, &zoneID, &address, &latitude, &longitude,
 		&deliveryDate, &windowStart, &windowEnd, &status, &reasons, &version, &createdAt, &routeID,
-		&reference, &postalCode, &contactPhone); err != nil {
+		&reference, &postalCode, &contactPhone, &stopSequence); err != nil {
 		return domain.Order{}, err
 	}
 	date, err := domain.ParseDeliveryDate(deliveryDate)
@@ -325,6 +369,7 @@ func scanOrder(row rowScanner) (domain.Order, error) {
 		CustomerID:    customerID,
 		ZoneID:        zoneID,
 		RouteID:       routeID,
+		StopSequence:  int(stopSequence),
 		Address:       address,
 		Latitude:      latitude,
 		Longitude:     longitude,

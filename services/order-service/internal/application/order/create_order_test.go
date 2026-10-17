@@ -87,6 +87,12 @@ func (f *fakeOrders) ListByCustomer(_ context.Context, customerID uuid.UUID) ([]
 	return out, nil
 }
 
+// AdvanceRouteStop is not exercised by the create/list tests; it exists so fakeOrders keeps
+// satisfying ports.OrderRepository.
+func (f *fakeOrders) AdvanceRouteStop(_ context.Context, _, _ string, _ func(domain.Order) (domain.Order, error)) (domain.Order, error) {
+	return domain.Order{}, domain.ErrOrderNotFound
+}
+
 func (f *fakeOrders) ListExceptions(_ context.Context) ([]domain.Order, error) {
 	var out []domain.Order
 	for _, o := range f.saved {

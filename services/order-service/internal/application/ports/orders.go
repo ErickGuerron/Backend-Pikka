@@ -34,6 +34,11 @@ type OrderRepository interface {
 	// Si el pedido no existe o es de otro cliente devuelve domain.ErrOrderNotFound (BOLA, ADR 0007).
 	// decide aplica la regla de dominio; el stock se devuelve en la misma transacción.
 	CancelForCustomer(ctx context.Context, orderID string, customerID uuid.UUID, decide func(current domain.Order) (domain.Order, error)) (domain.Order, error)
+
+	// AdvanceRouteStop aplica un paso del conductor a un pedido dentro de una transacción con bloqueo de
+	// fila. La consulta filtra por pedido y ruta: un pedido de otra ruta o inexistente devuelve
+	// domain.ErrOrderNotFound sin llegar a decide.
+	AdvanceRouteStop(ctx context.Context, orderID, routeID string, decide func(current domain.Order) (domain.Order, error)) (domain.Order, error)
 }
 
 // NotificationRepository lee los avisos del cliente.

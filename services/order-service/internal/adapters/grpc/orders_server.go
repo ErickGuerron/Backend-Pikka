@@ -33,6 +33,10 @@ type OrderUseCases struct {
 	GetMine *orderapp.GetMyOrder
 	// RouteAssignment atiende a Routing: pedidos pendientes por fecha y asignación a ruta.
 	RouteAssignment *orderapp.RouteAssignment
+	// AdvanceStop mueve un pedido de su ruta por PICKED_UP e IN_TRANSIT (AdvanceRouteStop).
+	AdvanceStop *orderapp.AdvanceRouteStop
+	// StopsBefore cuenta las paradas abiertas antes de un pedido del cliente (StopsBeforeForOrder).
+	StopsBefore *orderapp.StopsBeforeForOrder
 }
 
 // OrderServer implementa ordersv1.OrderServiceServer. Solo traduce: la regla de
@@ -282,6 +286,11 @@ func mapOrderError(err error) error {
 	case errors.Is(err, domain.ErrOrderNotInReview), errors.Is(err, domain.ErrOrderNotCancellable), errors.Is(err, domain.ErrOrderNotPending):
 		// El contrato responde ABORTED (HTTP 409) cuando el estado del pedido no admite la acción.
 		return status.Error(codes.Aborted, err.Error())
+	case errors.Is(err, domain.ErrInvalidTransition):
+		// Paso de ruta ilegal desde el estado actual del pedido (AdvanceRouteStop).
+		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, domain.ErrNotDriver):
+		return status.Error(codes.PermissionDenied, err.Error())
 	case errors.Is(err, domain.ErrSpatialReasonNotOverridable):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, domain.ErrZonesUnavailable), errors.Is(err, domain.ErrGeocoderUnavailable):
@@ -306,7 +315,10 @@ func mapOrderError(err error) error {
 		errors.Is(err, domain.ErrInvalidRouteID),
 		errors.Is(err, domain.ErrNoOrdersToAssign),
 		errors.Is(err, domain.ErrDuplicateOrderID),
-		errors.Is(err, domain.ErrInvalidOrderID):
+		errors.Is(err, domain.ErrInvalidOrderID),
+		errors.Is(err, domain.ErrInvalidStopSequence),
+		errors.Is(err, domain.ErrDuplicateStopSequence),
+		errors.Is(err, domain.ErrInvalidAdvanceTarget):
 		return status.Error(codes.InvalidArgument, err.Error())
 	default:
 		return mapError(err)

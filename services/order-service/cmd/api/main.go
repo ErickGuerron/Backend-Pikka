@@ -102,6 +102,8 @@ func run(log *slog.Logger) error {
 	cancelOrder := orderapp.NewCancelOrder(customerRepo, orderRepo)
 	getMyOrder := orderapp.NewGetMyOrder(customerRepo, orderRepo)
 	routeAssignment := orderapp.NewRouteAssignment(orderRepo)
+	advanceRouteStop := orderapp.NewAdvanceRouteStop(orderRepo)
+	stopsBefore := orderapp.NewStopsBeforeForOrder(customerRepo, orderRepo)
 	log.Info("order use cases wired", "create", createOrder != nil, "review", reviewOrder != nil)
 
 	// gRPC server para Customer y Order. La autorización por rol se aplica en
@@ -116,6 +118,8 @@ func run(log *slog.Logger) error {
 		Cancel:          cancelOrder,
 		GetMine:         getMyOrder,
 		RouteAssignment: routeAssignment,
+		AdvanceStop:     advanceRouteStop,
+		StopsBefore:     stopsBefore,
 	}))
 	// Catálogo de productos (ADR 0009): el operador administra, el cliente lee lo activo.
 	catalogv1.RegisterCatalogServiceServer(grpcServer, grpcadapter.NewCatalogServer(

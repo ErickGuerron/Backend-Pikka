@@ -30,6 +30,8 @@ const (
 	OrderService_CancelOrder_FullMethodName         = "/orders.v1.OrderService/CancelOrder"
 	OrderService_GetMyOrder_FullMethodName          = "/orders.v1.OrderService/GetMyOrder"
 	OrderService_AssignOrdersToRoute_FullMethodName = "/orders.v1.OrderService/AssignOrdersToRoute"
+	OrderService_AdvanceRouteStop_FullMethodName    = "/orders.v1.OrderService/AdvanceRouteStop"
+	OrderService_StopsBeforeForOrder_FullMethodName = "/orders.v1.OrderService/StopsBeforeForOrder"
 )
 
 // OrderServiceClient is the client API for OrderService service.
@@ -71,6 +73,17 @@ type OrderServiceClient interface {
 	// order_ids returns INVALID_ARGUMENT; an unknown ID returns NOT_FOUND; any
 	// order not in PENDING returns ABORTED (HTTP 409) and none is changed.
 	AssignOrdersToRoute(ctx context.Context, in *AssignOrdersToRouteRequest, opts ...grpc.CallOption) (*AssignOrdersToRouteResponse, error)
+	// AdvanceRouteStop moves one order of a route forward for its driver: ROUTE_ASSIGNED -> PICKED_UP
+	// -> IN_TRANSIT. Internal, called by the Gateway after it verified the driver owns the route. Blank
+	// route_id or order_id returns INVALID_ARGUMENT; a target other than PICKED_UP or IN_TRANSIT returns
+	// INVALID_ARGUMENT; an order not on that route returns NOT_FOUND; an illegal transition returns
+	// FAILED_PRECONDITION. DELIVERED and NOT_DELIVERED belong to RegisterDelivery, not to this RPC.
+	AdvanceRouteStop(ctx context.Context, in *AdvanceRouteStopRequest, opts ...grpc.CallOption) (*AdvanceRouteStopResponse, error)
+	// StopsBeforeForOrder counts the orders of the same route with a smaller stop_sequence that are still
+	// open (not DELIVERED, NOT_DELIVERED or CANCELLED). Only the CUSTOMER role can call it, and only for an
+	// order it owns: a foreign or unknown order returns NOT_FOUND. An order without route or stop_sequence
+	// returns 0.
+	StopsBeforeForOrder(ctx context.Context, in *StopsBeforeForOrderRequest, opts ...grpc.CallOption) (*StopsBeforeForOrderResponse, error)
 }
 
 type orderServiceClient struct {
@@ -191,6 +204,26 @@ func (c *orderServiceClient) AssignOrdersToRoute(ctx context.Context, in *Assign
 	return out, nil
 }
 
+func (c *orderServiceClient) AdvanceRouteStop(ctx context.Context, in *AdvanceRouteStopRequest, opts ...grpc.CallOption) (*AdvanceRouteStopResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdvanceRouteStopResponse)
+	err := c.cc.Invoke(ctx, OrderService_AdvanceRouteStop_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *orderServiceClient) StopsBeforeForOrder(ctx context.Context, in *StopsBeforeForOrderRequest, opts ...grpc.CallOption) (*StopsBeforeForOrderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StopsBeforeForOrderResponse)
+	err := c.cc.Invoke(ctx, OrderService_StopsBeforeForOrder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // OrderServiceServer is the server API for OrderService service.
 // All implementations must embed UnimplementedOrderServiceServer
 // for forward compatibility.
@@ -230,6 +263,17 @@ type OrderServiceServer interface {
 	// order_ids returns INVALID_ARGUMENT; an unknown ID returns NOT_FOUND; any
 	// order not in PENDING returns ABORTED (HTTP 409) and none is changed.
 	AssignOrdersToRoute(context.Context, *AssignOrdersToRouteRequest) (*AssignOrdersToRouteResponse, error)
+	// AdvanceRouteStop moves one order of a route forward for its driver: ROUTE_ASSIGNED -> PICKED_UP
+	// -> IN_TRANSIT. Internal, called by the Gateway after it verified the driver owns the route. Blank
+	// route_id or order_id returns INVALID_ARGUMENT; a target other than PICKED_UP or IN_TRANSIT returns
+	// INVALID_ARGUMENT; an order not on that route returns NOT_FOUND; an illegal transition returns
+	// FAILED_PRECONDITION. DELIVERED and NOT_DELIVERED belong to RegisterDelivery, not to this RPC.
+	AdvanceRouteStop(context.Context, *AdvanceRouteStopRequest) (*AdvanceRouteStopResponse, error)
+	// StopsBeforeForOrder counts the orders of the same route with a smaller stop_sequence that are still
+	// open (not DELIVERED, NOT_DELIVERED or CANCELLED). Only the CUSTOMER role can call it, and only for an
+	// order it owns: a foreign or unknown order returns NOT_FOUND. An order without route or stop_sequence
+	// returns 0.
+	StopsBeforeForOrder(context.Context, *StopsBeforeForOrderRequest) (*StopsBeforeForOrderResponse, error)
 	mustEmbedUnimplementedOrderServiceServer()
 }
 
@@ -272,6 +316,12 @@ func (UnimplementedOrderServiceServer) GetMyOrder(context.Context, *GetMyOrderRe
 }
 func (UnimplementedOrderServiceServer) AssignOrdersToRoute(context.Context, *AssignOrdersToRouteRequest) (*AssignOrdersToRouteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AssignOrdersToRoute not implemented")
+}
+func (UnimplementedOrderServiceServer) AdvanceRouteStop(context.Context, *AdvanceRouteStopRequest) (*AdvanceRouteStopResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AdvanceRouteStop not implemented")
+}
+func (UnimplementedOrderServiceServer) StopsBeforeForOrder(context.Context, *StopsBeforeForOrderRequest) (*StopsBeforeForOrderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StopsBeforeForOrder not implemented")
 }
 func (UnimplementedOrderServiceServer) mustEmbedUnimplementedOrderServiceServer() {}
 func (UnimplementedOrderServiceServer) testEmbeddedByValue()                      {}
@@ -492,6 +542,42 @@ func _OrderService_AssignOrdersToRoute_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _OrderService_AdvanceRouteStop_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdvanceRouteStopRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).AdvanceRouteStop(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_AdvanceRouteStop_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).AdvanceRouteStop(ctx, req.(*AdvanceRouteStopRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OrderService_StopsBeforeForOrder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StopsBeforeForOrderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).StopsBeforeForOrder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_StopsBeforeForOrder_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).StopsBeforeForOrder(ctx, req.(*StopsBeforeForOrderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // OrderService_ServiceDesc is the grpc.ServiceDesc for OrderService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -542,6 +628,14 @@ var OrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AssignOrdersToRoute",
 			Handler:    _OrderService_AssignOrdersToRoute_Handler,
+		},
+		{
+			MethodName: "AdvanceRouteStop",
+			Handler:    _OrderService_AdvanceRouteStop_Handler,
+		},
+		{
+			MethodName: "StopsBeforeForOrder",
+			Handler:    _OrderService_StopsBeforeForOrder_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
