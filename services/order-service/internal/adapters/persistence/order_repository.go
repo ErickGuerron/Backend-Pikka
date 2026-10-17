@@ -108,6 +108,7 @@ func (r *OrderRepository) GetForCustomer(ctx context.Context, orderID string, cu
 		return domain.Order{}, fmt.Errorf("get order: %w", err)
 	}
 	return order, nil
+}
 
 // listAllLimit acota ListAll: la pantalla del personal pagina en el cliente.
 const listAllLimit = 500
