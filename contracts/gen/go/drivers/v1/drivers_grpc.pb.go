@@ -23,6 +23,7 @@ const (
 	DriverService_ReserveDriver_FullMethodName        = "/drivers.v1.DriverService/ReserveDriver"
 	DriverService_GetDriverByUserID_FullMethodName    = "/drivers.v1.DriverService/GetDriverByUserID"
 	DriverService_RegisterDelivery_FullMethodName     = "/drivers.v1.DriverService/RegisterDelivery"
+	DriverService_CreateDriver_FullMethodName         = "/drivers.v1.DriverService/CreateDriver"
 )
 
 // DriverServiceClient is the client API for DriverService service.
@@ -90,6 +91,16 @@ type DriverServiceClient interface {
 	//   - ALREADY_EXISTS: la parada ya tiene un registro en esa ruta.
 	//   - UNIMPLEMENTED: la fuente de paradas aún no existe.
 	RegisterDelivery(ctx context.Context, in *RegisterDeliveryRequest, opts ...grpc.CallOption) (*RegisterDeliveryResponse, error)
+	// CreateDriver registra el perfil de un repartidor cuyo usuario DRIVER ya existe en Auth
+	// Service. El repartidor nace activo y AVAILABLE. Devuelve el perfil completo, que incluye
+	// datos personales (fecha de nacimiento, identificador): solo lo debe leer quien registra.
+	//
+	// Códigos de estado gRPC que el servidor debe devolver:
+	//
+	//   - INVALID_ARGUMENT: algún campo en blanco o con formato inválido, tipo de vehículo fuera
+	//     de la lista, o menor de 18 años.
+	//   - ALREADY_EXISTS: el usuario, el identificador o la placa ya pertenecen a otro repartidor.
+	CreateDriver(ctx context.Context, in *CreateDriverRequest, opts ...grpc.CallOption) (*CreateDriverResponse, error)
 }
 
 type driverServiceClient struct {
@@ -134,6 +145,16 @@ func (c *driverServiceClient) RegisterDelivery(ctx context.Context, in *Register
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RegisterDeliveryResponse)
 	err := c.cc.Invoke(ctx, DriverService_RegisterDelivery_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *driverServiceClient) CreateDriver(ctx context.Context, in *CreateDriverRequest, opts ...grpc.CallOption) (*CreateDriverResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateDriverResponse)
+	err := c.cc.Invoke(ctx, DriverService_CreateDriver_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -205,6 +226,16 @@ type DriverServiceServer interface {
 	//   - ALREADY_EXISTS: la parada ya tiene un registro en esa ruta.
 	//   - UNIMPLEMENTED: la fuente de paradas aún no existe.
 	RegisterDelivery(context.Context, *RegisterDeliveryRequest) (*RegisterDeliveryResponse, error)
+	// CreateDriver registra el perfil de un repartidor cuyo usuario DRIVER ya existe en Auth
+	// Service. El repartidor nace activo y AVAILABLE. Devuelve el perfil completo, que incluye
+	// datos personales (fecha de nacimiento, identificador): solo lo debe leer quien registra.
+	//
+	// Códigos de estado gRPC que el servidor debe devolver:
+	//
+	//   - INVALID_ARGUMENT: algún campo en blanco o con formato inválido, tipo de vehículo fuera
+	//     de la lista, o menor de 18 años.
+	//   - ALREADY_EXISTS: el usuario, el identificador o la placa ya pertenecen a otro repartidor.
+	CreateDriver(context.Context, *CreateDriverRequest) (*CreateDriverResponse, error)
 	mustEmbedUnimplementedDriverServiceServer()
 }
 
@@ -226,6 +257,9 @@ func (UnimplementedDriverServiceServer) GetDriverByUserID(context.Context, *GetD
 }
 func (UnimplementedDriverServiceServer) RegisterDelivery(context.Context, *RegisterDeliveryRequest) (*RegisterDeliveryResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RegisterDelivery not implemented")
+}
+func (UnimplementedDriverServiceServer) CreateDriver(context.Context, *CreateDriverRequest) (*CreateDriverResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateDriver not implemented")
 }
 func (UnimplementedDriverServiceServer) mustEmbedUnimplementedDriverServiceServer() {}
 func (UnimplementedDriverServiceServer) testEmbeddedByValue()                       {}
@@ -320,6 +354,24 @@ func _DriverService_RegisterDelivery_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DriverService_CreateDriver_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateDriverRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DriverServiceServer).CreateDriver(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DriverService_CreateDriver_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DriverServiceServer).CreateDriver(ctx, req.(*CreateDriverRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DriverService_ServiceDesc is the grpc.ServiceDesc for DriverService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -342,6 +394,10 @@ var DriverService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RegisterDelivery",
 			Handler:    _DriverService_RegisterDelivery_Handler,
+		},
+		{
+			MethodName: "CreateDriver",
+			Handler:    _DriverService_CreateDriver_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
