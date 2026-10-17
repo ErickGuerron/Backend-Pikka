@@ -15,6 +15,7 @@ import (
 // TrackingClient es lo que el endpoint de ubicación necesita del Tracking Service.
 type TrackingClient interface {
 	RecordPosition(ctx context.Context, m grpcclient.CallMeta, req *trackingv1.RecordPositionRequest) (*trackingv1.RecordPositionResponse, error)
+	EstimateArrival(ctx context.Context, m grpcclient.CallMeta, req *trackingv1.EstimateArrivalRequest) (*trackingv1.EstimateArrivalResponse, error)
 }
 
 // driverLocationHandlers recibe la posición GPS del repartidor autenticado. El gateway valida la

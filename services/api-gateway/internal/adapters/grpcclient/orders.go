@@ -77,3 +77,25 @@ func (o *Orders) CancelOrder(ctx context.Context, m CallMeta, req *ordersv1.Canc
 	defer cancel()
 	return o.client.CancelOrder(ctx, req)
 }
+
+// GetMyOrder lee un pedido del cliente autenticado. Un pedido ajeno o inexistente llega como NOT_FOUND.
+func (o *Orders) GetMyOrder(ctx context.Context, m CallMeta, req *ordersv1.GetMyOrderRequest) (*ordersv1.GetMyOrderResponse, error) {
+	ctx, cancel := o.outgoing(ctx, m)
+	defer cancel()
+	return o.client.GetMyOrder(ctx, req)
+}
+
+// StopsBeforeForOrder cuenta las paradas abiertas antes de un pedido propio del cliente. Un pedido ajeno
+// o inexistente llega como NOT_FOUND.
+func (o *Orders) StopsBeforeForOrder(ctx context.Context, m CallMeta, req *ordersv1.StopsBeforeForOrderRequest) (*ordersv1.StopsBeforeForOrderResponse, error) {
+	ctx, cancel := o.outgoing(ctx, m)
+	defer cancel()
+	return o.client.StopsBeforeForOrder(ctx, req)
+}
+
+// AdvanceRouteStop mueve un pedido de la ruta del repartidor. El Gateway ya verificó que la ruta es suya.
+func (o *Orders) AdvanceRouteStop(ctx context.Context, m CallMeta, req *ordersv1.AdvanceRouteStopRequest) (*ordersv1.AdvanceRouteStopResponse, error) {
+	ctx, cancel := o.outgoing(ctx, m)
+	defer cancel()
+	return o.client.AdvanceRouteStop(ctx, req)
+}

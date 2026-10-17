@@ -75,23 +75,33 @@ func run(log *slog.Logger) error {
 	defer func() { _ = trackingConn.Close() }()
 	tracking := grpcclient.NewTracking(trackingConn, cfg.GRPCTimeout)
 
+	routingConn, err := grpcclient.Dial(cfg.RoutingServiceAddr)
+	if err != nil {
+		return fmt.Errorf("dial routing service: %w", err)
+	}
+	defer func() { _ = routingConn.Close() }()
+	routing := grpcclient.NewRouting(routingConn, cfg.GRPCTimeout)
+
 	e := httpapi.NewRouter(log, httpapi.Options{
-		CORSAllowedOrigins:  cfg.CORSAllowedOrigins,
-		RateLimitPerSecond:  cfg.RateLimitPerSecond,
-		RateLimitBurst:      cfg.RateLimitBurst,
-		LoginRatePerMinute:  cfg.LoginRatePerMinute,
-		SignupRatePerMinute: cfg.SignupRatePerMinute,
-		RequestTimeout:      cfg.RequestTimeout,
-		BodyLimit:           cfg.BodyLimit,
-		TrustProxy:          cfg.TrustProxy,
-		EnableHSTS:          cfg.EnableHSTS,
-		EnableDocs:          cfg.EnableDocs,
-		Customers:           customers,
-		CustomerQueries:     customers,
-		Orders:              orders,
-		Catalog:             catalog,
-		Drivers:             drivers,
-		Tracking:            tracking,
+		CORSAllowedOrigins:   cfg.CORSAllowedOrigins,
+		RateLimitPerSecond:   cfg.RateLimitPerSecond,
+		RateLimitBurst:       cfg.RateLimitBurst,
+		LoginRatePerMinute:   cfg.LoginRatePerMinute,
+		SignupRatePerMinute:  cfg.SignupRatePerMinute,
+		RequestTimeout:       cfg.RequestTimeout,
+		BodyLimit:            cfg.BodyLimit,
+		TrustProxy:           cfg.TrustProxy,
+		EnableHSTS:           cfg.EnableHSTS,
+		EnableDocs:           cfg.EnableDocs,
+		Customers:            customers,
+		CustomerQueries:      customers,
+		Orders:               orders,
+		Catalog:              catalog,
+		Drivers:              drivers,
+		Tracking:             tracking,
+		TrackingPollInterval: cfg.TrackingPollInterval,
+		Routing:              routing,
+		DriverCreator:        drivers,
 	}, jwt.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer), auth, zones, func(ctx context.Context) bool {
 		// El gateway solo está listo si puede llegar a sus dependencias gRPC.
 		return auth.Ready(ctx) && zones.Ready(ctx)

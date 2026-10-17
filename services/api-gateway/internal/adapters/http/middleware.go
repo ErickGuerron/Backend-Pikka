@@ -75,6 +75,23 @@ func DriverOnly() echo.MiddlewareFunc {
 	}
 }
 
+// CustomerOnly exige rol CUSTOMER. Igual que DriverOnly, corta con 403 antes del handler. Un pedido
+// ajeno o inexistente no llega aquí: el servicio responde 404 (ADR 0007, ADR 0008 §3).
+func CustomerOnly() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			id, ok := identityFrom(c)
+			if !ok {
+				return echo.NewHTTPError(http.StatusUnauthorized, "missing identity")
+			}
+			if !strings.EqualFold(id.Role, "CUSTOMER") {
+				return echo.NewHTTPError(http.StatusForbidden, "customer role required")
+			}
+			return next(c)
+		}
+	}
+}
+
 // StaffOnly deja pasar a ADMIN y OPERATOR (ADR 0008). Igual que AdminOnly, corta con 403 antes
 // del handler; las reglas finas del catálogo las aplica el servicio interno.
 func StaffOnly() echo.MiddlewareFunc {
@@ -139,10 +156,14 @@ func RequestLogger(log *slog.Logger) echo.MiddlewareFunc {
 	}
 }
 
-// ContextTimeout limita el tiempo total de cada petición.
+// ContextTimeout limita el tiempo total de cada petición. Las actualizaciones a WebSocket se excluyen:
+// un socket de seguimiento vive más que RequestTimeout y su ciclo de vida lo lleva el handler.
 func ContextTimeout(d time.Duration) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
+			if isWebSocketUpgrade(c.Request()) {
+				return next(c)
+			}
 			ctx, cancel := context.WithTimeout(c.Request().Context(), d)
 			defer cancel()
 			c.SetRequest(c.Request().WithContext(ctx))

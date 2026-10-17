@@ -249,6 +249,19 @@ func (f *fakeOrderClient) CancelOrder(_ context.Context, m grpcclient.CallMeta, 
 	return &ordersv1.CancelOrderResponse{Order: &ordersv1.Order{Id: req.GetId(), Status: ordersv1.OrderStatus_ORDER_STATUS_CANCELLED}}, nil
 }
 
+// Los métodos de seguimiento los prueba tracking_snapshot_test.go con su propio fake; aquí no se usan.
+func (f *fakeOrderClient) GetMyOrder(_ context.Context, _ grpcclient.CallMeta, _ *ordersv1.GetMyOrderRequest) (*ordersv1.GetMyOrderResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not used by this test")
+}
+
+func (f *fakeOrderClient) StopsBeforeForOrder(_ context.Context, _ grpcclient.CallMeta, _ *ordersv1.StopsBeforeForOrderRequest) (*ordersv1.StopsBeforeForOrderResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not used by this test")
+}
+
+func (f *fakeOrderClient) AdvanceRouteStop(_ context.Context, _ grpcclient.CallMeta, _ *ordersv1.AdvanceRouteStopRequest) (*ordersv1.AdvanceRouteStopResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not used by this test")
+}
+
 func TestCancelOrder_CustomerGets200WithCancelledOrder(t *testing.T) {
 	fake := &fakeOrderClient{}
 	rec := do(ordersRouter(fake), http.MethodPost, "/api/v1/orders/o-7/cancel", "", authHdr(t, "CUSTOMER"))

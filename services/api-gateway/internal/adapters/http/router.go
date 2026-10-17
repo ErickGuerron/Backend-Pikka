@@ -39,6 +39,14 @@ type Options struct {
 	Drivers DriverClient
 	// Tracking, si no es nil, habilita PUT /drivers/me/location (rol DRIVER). Requiere Drivers.
 	Tracking TrackingClient
+	// Routing, if not nil, enables POST /routes/plan (ADMIN and OPERATOR).
+	Routing RoutingClient
+	// DriverCreator, if not nil, enables POST /drivers (ADMIN). The DRIVER role is checked through Auth.
+	DriverCreator DriverCreator
+	// TrackingPollInterval es cada cuánto el WebSocket de seguimiento consulta el snapshot. Cero usa 5 s.
+	TrackingPollInterval time.Duration
+	// TrackingTicker crea el reloj de sondeo de cada socket. Nil usa time.NewTicker; los tests lo inyectan.
+	TrackingTicker func(interval time.Duration) (<-chan time.Time, func())
 }
 
 // Readiness informa si una dependencia está lista.
@@ -136,6 +144,19 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 		adminOnly.PATCH("/customers/:id/status", ch.setStatus)
 	}
 
+	// Driver creation: ADMIN only. The handler checks the DRIVER role of the user through Auth.
+	if opts.DriverCreator != nil {
+		da := &driverAdminHandlers{auth: auth, drivers: opts.DriverCreator}
+		adminOnly.POST("/drivers", da.create)
+	}
+
+	// Route plan generation: ADMIN and OPERATOR (ADR 0008). The Routing Service validates role and date.
+	if opts.Routing != nil {
+		rp := &routePlanHandlers{routing: opts.Routing}
+		routeStaff := authed.Group("", StaffOnly())
+		routeStaff.POST("/routes/plan", rp.generate)
+	}
+
 	// Pedidos del cliente (ADR 0007). La autorización por rol la aplica Order Service.
 	if opts.Orders != nil {
 		o := &ordersHandlers{orders: opts.Orders}
@@ -166,12 +187,39 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 	if opts.Drivers != nil {
 		driverOnly := authed.Group("", DriverOnly())
 		driverOnly.GET("/drivers/me/route", driverRouteNotImplemented)
-		driverOnly.PATCH("/drivers/me/routes/:routeId/stops/:stopId/status", driverRouteNotImplemented)
+		if opts.Orders != nil {
+			stops := &driverStopHandlers{drivers: opts.Drivers, orders: opts.Orders}
+			driverOnly.PATCH("/drivers/me/routes/:routeId/stops/:stopId/status", stops.advance)
+		} else {
+			driverOnly.PATCH("/drivers/me/routes/:routeId/stops/:stopId/status", driverRouteNotImplemented)
+		}
 		driverOnly.POST("/drivers/me/routes/:routeId/stops/:stopId/result", driverRouteNotImplemented)
 		if opts.Tracking != nil {
 			loc := &driverLocationHandlers{drivers: opts.Drivers, tracking: opts.Tracking}
 			driverOnly.PUT("/drivers/me/location", loc.report)
 		}
+	}
+
+	// Seguimiento del pedido para el cliente. Necesita pedidos (ruta y paradas), repartidores (ruta ->
+	// repartidor) y tracking (ETA). HTTP exige CUSTOMER por rol; el WebSocket valida el token en su
+	// subprotocolo, porque el navegador no envía Authorization en un socket.
+	if opts.Orders != nil && opts.Drivers != nil && opts.Tracking != nil {
+		interval := opts.TrackingPollInterval
+		if interval <= 0 {
+			interval = 5 * time.Second
+		}
+		ticker := opts.TrackingTicker
+		if ticker == nil {
+			ticker = defaultTicker
+		}
+		ct := &customerTrackingHandlers{
+			orders: opts.Orders, drivers: opts.Drivers, tracking: opts.Tracking,
+			verifier: verifier, origins: opts.CORSAllowedOrigins,
+			interval: interval, ticker: ticker, now: time.Now, log: log,
+		}
+		customerOnly := authed.Group("", CustomerOnly())
+		customerOnly.GET("/orders/:id/tracking", ct.snapshot)
+		api.GET("/orders/:id/tracking/ws", ct.ws)
 	}
 
 	z := &zonesHandlers{zones: zones}
