@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package routing.v1;
+
+option go_package = "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/routing/v1;routingv1";
+
+// RoutingService genera el plan de rutas de un día. Solo lo llama el Gateway en nombre de
+// un operador (internal); nunca lo llama un cliente final.
+// La autorización es por rol, en la metadata propagada x-user-role (ADR 0008): solo ADMIN y OPERATOR.
+service RoutingService {
+  // GeneratePlan planifica los pedidos PENDING de una fecha, reserva un repartidor por ruta y
+  // asigna cada ruta a sus pedidos. Las rutas se procesan en orden: reservar el repartidor y
+  // luego asignar las paradas.
+  //
+  // Códigos de estado gRPC que el servidor debe devolver:
+  //
+  //   - UNAUTHENTICATED: falta la metadata x-user-role o está en blanco.
+  //   - PERMISSION_DENIED: el rol no es ADMIN ni OPERATOR. No se consulta ningún servicio.
+  //   - INVALID_ARGUMENT: delivery_date no es una fecha YYYY-MM-DD válida.
+  //   - FAILED_PRECONDITION: no hay repartidor disponible para una ruta, o Driver Service
+  //     rechazó la reserva. Se detiene la generación: ninguna parada de esa ruta se modifica.
+  //   - INTERNAL: cualquier otro fallo (Order, Zone o Driver Service no disponible, etc.).
+  //
+  // En un error el mensaje indica cuántas rutas quedaron asignadas antes del fallo. Las rutas
+  // ya asignadas no se revierten: el plan se genera en partes y no es atómico en conjunto.
+  rpc GeneratePlan(GeneratePlanRequest) returns (GeneratePlanResponse);
+}
+
+message GeneratePlanRequest {
+  // Fecha de entrega, YYYY-MM-DD. Obligatoria.
+  string delivery_date = 1;
+}
+
+message GeneratePlanResponse {
+  // Rutas creadas, con su repartidor y el número de paradas.
+  repeated PlannedRoute routes = 1;
+}
+
+message PlannedRoute {
+  // Identificador de la ruta en Order y Driver Service: fecha y id del planificador.
+  string route_id = 1;
+  // Repartidor reservado para la ruta.
+  string driver_id = 2;
+  // Número de pedidos (paradas) de la ruta.
+  int32 order_count = 3;
+}
