@@ -20,6 +20,7 @@ import (
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/application/driver"
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/application/ports"
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/domain"
+	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/domain/domaintest"
 )
 
 // fakeStops es la fuente de paradas de prueba: devuelve la parada o un error fijo.
@@ -61,7 +62,7 @@ func serveDeliveries(t *testing.T, repo *memory.DriverRepository, stops grpcadap
 func seedOnRoute(t *testing.T, repo *memory.DriverRepository, id, routeID string) {
 	t.Helper()
 	ctx := context.Background()
-	d, err := domain.NewDriver(id, domain.NewDriverInput{UserID: "user-" + id, FullName: "Ana Ruiz", Phone: "0991234567"}, t0)
+	d, err := domain.NewDriver(id, domaintest.Input("user-"+id), t0)
 	require.NoError(t, err)
 	require.NoError(t, repo.Create(ctx, d))
 	stored, err := repo.Get(ctx, id)

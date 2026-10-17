@@ -110,6 +110,18 @@ func (r *OrderRepository) GetForCustomer(ctx context.Context, orderID string, cu
 	return order, nil
 }
 
+// listAllLimit acota ListAll: la pantalla del personal pagina en el cliente.
+const listAllLimit = 500
+
+// ListAll devuelve los pedidos que cumplen el filtro, del más reciente al más antiguo.
+func (r *OrderRepository) ListAll(ctx context.Context, f ports.OrderFilter) ([]domain.Order, error) {
+	return r.queryOrders(ctx,
+		`SELECT `+orderColumns+` FROM orders
+		  WHERE ($1 = '' OR delivery_date = $1::date) AND ($2 = '' OR status = $2)
+		  ORDER BY created_at DESC, id ASC LIMIT $3`,
+		f.DeliveryDate, string(f.Status), listAllLimit)
+}
+
 // ListExceptions devuelve la cola de excepciones, la más antigua primero.
 func (r *OrderRepository) ListExceptions(ctx context.Context) ([]domain.Order, error) {
 	return r.queryOrders(ctx,
