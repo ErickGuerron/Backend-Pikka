@@ -56,6 +56,19 @@ func (s *DriverServer) GetDriverByUserID(ctx context.Context, req *driversv1.Get
 	return &driversv1.GetDriverByUserIDResponse{Driver: &driversv1.DriverSummary{Id: d.ID, UserId: d.UserID}}, nil
 }
 
+// GetDriverByRouteID devuelve solo los identificadores del repartidor reservado para la ruta.
+func (s *DriverServer) GetDriverByRouteID(ctx context.Context, req *driversv1.GetDriverByRouteIDRequest) (*driversv1.GetDriverByRouteIDResponse, error) {
+	routeID := strings.TrimSpace(req.GetRouteId())
+	if routeID == "" {
+		return nil, status.Error(codes.InvalidArgument, "route_id is required")
+	}
+	d, err := s.svc.FindByRouteID(ctx, routeID)
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	return &driversv1.GetDriverByRouteIDResponse{DriverId: d.ID, UserId: d.UserID}, nil
+}
+
 // RegisterDelivery registra el resultado de una parada. La parada la aporta la fuente de
 // paradas, nunca el llamador.
 func (s *DriverServer) RegisterDelivery(ctx context.Context, req *driversv1.RegisterDeliveryRequest) (*driversv1.RegisterDeliveryResponse, error) {
@@ -165,6 +178,24 @@ func (s *DriverServer) ReserveDriver(ctx context.Context, req *driversv1.Reserve
 		return nil, toStatus(err)
 	}
 	return &driversv1.ReserveDriverResponse{Driver: toProto(d)}, nil
+}
+
+// ReleaseDriver frees the reservation of driver_id for route_id. Like ReserveDriver, it has no
+// role gate: it is called by the Routing Service, which is internal.
+func (s *DriverServer) ReleaseDriver(ctx context.Context, req *driversv1.ReleaseDriverRequest) (*driversv1.ReleaseDriverResponse, error) {
+	driverID := strings.TrimSpace(req.GetDriverId())
+	routeID := strings.TrimSpace(req.GetRouteId())
+	if driverID == "" {
+		return nil, status.Error(codes.InvalidArgument, "driver_id is required")
+	}
+	if routeID == "" {
+		return nil, status.Error(codes.InvalidArgument, "route_id is required")
+	}
+	d, err := s.svc.ReleaseDriver(ctx, driverID, routeID)
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	return &driversv1.ReleaseDriverResponse{Driver: toProto(d)}, nil
 }
 
 // toStatus traduce errores de dominio y de aplicación a los códigos del contrato.

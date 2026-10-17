@@ -52,6 +52,16 @@ service DriverService {
   //   - NOT_FOUND: ningún repartidor tiene ese user_id.
   rpc GetDriverByUserID(GetDriverByUserIDRequest) returns (GetDriverByUserIDResponse);
 
+  // GetDriverByRouteID devuelve solo los identificadores del repartidor reservado para una
+  // ruta. Lo usa el Gateway para resolver la posición del repartidor de un pedido en
+  // seguimiento. No expone nombre ni teléfono.
+  //
+  // Códigos de estado gRPC que el servidor debe devolver:
+  //
+  //   - INVALID_ARGUMENT: route_id en blanco.
+  //   - NOT_FOUND: ningún repartidor tiene reservada esa ruta.
+  rpc GetDriverByRouteID(GetDriverByRouteIDRequest) returns (GetDriverByRouteIDResponse);
+
   // RegisterDelivery guarda el resultado de una parada (ADR 0007, sección 4) y su verificación
   // de llegada. El repartidor debe estar ON_ROUTE en route_id.
   //
@@ -84,6 +94,17 @@ service DriverService {
   // estado, ordenados por apellido y nombre. Cada elemento omite fecha de nacimiento e
   // identificador (minimización de datos). Devuelve como máximo 500 repartidores.
   rpc ListDrivers(ListDriversRequest) returns (ListDriversResponse);
+
+  // ReleaseDriver frees the driver's reservation for route_id, so the driver can take
+  // another route. Idempotent: a driver that holds no reservation is left unchanged and
+  // the call succeeds. A driver reserved for a different route is not changed.
+  //
+  // Status codes the server must return:
+  //
+  //   - INVALID_ARGUMENT: driver_id or route_id is blank.
+  //   - NOT_FOUND: the driver does not exist.
+  //   - FAILED_PRECONDITION: the driver is reserved for a different route.
+  rpc ReleaseDriver(ReleaseDriverRequest) returns (ReleaseDriverResponse);
 }
 
 enum DriverStatus {
@@ -156,6 +177,18 @@ message GetDriverByUserIDRequest {
 
 message GetDriverByUserIDResponse {
   DriverSummary driver = 1;
+}
+
+message GetDriverByRouteIDRequest {
+  // Ruta reservada por el repartidor; obligatorio.
+  string route_id = 1;
+}
+
+message GetDriverByRouteIDResponse {
+  // Identificadores del repartidor que tiene reservada la ruta. Sin nombre ni teléfono.
+  string driver_id = 1;
+  // Identificador del usuario en Auth Service con rol DRIVER.
+  string user_id = 2;
 }
 
 message RegisterDeliveryRequest {
@@ -246,4 +279,15 @@ message DriverListItem {
 
 message ListDriversResponse {
   repeated DriverListItem drivers = 1;
+}
+
+message ReleaseDriverRequest {
+  // Required; must not be blank.
+  string driver_id = 1;
+  // Route whose reservation is released; required.
+  string route_id = 2;
+}
+
+message ReleaseDriverResponse {
+  Driver driver = 1;
 }

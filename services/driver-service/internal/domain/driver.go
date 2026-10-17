@@ -250,6 +250,25 @@ func (d *Driver) Release(routeID string, now time.Time) error {
 	return d.finishReservation(now)
 }
 
+// ReleaseRoute frees the reservation for routeID, whether the route has started (ON_ROUTE)
+// or not (ASSIGNED). The driver becomes AVAILABLE, or OFFLINE if it was deactivated while
+// holding the reservation. It is idempotent: a driver that holds no reservation is left
+// unchanged and the call succeeds. A driver reserved for another route is refused with
+// ErrRouteMismatch. Order of errors: ErrInvalidRouteID, then ErrRouteMismatch.
+func (d *Driver) ReleaseRoute(routeID string, now time.Time) error {
+	routeID = strings.TrimSpace(routeID)
+	if routeID == "" {
+		return ErrInvalidRouteID
+	}
+	if d.Status != StatusAssigned && d.Status != StatusOnRoute {
+		return nil
+	}
+	if d.RouteID != routeID {
+		return ErrRouteMismatch
+	}
+	return d.finishReservation(now)
+}
+
 // StartRoute marca el inicio de la ruta routeID de un repartidor asignado. Un repartidor
 // inactivo no puede iniciarla; si ya la tenía reservada, aún puede liberarla o completarla.
 // Orden de errores: ErrInvalidRouteID, ErrDriverInactive, ErrInvalidTransition (no está

@@ -62,6 +62,22 @@ func (r *DriverRepository) FindByUserID(_ context.Context, userID string) (*doma
 	return nil, ports.ErrDriverNotFound
 }
 
+// FindByRouteID devuelve una copia del repartidor cuya ruta reservada coincide. Un
+// repartidor sin ruta (RouteID vacío) nunca coincide.
+func (r *DriverRepository) FindByRouteID(_ context.Context, routeID string) (*domain.Driver, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if routeID == "" {
+		return nil, ports.ErrDriverNotFound
+	}
+	for _, d := range r.drivers {
+		if d.RouteID == routeID {
+			return &d, nil
+		}
+	}
+	return nil, ports.ErrDriverNotFound
+}
+
 // List devuelve copias ordenadas por apellido, nombre e ID, hasta limit.
 func (r *DriverRepository) List(_ context.Context, limit int) ([]*domain.Driver, error) {
 	r.mu.Lock()

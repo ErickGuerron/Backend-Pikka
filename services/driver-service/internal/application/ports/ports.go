@@ -27,6 +27,8 @@ type DriverRepository interface {
 	Get(ctx context.Context, id string) (*domain.Driver, error)
 	// FindByUserID devuelve el repartidor cuyo user_id es userID, o ErrDriverNotFound.
 	FindByUserID(ctx context.Context, userID string) (*domain.Driver, error)
+	// FindByRouteID devuelve el repartidor cuya ruta reservada es routeID, o ErrDriverNotFound.
+	FindByRouteID(ctx context.Context, routeID string) (*domain.Driver, error)
 	Save(ctx context.Context, d *domain.Driver, expectedVersion int) error
 	// FindAvailable devuelve hasta limit repartidores activos y AVAILABLE, en orden de ID.
 	FindAvailable(ctx context.Context, limit int) ([]*domain.Driver, error)

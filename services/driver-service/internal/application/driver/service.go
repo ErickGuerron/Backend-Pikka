@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/application/ports"
@@ -93,9 +94,27 @@ func (s *Service) ReserveDriver(ctx context.Context, id, routeID string) (*domai
 	})
 }
 
+// ReleaseDriver frees the reservation of driver id for routeID. It is idempotent; see
+// domain.Driver.ReleaseRoute.
+func (s *Service) ReleaseDriver(ctx context.Context, id, routeID string) (*domain.Driver, error) {
+	return s.mutate(ctx, id, func(d *domain.Driver, now time.Time) error {
+		return d.ReleaseRoute(routeID, now)
+	})
+}
+
 // FindByUserID devuelve el repartidor asociado a un usuario de Auth Service.
 func (s *Service) FindByUserID(ctx context.Context, userID string) (*domain.Driver, error) {
 	return s.repo.FindByUserID(ctx, userID)
+}
+
+// FindByRouteID devuelve el repartidor reservado para la ruta routeID. Un routeID en blanco
+// es ErrInvalidRouteID; si ningún repartidor tiene esa ruta, ErrDriverNotFound.
+func (s *Service) FindByRouteID(ctx context.Context, routeID string) (*domain.Driver, error) {
+	routeID = strings.TrimSpace(routeID)
+	if routeID == "" {
+		return nil, domain.ErrInvalidRouteID
+	}
+	return s.repo.FindByRouteID(ctx, routeID)
 }
 
 // ListLimit es el máximo de repartidores que devuelve List.
