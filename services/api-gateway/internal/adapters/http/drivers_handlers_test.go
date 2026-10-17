@@ -30,6 +30,16 @@ func (f *fakeDriverClient) RegisterDelivery(_ context.Context, _ grpcclient.Call
 	return nil, errNoLlamar
 }
 
+func (f *fakeDriverClient) CreateDriver(_ context.Context, _ grpcclient.CallMeta, _ *driversv1.CreateDriverRequest) (*driversv1.CreateDriverResponse, error) {
+	f.calls++
+	return nil, errNoLlamar
+}
+
+func (f *fakeDriverClient) ListDrivers(_ context.Context, _ grpcclient.CallMeta, _ *driversv1.ListDriversRequest) (*driversv1.ListDriversResponse, error) {
+	f.calls++
+	return nil, errNoLlamar
+}
+
 type driverRoute struct {
 	method, path, body string
 }
