@@ -150,6 +150,24 @@ services:
       redis:
         condition: service_healthy
 
+  routing-service:
+    <<: *go-service
+    build:
+      context: .
+      dockerfile: services/routing-service/Dockerfile
+    environment:
+      <<: *go-env
+      ROUTING_GRPC_PORT: "9094"
+      ORDER_SERVICE_ADDR: order-service:9091
+      ZONE_SERVICE_ADDR: zone-service:9090
+      DRIVER_SERVICE_ADDR: driver-service:9092
+    # Internal traffic: no published host port; only the Gateway reaches it. No database: state lives in
+    # Order and Driver Service, so this service has no DB_PASSWORD and no depends_on on postgres.
+    depends_on:
+      - order-service
+      - zone-service
+      - driver-service
+
   api-gateway:
     <<: *go-service
     build:
@@ -163,6 +181,7 @@ services:
       ORDER_SERVICE_ADDR: order-service:9091
       DRIVER_SERVICE_ADDR: driver-service:9092
       TRACKING_GRPC_ADDR: tracking-service:9093
+      ROUTING_SERVICE_ADDR: routing-service:9094
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8081}
       # En local no hay TLS; en producción el HTTPS termina en el balanceador.
       ENABLE_HSTS: "false"
@@ -176,6 +195,7 @@ services:
       - order-service
       - driver-service
       - tracking-service
+      - routing-service
 
   # --- Pruebas de rendimiento y seguridad -----------------------------------
   # Estos servicios NO se levantan con `make up`. Se ejecutan bajo demanda:

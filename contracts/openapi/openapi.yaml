@@ -30,8 +30,10 @@ tags:
     description: Cobertura de reparto visible para cualquier rol autenticado (solo zonas activas, sin configuración operativa)
   - name: products
     description: Catálogo de productos y stock (ADR 0009)
+  - name: routes
+    description: Generación del plan de rutas de una fecha (solo ADMIN y OPERATOR)
   - name: drivers
-    description: Rutas del repartidor (ADR 0007) y reporte de posición. Solo rol DRIVER. Las rutas de ruta y parada responden 501 hasta que exista el Routing Service
+    description: Rutas del repartidor (ADR 0007) y reporte de posición. Solo rol DRIVER. La ruta del repartidor y el resultado de parada responden 501 hasta que exista el Routing Service; el avance de parada (status) ya está implementado. The driver creation (POST /drivers) is ADMIN only.
 paths:
   /health:
     get:
@@ -513,6 +515,97 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/orders/{id}/tracking:
+    get:
+      tags: [orders]
+      operationId: getOrderTracking
+      summary: Snapshot of the authenticated customer's order (CUSTOMER only)
+      description: |
+        Order status and, when the assigned driver has a fresh position, the ETA to the delivery point.
+        A foreign or unknown order responds 404 with the same body. The snapshot never includes driver
+        identity, route, other orders or coordinates.
+
+        `eta` is null when there is no ETA. `eta_unavailable_reason` says why: `no_route` (the order has no
+        route yet), `no_position` (the driver has not reported a position), `stale_position` (the last position
+        is too old) or `unavailable` (Tracking Service did not answer). A stale ETA is never shown.
+
+        `stops_before` is the number of open stops ahead of this order on its route. It is null when the order
+        has no route or the count fails. A failure in the stop count or in the ETA does not fail the snapshot.
+
+        For live updates, see `GET /api/v1/orders/{id}/tracking/ws`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Order snapshot
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrackingSnapshot" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503":
+          description: Order Service unavailable. Code UPSTREAM_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/orders/{id}/tracking/ws:
+    get:
+      tags: [orders]
+      operationId: watchOrderTracking
+      summary: WebSocket for the authenticated customer's order tracking (CUSTOMER only)
+      x-websocket: true
+      description: |
+        This is a WebSocket. OpenAPI 3.x cannot describe sockets natively, so it is documented as a GET.
+        The client sends `Upgrade: websocket` and the handshake headers of RFC 6455.
+
+        **Authentication.** Browsers cannot send an `Authorization` header on a WebSocket, so the JWT travels
+        as the second subprotocol: `Sec-WebSocket-Protocol: pikka.v1, <jwt>`. The server accepts `pikka.v1` and
+        validates the JWT with the same verifier as the HTTP routes. The token never appears in the URL or in logs.
+        This route does not read the `Authorization` header, so `security` is empty.
+
+        **Rejections before the upgrade.** Authentication and ownership are checked before the socket opens:
+        - 401: subprotocol missing or malformed, or token invalid or expired (JSON error body).
+        - 403: role other than CUSTOMER (JSON error body). An Origin not allowed by the CORS list is also 403,
+          with a plain-text body from the WebSocket library.
+        - 404: foreign or unknown order, same body in both cases (JSON error body).
+        - 400 or 426: invalid WebSocket handshake (version, key or Upgrade headers). Plain-text body from the library.
+
+        **Messages.** Each message is a text frame with a JSON object of the `TrackingSnapshot` schema.
+        - On connect, the server sends the current snapshot.
+        - Then it polls every 5 s (`TRACKING_POLL_INTERVAL`) and sends a message only when the snapshot changed.
+          `updated_at` is ignored when comparing.
+        - A failed poll is skipped and retried on the next tick; the socket stays open.
+        - The client should not send data messages. A data message closes the socket with code 1008 (policy violation).
+        - When the client goes away, the connection ends.
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: Sec-WebSocket-Protocol
+          in: header
+          required: true
+          description: "Must be `pikka.v1, <jwt>`. The first item is the protocol name; the second is the access token."
+          schema: { type: string, example: "pikka.v1, <jwt>" }
+      responses:
+        "101":
+          description: Switching Protocols. The server sends the snapshot on connect and then each change
+        "400":
+          description: Invalid WebSocket handshake (plain-text body from the library)
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Role other than CUSTOMER (JSON error body), or Origin not allowed (plain-text body)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "426":
+          description: Missing Upgrade or Connection header (plain-text body from the library)
   /api/v1/coverage/zones:
     get:
       tags: [coverage]
@@ -866,6 +959,85 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/routes/plan:
+    post:
+      tags: [routes]
+      operationId: generateRoutePlan
+      summary: Generate the route plan for a delivery date (ADMIN or OPERATOR)
+      description: |
+        Plans the PENDING orders of the date, reserves one driver per route and assigns each route's orders.
+        Routes are processed in order and the run is not atomic: routes created before a failure stay
+        assigned, and the error message says how many. The orders of the failing route are not changed.
+        The Routing Service validates the role and the date; other roles get 403 before any work is done.
+        Failures in Order, Zone or Driver Service come back as 500 with code INTERNAL.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GeneratePlanRequest" }
+      responses:
+        "200":
+          description: Plan generated. routes is empty when the date has no pending orders
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GeneratePlanResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "415":
+          description: Content-Type is not application/json. Code UNSUPPORTED_MEDIA_TYPE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: No driver is available for a route, or Driver Service rejected a reservation. Code FAILED_PRECONDITION
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: Routing Service unavailable. Code UPSTREAM_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/drivers:
+    post:
+      tags: [drivers]
+      operationId: createDriver
+      summary: Create the driver profile of a user with the DRIVER role (ADMIN only)
+      description: |
+        Creates the profile active and AVAILABLE. The user must exist and have the DRIVER role; otherwise the
+        response is 422 (FAILED_PRECONDITION). A user who already has a driver profile gets 409 (CONFLICT).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateDriverRequest" }
+      responses:
+        "201":
+          description: Driver created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Driver" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "415":
+          description: Content-Type is not application/json. Code UNSUPPORTED_MEDIA_TYPE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: The user does not have the DRIVER role. Code FAILED_PRECONDITION
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: Auth Service or Driver Service unavailable. Code UPSTREAM_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /api/v1/drivers/me/route:
     get:
       tags: [drivers]
@@ -883,10 +1055,13 @@ paths:
     patch:
       tags: [drivers]
       operationId: setMyStopStatus
-      summary: Avanza una parada a PICKED_UP o IN_TRANSIT (solo DRIVER)
+      summary: Advances a stop of the authenticated driver's route to PICKED_UP or IN_TRANSIT (DRIVER only)
       description: |
-        NO IMPLEMENTADO. Responde 501 hasta que exista el Tracking Service, que posee las
-        transiciones de parada. El resultado final de la parada va en el endpoint de resultado.
+        The route must be reserved for the authenticated driver. A route that belongs to another driver, a route
+        that does not exist and a route with no driver all respond 404 with the same message.
+        The `stopId` is the order id of the stop. Order Service validates the step against the order's current
+        status: an illegal step responds 422 (FAILED_PRECONDITION).
+        DELIVERED and NOT_DELIVERED are not accepted here (400); the final result of a stop goes through the result endpoint.
       parameters:
         - name: routeId
           in: path
@@ -906,9 +1081,30 @@ paths:
               properties:
                 status: { type: string, enum: [PICKED_UP, IN_TRANSIT] }
       responses:
+        "200":
+          description: Stop advanced. Returns the new order status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StopStatusResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
-        "501": { $ref: "#/components/responses/NotImplemented" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "415":
+          description: Content-Type is not application/json. Code UNSUPPORTED_MEDIA_TYPE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: The step is not allowed from the order's current status. Code FAILED_PRECONDITION
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: Order Service or Driver Service unavailable. Code UPSTREAM_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /api/v1/drivers/me/routes/{routeId}/stops/{stopId}/result:
     post:
       tags: [drivers]
@@ -1317,6 +1513,79 @@ components:
           type: string
           format: date-time
           description: Momento del fix en el dispositivo, RFC 3339 en UTC. Más de 30 s en el futuro responde 400
+    GeneratePlanRequest:
+      type: object
+      required: [deliveryDate]
+      properties:
+        deliveryDate: { type: string, format: date, example: "2026-10-16", description: "Delivery date, YYYY-MM-DD" }
+    PlannedRoute:
+      type: object
+      required: [routeId, driverId, orderCount]
+      properties:
+        routeId: { type: string, description: Route identifier shared by Order Service and Driver Service }
+        driverId: { type: string, format: uuid, description: Driver reserved for the route }
+        orderCount: { type: integer, minimum: 0, description: Number of stops (orders) in the route }
+    GeneratePlanResponse:
+      type: object
+      required: [routes]
+      properties:
+        routes: { type: array, items: { $ref: "#/components/schemas/PlannedRoute" } }
+    CreateDriverRequest:
+      type: object
+      required: [userId, fullName, phone]
+      properties:
+        userId: { type: string, format: uuid, description: User of Auth Service with the DRIVER role }
+        fullName: { type: string, minLength: 1, maxLength: 120 }
+        phone: { type: string, example: "+593991234567", description: "7 to 15 digits with an optional leading +. Spaces and hyphens are removed" }
+    Driver:
+      type: object
+      required: [id, userId, fullName, phone, active, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        fullName: { type: string }
+        phone: { type: string }
+        active: { type: boolean }
+        status: { type: string, enum: [AVAILABLE, ASSIGNED, ON_ROUTE, OFFLINE] }
+        createdAt: { type: string, format: date-time }
+    TrackingSnapshot:
+      type: object
+      description: Customer view of one order. Field names are snake_case, as the Gateway emits them. Never includes driver identity, route, other orders or coordinates.
+      required: [order_id, status, delivery_address, delivery_window, eta, eta_unavailable_reason, stops_before, updated_at]
+      properties:
+        order_id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/OrderStatus" }
+        delivery_address: { type: string }
+        delivery_window:
+          type: object
+          required: [start, end]
+          properties:
+            start: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$", description: "Start of the delivery window, HH:mm" }
+            end: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$", description: "End of the delivery window, HH:mm" }
+        eta:
+          type: object
+          nullable: true
+          description: ETA from the driver's latest fresh position. Null when there is no ETA; see eta_unavailable_reason.
+          required: [distance_meters, duration_seconds]
+          properties:
+            distance_meters: { type: number }
+            duration_seconds: { type: number }
+        eta_unavailable_reason:
+          type: string
+          nullable: true
+          enum: [null, no_route, no_position, stale_position, unavailable]
+          description: Why eta is null. Null when eta is present.
+        stops_before:
+          type: integer
+          nullable: true
+          description: Open stops ahead of this order on its route. Null when the order has no route or the count is unavailable.
+        updated_at: { type: string, format: date-time, description: Server time when the snapshot was built }
+    StopStatusResponse:
+      type: object
+      required: [stopId, status]
+      properties:
+        stopId: { type: string, description: Same value as the stopId path parameter }
+        status: { $ref: "#/components/schemas/OrderStatus" }
     Error:
       type: object
       required: [error]
