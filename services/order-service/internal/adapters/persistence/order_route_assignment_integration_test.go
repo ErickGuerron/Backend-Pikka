@@ -19,7 +19,7 @@ const testRoute = "zone-1#1"
 func assignOne(t *testing.T, orders *persistence.OrderRepository, id string) {
 	t.Helper()
 	_, err := orders.AssignToRoute(context.Background(), []string{id}, func(o domain.Order) (domain.Order, error) {
-		return o.AssignToRoute(testRoute)
+		return o.AssignToRoute(testRoute, 0)
 	})
 	require.NoError(t, err)
 }
@@ -62,7 +62,7 @@ func TestAsignarRutaTodoONinguno(t *testing.T) {
 	assignOne(t, orders, taken.ID)
 
 	_, err = orders.AssignToRoute(ctx, []string{free.ID, taken.ID}, func(o domain.Order) (domain.Order, error) {
-		return o.AssignToRoute(testRoute)
+		return o.AssignToRoute(testRoute, 0)
 	})
 
 	assert.ErrorIs(t, err, domain.ErrOrderNotPending)
@@ -84,7 +84,7 @@ func TestAsignarRutaIDDesconocido(t *testing.T) {
 	orders := persistence.NewOrderRepository(pool)
 
 	_, err = orders.AssignToRoute(ctx, []string{free.ID, uuid.NewString()}, func(o domain.Order) (domain.Order, error) {
-		return o.AssignToRoute(testRoute)
+		return o.AssignToRoute(testRoute, 0)
 	})
 
 	assert.ErrorIs(t, err, domain.ErrOrderNotFound)
@@ -106,7 +106,7 @@ func TestAsignarRutaOK(t *testing.T) {
 	orders := persistence.NewOrderRepository(pool)
 
 	got, err := orders.AssignToRoute(ctx, []string{second.ID, first.ID}, func(o domain.Order) (domain.Order, error) {
-		return o.AssignToRoute(testRoute)
+		return o.AssignToRoute(testRoute, 0)
 	})
 
 	require.NoError(t, err)

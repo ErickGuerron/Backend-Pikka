@@ -15,7 +15,11 @@ type Order struct {
 	CustomerID string
 	ZoneID     string
 	// RouteID is set when the order is assigned to a route (ROUTE_ASSIGNED).
-	RouteID      string
+	RouteID string
+	// StopSequence is the order's position in RouteID (1 is the first stop). 0 means unassigned:
+	// the order was assigned through the legacy form without a sequence, or it has no route.
+	StopSequence int
+
 	Address      string
 	Latitude     float64
 	Longitude    float64

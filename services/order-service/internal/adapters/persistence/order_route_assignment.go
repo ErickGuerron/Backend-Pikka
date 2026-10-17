@@ -2,10 +2,12 @@ package persistence
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/domain"
 )
@@ -60,11 +62,16 @@ func (r *OrderRepository) AssignToRoute(ctx context.Context, orderIDs []string, 
 	for _, order := range next {
 		saved, err := scanOrder(tx.QueryRow(ctx,
 			`UPDATE orders
-			    SET status = $2, review_reasons = $3, route_id = $4, version = version + 1, updated_at = now()
+			    SET status = $2, review_reasons = $3, route_id = $4, stop_sequence = $5,
+			        version = version + 1, updated_at = now()
 			  WHERE id = $1
 			RETURNING `+orderColumns,
 			order.ID, string(order.Status), reasonStrings(order.ReviewReasons), order.RouteID,
+			optionalSequence(order.StopSequence),
 		))
+		if isDuplicateStopSequence(err) {
+			return nil, domain.ErrDuplicateStopSequence
+		}
 		if err != nil {
 			return nil, fmt.Errorf("assign route: update: %w", err)
 		}
@@ -75,6 +82,20 @@ func (r *OrderRepository) AssignToRoute(ctx context.Context, orderIDs []string, 
 		return nil, fmt.Errorf("assign route: commit: %w", err)
 	}
 	return out, nil
+}
+
+// optionalSequence guarda 0 (sin secuencia) como NULL, así el índice único ignora los pedidos sin parada.
+func optionalSequence(sequence int) any {
+	if sequence == 0 {
+		return nil
+	}
+	return sequence
+}
+
+// isDuplicateStopSequence detecta la violación del índice único de paradas (SQLSTATE 23505 en esa restricción).
+func isDuplicateStopSequence(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "orders_route_stop_sequence_key"
 }
 
 // lockOrders carga y bloquea los pedidos pedidos, indexados por id.

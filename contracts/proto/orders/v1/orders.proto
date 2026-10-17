@@ -39,6 +39,17 @@ service OrderService {
   // order_ids returns INVALID_ARGUMENT; an unknown ID returns NOT_FOUND; any
   // order not in PENDING returns ABORTED (HTTP 409) and none is changed.
   rpc AssignOrdersToRoute(AssignOrdersToRouteRequest) returns (AssignOrdersToRouteResponse);
+  // AdvanceRouteStop moves one order of a route forward for its driver: ROUTE_ASSIGNED -> PICKED_UP
+  // -> IN_TRANSIT. Internal, called by the Gateway after it verified the driver owns the route. Blank
+  // route_id or order_id returns INVALID_ARGUMENT; a target other than PICKED_UP or IN_TRANSIT returns
+  // INVALID_ARGUMENT; an order not on that route returns NOT_FOUND; an illegal transition returns
+  // FAILED_PRECONDITION. DELIVERED and NOT_DELIVERED belong to RegisterDelivery, not to this RPC.
+  rpc AdvanceRouteStop(AdvanceRouteStopRequest) returns (AdvanceRouteStopResponse);
+  // StopsBeforeForOrder counts the orders of the same route with a smaller stop_sequence that are still
+  // open (not DELIVERED, NOT_DELIVERED or CANCELLED). Only the CUSTOMER role can call it, and only for an
+  // order it owns: a foreign or unknown order returns NOT_FOUND. An order without route or stop_sequence
+  // returns 0.
+  rpc StopsBeforeForOrder(StopsBeforeForOrderRequest) returns (StopsBeforeForOrderResponse);
 }
 
 enum OrderStatus {
@@ -247,11 +258,44 @@ message GetMyOrderResponse {
   Order order = 1;
 }
 
+// One order of a route and its position in the route (1 is the first stop).
+message OrderStop {
+  string order_id = 1;
+  // Integer >= 1, unique within the route.
+  int32 sequence = 2;
+}
+
 message AssignOrdersToRouteRequest {
   // Required route identifier chosen by Routing.
   string route_id = 1;
-  // Required, non-empty list of order UUIDs, all PENDING.
+  // Legacy form: order UUIDs with no stop sequence (stored as unassigned). Ignored when stops is set.
   repeated string order_ids = 2;
+  // Preferred form: every order with its stop sequence, all PENDING. When set, order_ids is ignored.
+  // A sequence below 1, or repeated within the route, returns INVALID_ARGUMENT.
+  repeated OrderStop stops = 3;
+}
+
+message AdvanceRouteStopRequest {
+  // Required route the driver is running.
+  string route_id = 1;
+  // Required UUID of an order on that route.
+  string order_id = 2;
+  // PICKED_UP or IN_TRANSIT. Any other value returns INVALID_ARGUMENT.
+  OrderStatus target_status = 3;
+}
+
+message AdvanceRouteStopResponse {
+  Order order = 1;
+}
+
+message StopsBeforeForOrderRequest {
+  // Required UUID of an order owned by the caller.
+  string order_id = 1;
+}
+
+message StopsBeforeForOrderResponse {
+  // Open stops of the same route ahead of this order. 0 when the order has no route or stop_sequence.
+  int32 stops_before = 1;
 }
 
 message AssignOrdersToRouteResponse {
