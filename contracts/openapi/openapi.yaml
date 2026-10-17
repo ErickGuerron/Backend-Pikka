@@ -363,6 +363,8 @@ paths:
         La fecha de entrega debe ser hoy o posterior en la zona horaria de operación.
         La ventana no cruza medianoche: windowEnd debe ser posterior a windowStart.
         Si Zone Service no responde, no se registra el pedido y se devuelve 503.
+        ADMIN, OPERATOR y DRIVER reciben 403 antes de que se valide el cuerpo: el personal revisa
+        los pedidos de los clientes pero no los registra.
       requestBody:
         required: true
         content:
