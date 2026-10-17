@@ -98,6 +98,7 @@ func run(log *slog.Logger) error {
 	listMyOrders := orderapp.NewListMyOrders(customerRepo, orderRepo)
 	reviewOrder := orderapp.NewReviewOrder(customerRepo, zoneClassifier, geocoder, orderRepo, location)
 	listExceptions := orderapp.NewListExceptions(orderRepo)
+	listAllOrders := orderapp.NewListOrders(orderRepo)
 	listMyNotifications := orderapp.NewListMyNotifications(customerRepo, notificationRepo)
 	cancelOrder := orderapp.NewCancelOrder(customerRepo, orderRepo)
 	routeAssignment := orderapp.NewRouteAssignment(orderRepo)
@@ -110,6 +111,7 @@ func run(log *slog.Logger) error {
 		Create:          createOrder,
 		ListMine:        listMyOrders,
 		Exceptions:      listExceptions,
+		ListAll:         listAllOrders,
 		Review:          reviewOrder,
 		Notifications:   listMyNotifications,
 		Cancel:          cancelOrder,
