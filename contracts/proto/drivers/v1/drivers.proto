@@ -79,15 +79,21 @@ service DriverService {
   //   - UNIMPLEMENTED: la fuente de paradas aún no existe.
   rpc RegisterDelivery(RegisterDeliveryRequest) returns (RegisterDeliveryResponse);
 
-  // CreateDriver registers a new driver profile that is active and AVAILABLE.
-  // Only callers whose x-user-role metadata is ADMIN may create drivers.
+  // CreateDriver registra el perfil de un repartidor cuyo usuario DRIVER ya existe en Auth
+  // Service. El repartidor nace activo y AVAILABLE. Devuelve el perfil completo, que incluye
+  // datos personales (fecha de nacimiento, identificador): solo lo debe leer quien registra.
   //
-  // Status codes the server must return:
+  // Códigos de estado gRPC que el servidor debe devolver:
   //
-  //   - PERMISSION_DENIED: the caller is not ADMIN.
-  //   - INVALID_ARGUMENT: user_id, full_name or phone is blank or invalid.
-  //   - ALREADY_EXISTS: a driver with this user_id already exists.
+  //   - INVALID_ARGUMENT: algún campo en blanco o con formato inválido, tipo de vehículo fuera
+  //     de la lista, o menor de 18 años.
+  //   - ALREADY_EXISTS: el usuario, el identificador o la placa ya pertenecen a otro repartidor.
   rpc CreateDriver(CreateDriverRequest) returns (CreateDriverResponse);
+
+  // ListDrivers devuelve la flota para el personal de la web: activos e inactivos, en cualquier
+  // estado, ordenados por apellido y nombre. Cada elemento omite fecha de nacimiento e
+  // identificador (minimización de datos). Devuelve como máximo 500 repartidores.
+  rpc ListDrivers(ListDriversRequest) returns (ListDriversResponse);
 
   // ReleaseDriver frees the driver's reservation for route_id, so the driver can take
   // another route. Idempotent: a driver that holds no reservation is left unchanged and
@@ -107,6 +113,13 @@ enum DriverStatus {
   DRIVER_STATUS_ASSIGNED = 2;
   DRIVER_STATUS_ON_ROUTE = 3;
   DRIVER_STATUS_OFFLINE = 4;
+}
+
+enum VehicleType {
+  VEHICLE_TYPE_UNSPECIFIED = 0;
+  VEHICLE_TYPE_MOTORBIKE = 1; // MOTORIZADO
+  VEHICLE_TYPE_CAR = 2; // AUTOMOVIL
+  VEHICLE_TYPE_SUV = 3; // SUV
 }
 
 message Driver {
@@ -209,14 +222,63 @@ message RegisterDeliveryResponse {
 }
 
 message CreateDriverRequest {
-  // Identifier of the user in Auth Service with the DRIVER role; required.
+  // Usuario de Auth Service con rol DRIVER; obligatorio y único.
   string user_id = 1;
-  string full_name = 2;
-  string phone = 3;
+  string first_name = 2;
+  string last_name = 3;
+  // YYYY-MM-DD. El repartidor debe tener al menos 18 años.
+  string birth_date = 4;
+  // Número de contacto: 7 a 15 dígitos y un + opcional al inicio.
+  string phone = 5;
+  VehicleType vehicle_type = 6;
+  // Documento de identidad: 5 a 20 letras o dígitos; único.
+  string identifier = 7;
+  // Placa del vehículo: 5 a 8 letras o dígitos, sin guiones; única.
+  string plate = 8;
+  string city = 9;
+}
+
+// DriverProfile es el perfil completo de un repartidor. Contiene datos personales: no se
+// reutiliza en respuestas que consumen otros servicios (por eso Driver no lo incluye).
+message DriverProfile {
+  string id = 1;
+  string user_id = 2;
+  string first_name = 3;
+  string last_name = 4;
+  // YYYY-MM-DD.
+  string birth_date = 5;
+  string phone = 6;
+  VehicleType vehicle_type = 7;
+  string identifier = 8;
+  string plate = 9;
+  string city = 10;
+  bool active = 11;
+  DriverStatus status = 12;
+  // RFC 3339, UTC.
+  string created_at = 13;
 }
 
 message CreateDriverResponse {
-  Driver driver = 1;
+  DriverProfile driver = 1;
+}
+
+message ListDriversRequest {}
+
+message DriverListItem {
+  string id = 1;
+  string user_id = 2;
+  string first_name = 3;
+  string last_name = 4;
+  string phone = 5;
+  string city = 6;
+  VehicleType vehicle_type = 7;
+  string plate = 8;
+  bool active = 9;
+  DriverStatus status = 10;
+}
+
+message ListDriversResponse {
+  repeated DriverListItem drivers = 1;
 }
 
 message ReleaseDriverRequest {

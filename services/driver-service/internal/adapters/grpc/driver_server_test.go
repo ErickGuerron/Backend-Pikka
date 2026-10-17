@@ -19,6 +19,7 @@ import (
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/adapters/memory"
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/application/driver"
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/domain"
+	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/domain/domaintest"
 )
 
 var t0 = time.Date(2026, 10, 13, 8, 0, 0, 0, time.UTC)
@@ -51,7 +52,7 @@ func serve(t *testing.T, svc *driver.Service) driversv1.DriverServiceClient {
 
 func seedDriver(t *testing.T, repo *memory.DriverRepository, id string) *domain.Driver {
 	t.Helper()
-	d, err := domain.NewDriver(id, domain.NewDriverInput{UserID: "user-" + id, FullName: "Ana Ruiz", Phone: "0991234567"}, t0)
+	d, err := domain.NewDriver(id, domaintest.Input("user-"+id), t0)
 	require.NoError(t, err)
 	require.NoError(t, repo.Create(context.Background(), d))
 	return d
@@ -138,4 +139,73 @@ func TestReserveDriverCodigosDeError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func createRequest() *driversv1.CreateDriverRequest {
+	return &driversv1.CreateDriverRequest{
+		UserId: "user-new", FirstName: "Lucas", LastName: "Martinez", BirthDate: "1999-03-15", Phone: "0987654321",
+		VehicleType: driversv1.VehicleType_VEHICLE_TYPE_CAR, Identifier: "1712345678", Plate: "PBA-1234", City: "Quito",
+	}
+}
+
+func TestCreateDriverDevuelveElPerfil(t *testing.T) {
+	client, _ := setup(t)
+
+	resp, err := client.CreateDriver(context.Background(), createRequest())
+
+	require.NoError(t, err)
+	p := resp.GetDriver()
+	assert.NotEmpty(t, p.GetId())
+	assert.Equal(t, "Lucas", p.GetFirstName())
+	assert.Equal(t, "1999-03-15", p.GetBirthDate())
+	assert.Equal(t, driversv1.VehicleType_VEHICLE_TYPE_CAR, p.GetVehicleType())
+	assert.Equal(t, "PBA1234", p.GetPlate())
+	assert.Equal(t, driversv1.DriverStatus_DRIVER_STATUS_AVAILABLE, p.GetStatus())
+}
+
+func TestCreateDriverCodigosDeError(t *testing.T) {
+	client, _ := setup(t)
+	ctx := context.Background()
+	_, err := client.CreateDriver(ctx, createRequest())
+	require.NoError(t, err)
+
+	tests := []struct {
+		name   string
+		mutate func(*driversv1.CreateDriverRequest)
+		want   codes.Code
+	}{
+		{"fecha mal formada", func(r *driversv1.CreateDriverRequest) { r.BirthDate = "15/03/1999" }, codes.InvalidArgument},
+		{"vehículo sin especificar", func(r *driversv1.CreateDriverRequest) { r.VehicleType = driversv1.VehicleType_VEHICLE_TYPE_UNSPECIFIED }, codes.InvalidArgument},
+		{"menor de edad", func(r *driversv1.CreateDriverRequest) { r.BirthDate = "2020-01-01" }, codes.InvalidArgument},
+		{"placa inválida", func(r *driversv1.CreateDriverRequest) { r.Plate = "A-1" }, codes.InvalidArgument},
+		{"usuario repetido", func(r *driversv1.CreateDriverRequest) { r.Identifier, r.Plate = "9999999999", "ZZZ9999" }, codes.AlreadyExists},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := createRequest()
+			tt.mutate(req)
+			_, err := client.CreateDriver(ctx, req)
+			assert.Equal(t, tt.want, status.Code(err))
+		})
+	}
+}
+
+func TestListDriversIncluyeInactivosYNoExponeDatosPersonales(t *testing.T) {
+	client, _ := setup(t)
+	ctx := context.Background()
+	_, err := client.CreateDriver(ctx, createRequest())
+	require.NoError(t, err)
+
+	resp, err := client.ListDrivers(ctx, &driversv1.ListDriversRequest{})
+
+	require.NoError(t, err)
+	require.Len(t, resp.GetDrivers(), 1)
+	item := resp.GetDrivers()[0]
+	assert.Equal(t, "Lucas", item.GetFirstName())
+	assert.Equal(t, "Martinez", item.GetLastName())
+	assert.Equal(t, "Quito", item.GetCity())
+	assert.Equal(t, "PBA1234", item.GetPlate())
+	assert.Equal(t, driversv1.VehicleType_VEHICLE_TYPE_CAR, item.GetVehicleType())
+	assert.Equal(t, driversv1.DriverStatus_DRIVER_STATUS_AVAILABLE, item.GetStatus())
+	assert.True(t, item.GetActive())
 }

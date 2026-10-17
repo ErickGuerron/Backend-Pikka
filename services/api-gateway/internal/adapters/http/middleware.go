@@ -92,6 +92,24 @@ func StaffOnly() echo.MiddlewareFunc {
 	}
 }
 
+// CustomerOnly exige rol CUSTOMER. Solo el cliente registra pedidos (ADR 0007): el personal los
+// revisa pero no los crea. Corta con 403 antes de validar el cuerpo y de llamar al servicio interno,
+// que repite la regla por su cuenta.
+func CustomerOnly() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			id, ok := identityFrom(c)
+			if !ok {
+				return echo.NewHTTPError(http.StatusUnauthorized, "missing identity")
+			}
+			if !strings.EqualFold(id.Role, "CUSTOMER") {
+				return echo.NewHTTPError(http.StatusForbidden, "customer role required")
+			}
+			return next(c)
+		}
+	}
+}
+
 func identityFrom(c echo.Context) (jwt.Identity, bool) {
 	id, ok := c.Get(identityKey).(jwt.Identity)
 	return id, ok

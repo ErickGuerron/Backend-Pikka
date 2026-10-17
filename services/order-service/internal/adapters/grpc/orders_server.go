@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,6 +27,7 @@ type OrderUseCases struct {
 	Create        *orderapp.CreateOrder
 	ListMine      *orderapp.ListMyOrders
 	Exceptions    *orderapp.ListExceptions
+	ListAll       *orderapp.ListOrders
 	Review        *orderapp.ReviewOrder
 	Notifications *orderapp.ListMyNotifications
 	Cancel        *orderapp.CancelOrder
@@ -137,6 +139,28 @@ func (s *OrderServer) ListMyNotifications(ctx context.Context, _ *ordersv1.ListM
 		out = append(out, notificationToProto(n))
 	}
 	return &ordersv1.ListMyNotificationsResponse{Notifications: out}, nil
+}
+
+// ListOrders devuelve los pedidos de todos los clientes (solo ADMIN y OPERATOR), con filtros opcionales.
+func (s *OrderServer) ListOrders(ctx context.Context, req *ordersv1.ListOrdersRequest) (*ordersv1.ListOrdersResponse, error) {
+	if s.useCases.ListAll == nil {
+		return nil, status.Error(codes.Unimplemented, "list orders is not wired")
+	}
+	_, role, err := identityFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	filterStatus, ok := statusFromProto(req.GetStatus())
+	if !ok {
+		return nil, status.Error(codes.InvalidArgument, "unrecognized order status")
+	}
+	orders, err := s.useCases.ListAll.Run(ctx, orderapp.ListOrdersQuery{
+		Role: role, DeliveryDate: strings.TrimSpace(req.GetDeliveryDate()), Status: filterStatus,
+	})
+	if err != nil {
+		return nil, mapOrderError(err)
+	}
+	return &ordersv1.ListOrdersResponse{Orders: ordersToProto(orders)}, nil
 }
 
 // ListOrderExceptions devuelve la cola de excepciones (solo ADMIN y OPERATOR).
@@ -281,6 +305,8 @@ func mapOrderError(err error) error {
 	switch {
 	case errors.Is(err, domain.ErrNotCustomer), errors.Is(err, domain.ErrNotOperator):
 		return status.Error(codes.PermissionDenied, err.Error())
+	case errors.Is(err, orderapp.ErrInvalidDeliveryDate):
+		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, domain.ErrOrderNotFound):
 		return status.Error(codes.NotFound, "pedido no encontrado")
 	case errors.Is(err, domain.ErrOrderNotInReview), errors.Is(err, domain.ErrOrderNotCancellable), errors.Is(err, domain.ErrOrderNotPending):
@@ -368,6 +394,23 @@ func notificationToProto(n domain.Notification) *ordersv1.Notification {
 		CreatedAt: n.CreatedAt.UTC().Format(time.RFC3339),
 		Read:      n.Read,
 	}
+}
+
+// statusFromProto traduce el filtro del contrato. UNSPECIFIED es "sin filtro"; un valor que el
+// servicio no conoce no es válido.
+func statusFromProto(s ordersv1.OrderStatus) (domain.Status, bool) {
+	if s == ordersv1.OrderStatus_ORDER_STATUS_UNSPECIFIED {
+		return "", true
+	}
+	for _, candidate := range []domain.Status{
+		domain.StatusPending, domain.StatusPendingReview, domain.StatusRouteAssigned, domain.StatusPickedUp,
+		domain.StatusInTransit, domain.StatusDelivered, domain.StatusNotDelivered, domain.StatusCancelled,
+	} {
+		if statusToProto(candidate) == s {
+			return candidate, true
+		}
+	}
+	return "", false
 }
 
 func statusToProto(s domain.Status) ordersv1.OrderStatus {

@@ -19,6 +19,7 @@ import (
 	driversv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/drivers/v1"
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/application/driver"
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/domain"
+	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/domain/domaintest"
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/infrastructure/postgres"
 )
 
@@ -39,9 +40,7 @@ func TestReserveDriverGRPCConcurrentePostgres(t *testing.T) {
 	require.NoError(t, err)
 
 	repo := postgres.NewDriverRepository(pool)
-	d, err := domain.NewDriver(integrationDriverID, domain.NewDriverInput{
-		UserID: "22222222-2222-4222-8222-222222222222", FullName: "Ana Ruiz", Phone: "0991234567",
-	}, time.Now())
+	d, err := domain.NewDriver(integrationDriverID, domaintest.Input("22222222-2222-4222-8222-222222222222"), time.Now())
 	require.NoError(t, err)
 	require.NoError(t, repo.Create(ctx, d))
 
