@@ -30,6 +30,9 @@ type fakeAuth struct {
 	lastMeta       grpcclient.CallMeta
 	lastUpdate     *authv1.UpdateUserRequest
 	lastDeactivate *authv1.DeactivateUserRequest
+	lastCreate     *authv1.CreateUserRequest
+	createCalls    int
+	deactivateErr  error
 	err            error
 }
 
@@ -47,6 +50,8 @@ func (f *fakeAuth) Login(_ context.Context, m grpcclient.CallMeta, req *authv1.L
 
 func (f *fakeAuth) CreateUser(_ context.Context, m grpcclient.CallMeta, req *authv1.CreateUserRequest) (*authv1.CreateUserResponse, error) {
 	f.lastMeta = m
+	f.lastCreate = req
+	f.createCalls++
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -109,6 +114,9 @@ func (f *fakeAuth) UpdateUser(_ context.Context, m grpcclient.CallMeta, req *aut
 func (f *fakeAuth) DeactivateUser(_ context.Context, m grpcclient.CallMeta, req *authv1.DeactivateUserRequest) (*authv1.DeactivateUserResponse, error) {
 	f.lastMeta = m
 	f.lastDeactivate = req
+	if f.deactivateErr != nil {
+		return nil, f.deactivateErr
+	}
 	if f.err != nil {
 		return nil, f.err
 	}

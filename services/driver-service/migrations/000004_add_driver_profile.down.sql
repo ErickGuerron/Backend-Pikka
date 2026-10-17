@@ -1,0 +1,17 @@
+ALTER TABLE drivers
+    DROP CONSTRAINT drivers_plate_unique,
+    DROP CONSTRAINT drivers_identifier_unique,
+    DROP CONSTRAINT drivers_user_id_unique,
+    DROP CONSTRAINT drivers_plate_valid,
+    DROP CONSTRAINT drivers_identifier_valid,
+    DROP CONSTRAINT drivers_vehicle_type_valid,
+    DROP CONSTRAINT drivers_city_valid,
+    DROP CONSTRAINT drivers_last_name_valid,
+    DROP CONSTRAINT drivers_first_name_valid,
+    DROP COLUMN city,
+    DROP COLUMN plate,
+    DROP COLUMN identifier,
+    DROP COLUMN vehicle_type,
+    DROP COLUMN birth_date,
+    DROP COLUMN last_name,
+    DROP COLUMN first_name;

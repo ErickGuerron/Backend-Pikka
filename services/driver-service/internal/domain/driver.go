@@ -8,23 +8,45 @@ import (
 
 // Límites de validación, exportados para que las pruebas y los transportes no los dupliquen.
 const (
-	// MaxFullNameRunes es el largo máximo del nombre completo, en runas.
-	MaxFullNameRunes = 120
 	// MinPhoneDigits es la cantidad mínima de dígitos de un teléfono, sin contar el +.
 	MinPhoneDigits = 7
 	// MaxPhoneDigits es la cantidad máxima de dígitos de un teléfono, sin contar el +.
 	MaxPhoneDigits = 15
+	// MaxNameRunes es el largo máximo del nombre y del apellido, en runas; juntos caben en full_name (120).
+	MaxNameRunes = 50
+	// MaxCityRunes es el largo máximo de la ciudad, en runas.
+	MaxCityRunes = 80
+	// MinDriverAge es la edad mínima, en años cumplidos, para registrarse como repartidor.
+	MinDriverAge = 18
+	// MinIdentifierLen y MaxIdentifierLen acotan el documento de identidad (letras y dígitos).
+	MinIdentifierLen = 5
+	MaxIdentifierLen = 20
+	// MinPlateLen y MaxPlateLen acotan la placa del vehículo (letras y dígitos, sin guiones).
+	MinPlateLen = 5
+	MaxPlateLen = 8
 )
 
 // Driver es un repartidor del sistema.
 type Driver struct {
 	ID string
 	// UserID referencia al usuario del Auth Service con rol DRIVER.
-	UserID   string
-	FullName string
-	Phone    string
-	Active   bool
-	Status   Status
+	UserID string
+	// FullName es "FirstName LastName"; se conserva porque otros servicios ya lo consumen.
+	FullName  string
+	FirstName string
+	LastName  string
+	// BirthDate es la fecha de nacimiento, a medianoche UTC.
+	BirthDate time.Time
+	// Phone es el número de contacto.
+	Phone       string
+	VehicleType VehicleType
+	// Identifier es el documento de identidad, en mayúsculas.
+	Identifier string
+	// Plate es la placa del vehículo, en mayúsculas y sin guiones.
+	Plate  string
+	City   string
+	Active bool
+	Status Status
 	// RouteID es la ruta para la que el repartidor está reservado; vacío si no tiene ninguna.
 	RouteID   string
 	Version   int
@@ -34,33 +56,102 @@ type Driver struct {
 
 // NewDriverInput contiene los datos necesarios para registrar un repartidor.
 type NewDriverInput struct {
-	UserID   string
-	FullName string
-	Phone    string
+	UserID      string
+	FirstName   string
+	LastName    string
+	BirthDate   time.Time
+	Phone       string
+	VehicleType string
+	Identifier  string
+	Plate       string
+	City        string
 }
 
 // NormalizedNewDriver es la entrada validada y normalizada.
 type NormalizedNewDriver struct {
-	UserID   string
-	FullName string
-	Phone    string
+	UserID      string
+	FullName    string
+	FirstName   string
+	LastName    string
+	BirthDate   time.Time
+	Phone       string
+	VehicleType VehicleType
+	Identifier  string
+	Plate       string
+	City        string
 }
 
-// Validate valida y normaliza los datos de un repartidor nuevo.
-func (in NewDriverInput) Validate() (NormalizedNewDriver, error) {
+// Validate valida y normaliza los datos de un repartidor nuevo. now sirve para comprobar la edad.
+func (in NewDriverInput) Validate(now time.Time) (NormalizedNewDriver, error) {
 	userID := strings.TrimSpace(in.UserID)
 	if userID == "" {
 		return NormalizedNewDriver{}, ErrInvalidUserID
 	}
-	name := strings.TrimSpace(in.FullName)
-	if name == "" || utf8.RuneCountInString(name) > MaxFullNameRunes {
-		return NormalizedNewDriver{}, ErrInvalidFullName
+	first := strings.TrimSpace(in.FirstName)
+	if first == "" || utf8.RuneCountInString(first) > MaxNameRunes {
+		return NormalizedNewDriver{}, ErrInvalidFirstName
+	}
+	last := strings.TrimSpace(in.LastName)
+	if last == "" || utf8.RuneCountInString(last) > MaxNameRunes {
+		return NormalizedNewDriver{}, ErrInvalidLastName
+	}
+	birth, err := normalizeBirthDate(in.BirthDate, now)
+	if err != nil {
+		return NormalizedNewDriver{}, err
 	}
 	phone, err := NormalizePhone(in.Phone)
 	if err != nil {
 		return NormalizedNewDriver{}, err
 	}
-	return NormalizedNewDriver{UserID: userID, FullName: name, Phone: phone}, nil
+	vehicle, err := ParseVehicleType(in.VehicleType)
+	if err != nil {
+		return NormalizedNewDriver{}, err
+	}
+	identifier, ok := alphanumeric(in.Identifier, MinIdentifierLen, MaxIdentifierLen)
+	if !ok {
+		return NormalizedNewDriver{}, ErrInvalidIdentifier
+	}
+	plate, ok := alphanumeric(in.Plate, MinPlateLen, MaxPlateLen)
+	if !ok {
+		return NormalizedNewDriver{}, ErrInvalidPlate
+	}
+	city := strings.TrimSpace(in.City)
+	if city == "" || utf8.RuneCountInString(city) > MaxCityRunes {
+		return NormalizedNewDriver{}, ErrInvalidCity
+	}
+	return NormalizedNewDriver{
+		UserID: userID, FullName: first + " " + last, FirstName: first, LastName: last,
+		BirthDate: birth, Phone: phone, VehicleType: vehicle, Identifier: identifier, Plate: plate, City: city,
+	}, nil
+}
+
+// normalizeBirthDate deja solo la fecha (UTC) y exige que sea pasada y que el repartidor tenga al menos MinDriverAge años.
+func normalizeBirthDate(raw, now time.Time) (time.Time, error) {
+	if raw.IsZero() {
+		return time.Time{}, ErrInvalidBirthDate
+	}
+	y, m, d := raw.Date()
+	birth := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+	ny, nm, nd := now.UTC().Date()
+	today := time.Date(ny, nm, nd, 0, 0, 0, 0, time.UTC)
+	if birth.After(today.AddDate(-MinDriverAge, 0, 0)) {
+		return time.Time{}, ErrInvalidBirthDate
+	}
+	return birth, nil
+}
+
+// alphanumeric quita espacios y guiones, pasa a mayúsculas y comprueba largo y que sean solo letras ASCII y dígitos.
+func alphanumeric(raw string, minLen, maxLen int) (string, bool) {
+	v := strings.ToUpper(strings.NewReplacer(" ", "", "-", "").Replace(strings.TrimSpace(raw)))
+	if len(v) < minLen || len(v) > maxLen {
+		return "", false
+	}
+	for _, r := range v {
+		if (r < 'A' || r > 'Z') && (r < '0' || r > '9') {
+			return "", false
+		}
+	}
+	return v, true
 }
 
 // NormalizePhone quita espacios y guiones y hace una validación simplificada: un +
@@ -88,20 +179,27 @@ func NewDriver(id string, in NewDriverInput, now time.Time) (*Driver, error) {
 	if id == "" {
 		return nil, ErrInvalidDriverID
 	}
-	n, err := in.Validate()
+	n, err := in.Validate(now)
 	if err != nil {
 		return nil, err
 	}
 	return &Driver{
-		ID:        id,
-		UserID:    n.UserID,
-		FullName:  n.FullName,
-		Phone:     n.Phone,
-		Active:    true,
-		Status:    StatusAvailable,
-		Version:   1,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:          id,
+		UserID:      n.UserID,
+		FullName:    n.FullName,
+		FirstName:   n.FirstName,
+		LastName:    n.LastName,
+		BirthDate:   n.BirthDate,
+		Phone:       n.Phone,
+		VehicleType: n.VehicleType,
+		Identifier:  n.Identifier,
+		Plate:       n.Plate,
+		City:        n.City,
+		Active:      true,
+		Status:      StatusAvailable,
+		Version:     1,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}, nil
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/application/driver"
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/application/ports"
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/domain"
+	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/domain/domaintest"
 )
 
 var (
@@ -25,7 +26,7 @@ var (
 func onRoute(t *testing.T, repo *memory.DriverRepository, id, routeID string) {
 	t.Helper()
 	ctx := context.Background()
-	d, err := domain.NewDriver(id, domain.NewDriverInput{UserID: "user-" + id, FullName: "Ana Ruiz", Phone: "0991234567"}, t0)
+	d, err := domain.NewDriver(id, domaintest.Input("user-"+id), t0)
 	require.NoError(t, err)
 	require.NoError(t, repo.Create(ctx, d))
 	stored, err := repo.Get(ctx, id)
@@ -82,7 +83,7 @@ func TestRegisterDeliveryUsaElRadioConfigurado(t *testing.T) {
 
 func TestRegisterDeliveryRequiereEstarEnRuta(t *testing.T) {
 	repo := memory.NewDriverRepository()
-	d, err := domain.NewDriver("d1", domain.NewDriverInput{UserID: "u", FullName: "Ana", Phone: "0991234567"}, t0)
+	d, err := domain.NewDriver("d1", domaintest.Input("u"), t0)
 	require.NoError(t, err)
 	require.NoError(t, repo.Create(context.Background(), d))
 	uc := driver.NewDeliveries(repo, memory.NewDeliveryRecorder(), 50)

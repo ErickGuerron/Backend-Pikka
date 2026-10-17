@@ -64,3 +64,10 @@ func (d *Drivers) RegisterDelivery(ctx context.Context, m CallMeta, req *drivers
 	defer cancel()
 	return d.client.RegisterDelivery(ctx, req)
 }
+
+// ListDrivers devuelve la flota para el personal.
+func (d *Drivers) ListDrivers(ctx context.Context, m CallMeta, req *driversv1.ListDriversRequest) (*driversv1.ListDriversResponse, error) {
+	ctx, cancel := d.outgoing(ctx, m)
+	defer cancel()
+	return d.client.ListDrivers(ctx, req)
+}
