@@ -94,12 +94,15 @@ func TestNewDriverInputValidateAceptaExactamente18Anios(t *testing.T) {
 }
 
 func TestParseVehicleType(t *testing.T) {
-	for raw, want := range map[string]domain.VehicleType{
-		"motorizado": domain.VehicleMotorbike, " AUTOMOVIL ": domain.VehicleCar, "Suv": domain.VehicleSUV,
+	for _, tt := range []struct {
+		raw  string
+		want domain.VehicleType
+	}{
+		{"motorizado", domain.VehicleMotorbike}, {" AUTOMOVIL ", domain.VehicleCar}, {"Suv", domain.VehicleSUV},
 	} {
-		got, err := domain.ParseVehicleType(raw)
+		got, err := domain.ParseVehicleType(tt.raw)
 		require.NoError(t, err)
-		assert.Equal(t, want, got)
+		assert.Equal(t, tt.want, got)
 	}
 }
 
