@@ -77,6 +77,14 @@ func (f *fakeTrackingClient) RecordPosition(_ context.Context, _ grpcclient.Call
 	return &trackingv1.RecordPositionResponse{Accepted: true}, nil
 }
 
+func (f *fakeDriverLookup) GetDriverByRouteID(_ context.Context, _ grpcclient.CallMeta, _ *driversv1.GetDriverByRouteIDRequest) (*driversv1.GetDriverByRouteIDResponse, error) {
+	return nil, errUnexpectedDriverCall
+}
+
+func (f *fakeTrackingClient) EstimateArrival(_ context.Context, _ grpcclient.CallMeta, _ *trackingv1.EstimateArrivalRequest) (*trackingv1.EstimateArrivalResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not used by this test")
+}
+
 // locationRouter arma el router con los clientes falsos. Los logs van a out para poder inspeccionarlos.
 func locationRouter(drivers httpapi.DriverClient, tracking httpapi.TrackingClient, out io.Writer) http.Handler {
 	opts := httpapi.Options{

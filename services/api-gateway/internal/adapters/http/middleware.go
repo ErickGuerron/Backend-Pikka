@@ -157,10 +157,14 @@ func RequestLogger(log *slog.Logger) echo.MiddlewareFunc {
 	}
 }
 
-// ContextTimeout limita el tiempo total de cada petición.
+// ContextTimeout limita el tiempo total de cada petición. Las actualizaciones a WebSocket se excluyen:
+// un socket de seguimiento vive más que RequestTimeout y su ciclo de vida lo lleva el handler.
 func ContextTimeout(d time.Duration) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
+			if isWebSocketUpgrade(c.Request()) {
+				return next(c)
+			}
 			ctx, cancel := context.WithTimeout(c.Request().Context(), d)
 			defer cancel()
 			c.SetRequest(c.Request().WithContext(ctx))

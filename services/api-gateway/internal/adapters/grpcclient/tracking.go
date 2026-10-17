@@ -36,6 +36,14 @@ func (t *Tracking) outgoing(ctx context.Context, m CallMeta) (context.Context, c
 	return metadata.AppendToOutgoingContext(ctx, pairs...), cancel
 }
 
+// EstimateArrival estima distancia y duración desde la última posición del repartidor hasta el destino.
+// Los errores llegan tal cual: el seguimiento los traduce a un motivo de ETA no disponible.
+func (t *Tracking) EstimateArrival(ctx context.Context, m CallMeta, req *trackingv1.EstimateArrivalRequest) (*trackingv1.EstimateArrivalResponse, error) {
+	ctx, cancel := t.outgoing(ctx, m)
+	defer cancel()
+	return t.client.EstimateArrival(ctx, req)
+}
+
 // RecordPosition envía un fix del repartidor al Tracking Service. La posición no se registra en logs.
 func (t *Tracking) RecordPosition(ctx context.Context, m CallMeta, req *trackingv1.RecordPositionRequest) (*trackingv1.RecordPositionResponse, error) {
 	ctx, cancel := t.outgoing(ctx, m)

@@ -30,6 +30,11 @@ func (f *fakeDriverClient) RegisterDelivery(_ context.Context, _ grpcclient.Call
 	return nil, errNoLlamar
 }
 
+func (f *fakeDriverClient) GetDriverByRouteID(_ context.Context, _ grpcclient.CallMeta, _ *driversv1.GetDriverByRouteIDRequest) (*driversv1.GetDriverByRouteIDResponse, error) {
+	f.calls++
+	return nil, errNoLlamar
+}
+
 func (f *fakeDriverClient) CreateDriver(_ context.Context, _ grpcclient.CallMeta, _ *driversv1.CreateDriverRequest) (*driversv1.CreateDriverResponse, error) {
 	f.calls++
 	return nil, errNoLlamar

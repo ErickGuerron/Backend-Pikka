@@ -43,18 +43,26 @@ func (d *Drivers) GetDriverByUserID(ctx context.Context, m CallMeta, req *driver
 	return d.client.GetDriverByUserID(ctx, req)
 }
 
+// GetDriverByRouteID devuelve solo los identificadores del repartidor reservado para una ruta.
+func (d *Drivers) GetDriverByRouteID(ctx context.Context, m CallMeta, req *driversv1.GetDriverByRouteIDRequest) (*driversv1.GetDriverByRouteIDResponse, error) {
+	ctx, cancel := d.outgoing(ctx, m)
+	defer cancel()
+	return d.client.GetDriverByRouteID(ctx, req)
+}
+
+// CreateDriver creates the driver profile of a user. Only ADMIN may call it; Driver Service
+// enforces the final authorization and the data rules.
+func (d *Drivers) CreateDriver(ctx context.Context, m CallMeta, req *driversv1.CreateDriverRequest) (*driversv1.CreateDriverResponse, error) {
+	ctx, cancel := d.outgoing(ctx, m)
+	defer cancel()
+	return d.client.CreateDriver(ctx, req)
+}
+
 // RegisterDelivery registra el resultado de una parada de la ruta del repartidor.
 func (d *Drivers) RegisterDelivery(ctx context.Context, m CallMeta, req *driversv1.RegisterDeliveryRequest) (*driversv1.RegisterDeliveryResponse, error) {
 	ctx, cancel := d.outgoing(ctx, m)
 	defer cancel()
 	return d.client.RegisterDelivery(ctx, req)
-}
-
-// CreateDriver registra el perfil de un repartidor cuyo usuario DRIVER ya existe.
-func (d *Drivers) CreateDriver(ctx context.Context, m CallMeta, req *driversv1.CreateDriverRequest) (*driversv1.CreateDriverResponse, error) {
-	ctx, cancel := d.outgoing(ctx, m)
-	defer cancel()
-	return d.client.CreateDriver(ctx, req)
 }
 
 // ListDrivers devuelve la flota para el personal.

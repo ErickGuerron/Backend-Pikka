@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
@@ -27,10 +28,29 @@ type CallMeta struct {
 	Role      string
 }
 
+// reconnectParams acota el backoff de reconexión. El default de grpc-go crece hasta
+// 120s entre intentos, y el resolver DNS re-resuelve como mucho cada 30s. Cuando
+// docker compose recrea un servicio, cambia su IP y el canal sigue reintentando la
+// IP vieja durante minutos. Con un tope de 5s el canal se recupera pronto tras el
+// cambio de IP.
+var reconnectParams = grpc.ConnectParams{
+	Backoff: backoff.Config{
+		BaseDelay:  500 * time.Millisecond,
+		Multiplier: 1.6,
+		Jitter:     0.2,
+		MaxDelay:   5 * time.Second,
+	},
+	MinConnectTimeout: 5 * time.Second,
+}
+
 // Dial abre una conexión gRPC perezosa hacia addr. La red interna es privada;
 // mTLS queda como mejora posterior.
 func Dial(addr string) (*grpc.ClientConn, error) {
-	return grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	return grpc.NewClient(
+		addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithConnectParams(reconnectParams),
+	)
 }
 
 // Auth envuelve al cliente del Auth Service imponiendo deadline y propagando metadata.
