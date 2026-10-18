@@ -23,6 +23,12 @@ de tarjeta.
 - **Una sola vez por incidencia.** No se acumula sobre el mismo pedido.
 - **Quién lo aplica**: el sistema, según la regla. El repartidor solo registra el
   hecho y el motivo (ADR 0007). El operador atiende las disputas.
+- **Enmienda, dirección incorrecta**: cuando el motivo es `WRONG_ADDRESS`
+  (dirección mal ingresada o inválida), el recargo pasa a estado
+  **`PENDING_VERIFICATION`**. No se cobra ni se notifica como definitivo hasta
+  que un operador lo confirme. Si el operador lo confirma, se aplica la regla
+  normal; si lo descarta, el recargo se anula. Ningún cobro simulado se registra
+  en este estado.
 
 ### 2. Cobro simulado
 
