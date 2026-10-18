@@ -47,8 +47,8 @@ Make the Routing Service a running process. It serves `routing.v1.GeneratePlan`,
 - [x] T5 gRPC `RoutingServer`: role gate, error mapping, success mapping. Route: inline. Check: grpc tests GREEN.
 - [x] T6 `infrastructure/config`: env with defaults, port range. Route: inline. Check: config tests GREEN.
 - [x] T7 `cmd/api/main.go` (dial, wire, graceful stop) and `Dockerfile`. Route: inline. RED not possible: wiring only; verified by `go build` and `docker build`.
-- [ ] T8 Gateway route for generation (R2). Not done here.
-- [ ] T9 Driver Service release of a reserved driver for failed routes (R3 or later). Not done here.
+- [x] T8 Gateway route for generation (R2). [verified 2026-10-18: POST /api/v1/routes/plan registered in router.go, contract extended in routing-plan-contract]
+- [x] T9 Driver Service release of a reserved driver for failed routes (R3 or later). [verified 2026-10-18: generate.go releaseDriver calls ReleaseDriver after a failed assignment]
 
 ## Acceptance criteria
 
