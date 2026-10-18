@@ -29,8 +29,9 @@ type DriverPool interface {
 	// FindAvailable returns up to n IDs of drivers in status AVAILABLE, in the order Driver Service returns them.
 	FindAvailable(ctx context.Context, n int) ([]string, error)
 
-	// Reserve binds driverID to routeID. Driver Service rejects a driver that is already reserved for another route.
-	Reserve(ctx context.Context, driverID, routeID string) error
+	// Reserve binds driverID to routeID and returns the driver's full name from Driver Service.
+	// Driver Service rejects a driver that is already reserved for another route.
+	Reserve(ctx context.Context, driverID, routeID string) (driverName string, err error)
 
 	// Release frees the reservation of routeID held by driverID. Driver Service treats a
 	// repeated release as success. Used to undo a reservation whose route could not be assigned.

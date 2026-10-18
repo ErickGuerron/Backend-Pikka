@@ -1547,11 +1547,22 @@ components:
         routeId: { type: string, description: Route identifier shared by Order Service and Driver Service }
         driverId: { type: string, format: uuid, description: Driver reserved for the route }
         orderCount: { type: integer, minimum: 0, description: Number of stops (orders) in the route }
+        driverName: { type: string, description: Full name of the reserved driver }
+        stops: { type: array, description: Stops ordered by sequence starting at 1, items: { $ref: "#/components/schemas/PlannedStop" } }
+    PlannedStop:
+      type: object
+      required: [orderId, address, sequence]
+      properties:
+        orderId: { type: string, description: Order served at this stop }
+        address: { type: string, description: Delivery address as stored by Order Service }
+        sequence: { type: integer, minimum: 1, description: Visit order within the route }
     GeneratePlanResponse:
       type: object
-      required: [routes]
+      required: [planId, routes, unassignedOrderIds]
       properties:
+        planId: { type: string, description: "Phase 1: derived as plan-<deliveryDate>; not persisted" }
         routes: { type: array, items: { $ref: "#/components/schemas/PlannedRoute" } }
+        unassignedOrderIds: { type: array, items: { type: string }, description: "Phase 1: always empty; the planner assigns every order or fails" }
     CreateDriverRequest:
       type: object
       required: [email, password, firstName, lastName, birthDate, phone, vehicleType, identifier, plate, city]

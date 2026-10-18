@@ -27,16 +27,28 @@ type generatePlanRequest struct {
 }
 
 type generatePlanResponse struct {
-	Routes []plannedRouteDTO `json:"routes"`
+	PlanID             string            `json:"planId"`
+	Routes             []plannedRouteDTO `json:"routes"`
+	UnassignedOrderIDs []string          `json:"unassignedOrderIds"`
 }
 
 type plannedRouteDTO struct {
-	RouteID    string `json:"routeId"`
-	DriverID   string `json:"driverId"`
-	OrderCount int32  `json:"orderCount"`
+	RouteID    string           `json:"routeId"`
+	DriverID   string           `json:"driverId"`
+	DriverName string           `json:"driverName"`
+	OrderCount int32            `json:"orderCount"`
+	Stops      []plannedStopDTO `json:"stops"`
+}
+
+type plannedStopDTO struct {
+	OrderID  string `json:"orderId"`
+	Address  string `json:"address"`
+	Sequence int32  `json:"sequence"`
 }
 
 // generate responds 200 with the created routes. A date with no orders returns an empty routes array, not null.
+// planId and unassignedOrderIds are phase-1 values: the plan id is derived and not persisted, and the
+// unassigned list is always empty. Both are always arrays or strings, never null.
 func (h *routePlanHandlers) generate(c echo.Context) error {
 	var req generatePlanRequest
 	if err := bindJSON(c, &req); err != nil {
@@ -52,11 +64,23 @@ func (h *routePlanHandlers) generate(c echo.Context) error {
 	}
 	routes := make([]plannedRouteDTO, 0, len(res.GetRoutes()))
 	for _, r := range res.GetRoutes() {
+		stops := make([]plannedStopDTO, 0, len(r.GetStops()))
+		for _, s := range r.GetStops() {
+			stops = append(stops, plannedStopDTO{OrderID: s.GetOrderId(), Address: s.GetAddress(), Sequence: s.GetSequence()})
+		}
 		routes = append(routes, plannedRouteDTO{
 			RouteID:    r.GetRouteId(),
 			DriverID:   r.GetDriverId(),
+			DriverName: r.GetDriverName(),
 			OrderCount: r.GetOrderCount(),
+			Stops:      stops,
 		})
 	}
-	return c.JSON(http.StatusOK, generatePlanResponse{Routes: routes})
+	unassigned := make([]string, 0, len(res.GetUnassignedOrderIds()))
+	unassigned = append(unassigned, res.GetUnassignedOrderIds()...)
+	return c.JSON(http.StatusOK, generatePlanResponse{
+		PlanID:             res.GetPlanId(),
+		Routes:             routes,
+		UnassignedOrderIDs: unassigned,
+	})
 }

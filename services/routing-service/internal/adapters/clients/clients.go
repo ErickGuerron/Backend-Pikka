@@ -58,7 +58,7 @@ func (g *OrderGateway) PendingByDate(ctx context.Context, deliveryDate string) (
 	}
 	out := make([]domain.PlannableOrder, 0, len(res.GetOrders()))
 	for _, order := range res.GetOrders() {
-		out = append(out, domain.PlannableOrder{OrderID: order.GetId(), ZoneID: order.GetZoneId()})
+		out = append(out, domain.PlannableOrder{OrderID: order.GetId(), ZoneID: order.GetZoneId(), Address: order.GetAddress()})
 	}
 	return out, nil
 }
@@ -105,14 +105,17 @@ func (p *DriverPool) FindAvailable(ctx context.Context, n int) ([]string, error)
 	return ids, nil
 }
 
-// Reserve binds driverID to routeID. Driver Service errors (for example FAILED_PRECONDITION
-// when the driver is already reserved) pass through with their gRPC code.
-func (p *DriverPool) Reserve(ctx context.Context, driverID, routeID string) error {
-	_, err := p.client.ReserveDriver(forwardIdentity(ctx), &driversv1.ReserveDriverRequest{
+// Reserve binds driverID to routeID and returns the driver's full name. Driver Service errors
+// (for example FAILED_PRECONDITION when the driver is already reserved) pass through with their gRPC code.
+func (p *DriverPool) Reserve(ctx context.Context, driverID, routeID string) (string, error) {
+	res, err := p.client.ReserveDriver(forwardIdentity(ctx), &driversv1.ReserveDriverRequest{
 		DriverId: driverID,
 		RouteId:  routeID,
 	})
-	return err
+	if err != nil {
+		return "", err
+	}
+	return res.GetDriver().GetFullName(), nil
 }
 
 // Release frees the reservation of routeID held by driverID. Driver Service errors pass

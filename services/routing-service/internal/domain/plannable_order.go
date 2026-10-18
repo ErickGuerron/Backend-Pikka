@@ -9,6 +9,8 @@ import (
 type PlannableOrder struct {
 	OrderID string
 	ZoneID  string
+	// Address is the delivery address as Order Service stored it. It is carried to the stop.
+	Address string
 }
 
 // Validate comprueba que el pedido tenga order_id y zone_id no vacios.

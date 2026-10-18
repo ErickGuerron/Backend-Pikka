@@ -231,7 +231,7 @@ func TestDriverPoolReserveSendsDriverAndRoute(t *testing.T) {
 	conn := dial(t, func(s *grpc.Server) { driversv1.RegisterDriverServiceServer(s, fake) })
 	pool := NewDriverPool(driversv1.NewDriverServiceClient(conn))
 
-	if err := pool.Reserve(operatorCtx(), "d1", "2026-10-15/zone-a#1"); err != nil {
+	if _, err := pool.Reserve(operatorCtx(), "d1", "2026-10-15/zone-a#1"); err != nil {
 		t.Fatalf("Reserve: %v", err)
 	}
 	if len(fake.reserved) != 1 || fake.reserved[0].GetDriverId() != "d1" || fake.reserved[0].GetRouteId() != "2026-10-15/zone-a#1" {
@@ -247,7 +247,7 @@ func TestDriverPoolReservePreservesDriverServiceErrorCode(t *testing.T) {
 	conn := dial(t, func(s *grpc.Server) { driversv1.RegisterDriverServiceServer(s, fake) })
 	pool := NewDriverPool(driversv1.NewDriverServiceClient(conn))
 
-	err := pool.Reserve(operatorCtx(), "d1", "2026-10-15/zone-a#1")
+	_, err := pool.Reserve(operatorCtx(), "d1", "2026-10-15/zone-a#1")
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("code = %v, want FailedPrecondition (err %v)", status.Code(err), err)
 	}

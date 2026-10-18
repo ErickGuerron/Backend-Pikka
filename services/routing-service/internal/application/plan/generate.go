@@ -31,6 +31,7 @@ const (
 type AssignedRoute struct {
 	RouteID    string
 	DriverID   string
+	DriverName string
 	OrderCount int
 }
 
@@ -81,7 +82,7 @@ func (uc *Generate) Run(ctx context.Context, deliveryDate string) (Result, error
 	var result Result
 	for _, route := range planned {
 		routeID := scopedRouteID(deliveryDate, route.ID)
-		driverID, err := uc.reserveDriver(ctx, routeID)
+		driverID, driverName, err := uc.reserveDriver(ctx, routeID)
 		if err != nil {
 			return result, err
 		}
@@ -93,26 +94,27 @@ func (uc *Generate) Run(ctx context.Context, deliveryDate string) (Result, error
 			return result, assignErr
 		}
 		result.Assigned = append(result.Assigned, route)
-		result.Routes = append(result.Routes, AssignedRoute{RouteID: routeID, DriverID: driverID, OrderCount: len(route.Stops)})
+		result.Routes = append(result.Routes, AssignedRoute{RouteID: routeID, DriverID: driverID, DriverName: driverName, OrderCount: len(route.Stops)})
 	}
 	return result, nil
 }
 
 // reserveDriver takes the first AVAILABLE driver for one route. It asks for a single driver
 // each time, so every route sees the drivers reserved by the routes before it.
-func (uc *Generate) reserveDriver(ctx context.Context, routeID string) (string, error) {
+func (uc *Generate) reserveDriver(ctx context.Context, routeID string) (driverID, driverName string, err error) {
 	candidates, err := uc.drivers.FindAvailable(ctx, 1)
 	if err != nil {
-		return "", fmt.Errorf("find driver for route %s: %w", routeID, err)
+		return "", "", fmt.Errorf("find driver for route %s: %w", routeID, err)
 	}
 	if len(candidates) == 0 {
-		return "", fmt.Errorf("route %s: %w", routeID, ErrNoDriverAvailable)
+		return "", "", fmt.Errorf("route %s: %w", routeID, ErrNoDriverAvailable)
 	}
-	driverID := candidates[0]
-	if err := uc.drivers.Reserve(ctx, driverID, routeID); err != nil {
-		return "", fmt.Errorf("reserve driver %s for route %s: %w", driverID, routeID, err)
+	driverID = candidates[0]
+	driverName, err = uc.drivers.Reserve(ctx, driverID, routeID)
+	if err != nil {
+		return "", "", fmt.Errorf("reserve driver %s for route %s: %w", driverID, routeID, err)
 	}
-	return driverID, nil
+	return driverID, driverName, nil
 }
 
 // releaseDriver undoes a reservation whose route could not be assigned. It runs even when the
