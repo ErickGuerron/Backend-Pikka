@@ -92,6 +92,18 @@ func TestGetDriverByUserIDDevuelveElResumen(t *testing.T) {
 	assert.Equal(t, "user-d1", res.GetDriver().GetUserId())
 }
 
+func TestGetDriverByUserIDIncluyeLaRutaReservada(t *testing.T) {
+	client, repo := setup(t)
+	d := seedDriver(t, repo, "d1")
+	stored := d.Version
+	require.NoError(t, d.Reserve("route-7", t0))
+	require.NoError(t, repo.Save(context.Background(), d, stored))
+
+	res, err := client.GetDriverByUserID(context.Background(), &driversv1.GetDriverByUserIDRequest{UserId: "user-d1"})
+	require.NoError(t, err)
+	assert.Equal(t, "route-7", res.GetDriver().GetRouteId())
+}
+
 func TestGetDriverByUserIDCodigosDeError(t *testing.T) {
 	repo := memory.NewDriverRepository()
 	client := serveDeliveries(t, repo, nil)

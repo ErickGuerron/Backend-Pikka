@@ -25,6 +25,7 @@ type OrderClient interface {
 	GetMyOrder(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.GetMyOrderRequest) (*ordersv1.GetMyOrderResponse, error)
 	StopsBeforeForOrder(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.StopsBeforeForOrderRequest) (*ordersv1.StopsBeforeForOrderResponse, error)
 	AdvanceRouteStop(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.AdvanceRouteStopRequest) (*ordersv1.AdvanceRouteStopResponse, error)
+	ListDriverRouteStops(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ListDriverRouteStopsRequest) (*ordersv1.ListDriverRouteStopsResponse, error)
 }
 
 // ordersHandlers traduce REST <-> gRPC. Los roles y el alcance los aplica Order Service;

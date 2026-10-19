@@ -31,6 +31,7 @@ func TestReserveDriverGRPCConcurrentePostgres(t *testing.T) {
 	if dsn == "" {
 		t.Skip("DRIVER_TEST_DATABASE_URL is not set")
 	}
+	refuseProtectedDatabase(t, dsn)
 	ctx := context.Background()
 	require.NoError(t, postgres.Migrate(dsn))
 	pool, err := pgxpool.New(ctx, dsn)
