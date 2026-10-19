@@ -19,19 +19,20 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	OrderService_CreateOrder_FullMethodName         = "/orders.v1.OrderService/CreateOrder"
-	OrderService_GetOrder_FullMethodName            = "/orders.v1.OrderService/GetOrder"
-	OrderService_ListOrders_FullMethodName          = "/orders.v1.OrderService/ListOrders"
-	OrderService_GetPendingOrders_FullMethodName    = "/orders.v1.OrderService/GetPendingOrders"
-	OrderService_ListOrderExceptions_FullMethodName = "/orders.v1.OrderService/ListOrderExceptions"
-	OrderService_ReviewOrder_FullMethodName         = "/orders.v1.OrderService/ReviewOrder"
-	OrderService_ListMyOrders_FullMethodName        = "/orders.v1.OrderService/ListMyOrders"
-	OrderService_ListMyNotifications_FullMethodName = "/orders.v1.OrderService/ListMyNotifications"
-	OrderService_CancelOrder_FullMethodName         = "/orders.v1.OrderService/CancelOrder"
-	OrderService_GetMyOrder_FullMethodName          = "/orders.v1.OrderService/GetMyOrder"
-	OrderService_AssignOrdersToRoute_FullMethodName = "/orders.v1.OrderService/AssignOrdersToRoute"
-	OrderService_AdvanceRouteStop_FullMethodName    = "/orders.v1.OrderService/AdvanceRouteStop"
-	OrderService_StopsBeforeForOrder_FullMethodName = "/orders.v1.OrderService/StopsBeforeForOrder"
+	OrderService_CreateOrder_FullMethodName          = "/orders.v1.OrderService/CreateOrder"
+	OrderService_GetOrder_FullMethodName             = "/orders.v1.OrderService/GetOrder"
+	OrderService_ListOrders_FullMethodName           = "/orders.v1.OrderService/ListOrders"
+	OrderService_GetPendingOrders_FullMethodName     = "/orders.v1.OrderService/GetPendingOrders"
+	OrderService_ListOrderExceptions_FullMethodName  = "/orders.v1.OrderService/ListOrderExceptions"
+	OrderService_ReviewOrder_FullMethodName          = "/orders.v1.OrderService/ReviewOrder"
+	OrderService_ListMyOrders_FullMethodName         = "/orders.v1.OrderService/ListMyOrders"
+	OrderService_ListMyNotifications_FullMethodName  = "/orders.v1.OrderService/ListMyNotifications"
+	OrderService_CancelOrder_FullMethodName          = "/orders.v1.OrderService/CancelOrder"
+	OrderService_GetMyOrder_FullMethodName           = "/orders.v1.OrderService/GetMyOrder"
+	OrderService_AssignOrdersToRoute_FullMethodName  = "/orders.v1.OrderService/AssignOrdersToRoute"
+	OrderService_AdvanceRouteStop_FullMethodName     = "/orders.v1.OrderService/AdvanceRouteStop"
+	OrderService_StopsBeforeForOrder_FullMethodName  = "/orders.v1.OrderService/StopsBeforeForOrder"
+	OrderService_ListDriverRouteStops_FullMethodName = "/orders.v1.OrderService/ListDriverRouteStops"
 )
 
 // OrderServiceClient is the client API for OrderService service.
@@ -84,6 +85,9 @@ type OrderServiceClient interface {
 	// order it owns: a foreign or unknown order returns NOT_FOUND. An order without route or stop_sequence
 	// returns 0.
 	StopsBeforeForOrder(ctx context.Context, in *StopsBeforeForOrderRequest, opts ...grpc.CallOption) (*StopsBeforeForOrderResponse, error)
+	// ListDriverRouteStops returns the stops of a route for its DRIVER, ordered by stop_sequence.
+	// Only DRIVER. Customer data (name, phone) is never in DriverRouteStop.
+	ListDriverRouteStops(ctx context.Context, in *ListDriverRouteStopsRequest, opts ...grpc.CallOption) (*ListDriverRouteStopsResponse, error)
 }
 
 type orderServiceClient struct {
@@ -224,6 +228,16 @@ func (c *orderServiceClient) StopsBeforeForOrder(ctx context.Context, in *StopsB
 	return out, nil
 }
 
+func (c *orderServiceClient) ListDriverRouteStops(ctx context.Context, in *ListDriverRouteStopsRequest, opts ...grpc.CallOption) (*ListDriverRouteStopsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListDriverRouteStopsResponse)
+	err := c.cc.Invoke(ctx, OrderService_ListDriverRouteStops_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // OrderServiceServer is the server API for OrderService service.
 // All implementations must embed UnimplementedOrderServiceServer
 // for forward compatibility.
@@ -274,6 +288,9 @@ type OrderServiceServer interface {
 	// order it owns: a foreign or unknown order returns NOT_FOUND. An order without route or stop_sequence
 	// returns 0.
 	StopsBeforeForOrder(context.Context, *StopsBeforeForOrderRequest) (*StopsBeforeForOrderResponse, error)
+	// ListDriverRouteStops returns the stops of a route for its DRIVER, ordered by stop_sequence.
+	// Only DRIVER. Customer data (name, phone) is never in DriverRouteStop.
+	ListDriverRouteStops(context.Context, *ListDriverRouteStopsRequest) (*ListDriverRouteStopsResponse, error)
 	mustEmbedUnimplementedOrderServiceServer()
 }
 
@@ -322,6 +339,9 @@ func (UnimplementedOrderServiceServer) AdvanceRouteStop(context.Context, *Advanc
 }
 func (UnimplementedOrderServiceServer) StopsBeforeForOrder(context.Context, *StopsBeforeForOrderRequest) (*StopsBeforeForOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StopsBeforeForOrder not implemented")
+}
+func (UnimplementedOrderServiceServer) ListDriverRouteStops(context.Context, *ListDriverRouteStopsRequest) (*ListDriverRouteStopsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListDriverRouteStops not implemented")
 }
 func (UnimplementedOrderServiceServer) mustEmbedUnimplementedOrderServiceServer() {}
 func (UnimplementedOrderServiceServer) testEmbeddedByValue()                      {}
@@ -578,6 +598,24 @@ func _OrderService_StopsBeforeForOrder_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _OrderService_ListDriverRouteStops_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListDriverRouteStopsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).ListDriverRouteStops(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_ListDriverRouteStops_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).ListDriverRouteStops(ctx, req.(*ListDriverRouteStopsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // OrderService_ServiceDesc is the grpc.ServiceDesc for OrderService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -636,6 +674,10 @@ var OrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StopsBeforeForOrder",
 			Handler:    _OrderService_StopsBeforeForOrder_Handler,
+		},
+		{
+			MethodName: "ListDriverRouteStops",
+			Handler:    _OrderService_ListDriverRouteStops_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

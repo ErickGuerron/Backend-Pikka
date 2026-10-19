@@ -39,6 +39,8 @@ type OrderUseCases struct {
 	AdvanceStop *orderapp.AdvanceRouteStop
 	// StopsBefore cuenta las paradas abiertas antes de un pedido del cliente (StopsBeforeForOrder).
 	StopsBefore *orderapp.StopsBeforeForOrder
+	// DriverRouteStops lista las paradas de la ruta del conductor (ListDriverRouteStops).
+	DriverRouteStops *orderapp.DriverRouteStops
 }
 
 // OrderServer implementa ordersv1.OrderServiceServer. Solo traduce: la regla de
