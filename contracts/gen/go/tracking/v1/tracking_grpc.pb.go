@@ -19,8 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	TrackingService_RecordPosition_FullMethodName  = "/tracking.v1.TrackingService/RecordPosition"
-	TrackingService_EstimateArrival_FullMethodName = "/tracking.v1.TrackingService/EstimateArrival"
+	TrackingService_RecordPosition_FullMethodName    = "/tracking.v1.TrackingService/RecordPosition"
+	TrackingService_EstimateArrival_FullMethodName   = "/tracking.v1.TrackingService/EstimateArrival"
+	TrackingService_GetDriverPosition_FullMethodName = "/tracking.v1.TrackingService/GetDriverPosition"
 )
 
 // TrackingServiceClient is the client API for TrackingService service.
@@ -49,6 +50,9 @@ type TrackingServiceClient interface {
 	//   - FAILED_PRECONDITION: la última posición tiene más de 120 s; el repartidor debe reportar otra.
 	//   - INTERNAL: cualquier otro fallo, por ejemplo el motor de rutas no responde.
 	EstimateArrival(ctx context.Context, in *EstimateArrivalRequest, opts ...grpc.CallOption) (*EstimateArrivalResponse, error)
+	// GetDriverPosition devuelve la última posición de un repartidor solo si sigue dentro de la ventana fresca.
+	// Códigos: NOT_FOUND si no hay posición o está vencida; INVALID_ARGUMENT si driver_id está vacío.
+	GetDriverPosition(ctx context.Context, in *GetDriverPositionRequest, opts ...grpc.CallOption) (*GetDriverPositionResponse, error)
 }
 
 type trackingServiceClient struct {
@@ -73,6 +77,16 @@ func (c *trackingServiceClient) EstimateArrival(ctx context.Context, in *Estimat
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(EstimateArrivalResponse)
 	err := c.cc.Invoke(ctx, TrackingService_EstimateArrival_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *trackingServiceClient) GetDriverPosition(ctx context.Context, in *GetDriverPositionRequest, opts ...grpc.CallOption) (*GetDriverPositionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetDriverPositionResponse)
+	err := c.cc.Invoke(ctx, TrackingService_GetDriverPosition_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -105,6 +119,9 @@ type TrackingServiceServer interface {
 	//   - FAILED_PRECONDITION: la última posición tiene más de 120 s; el repartidor debe reportar otra.
 	//   - INTERNAL: cualquier otro fallo, por ejemplo el motor de rutas no responde.
 	EstimateArrival(context.Context, *EstimateArrivalRequest) (*EstimateArrivalResponse, error)
+	// GetDriverPosition devuelve la última posición de un repartidor solo si sigue dentro de la ventana fresca.
+	// Códigos: NOT_FOUND si no hay posición o está vencida; INVALID_ARGUMENT si driver_id está vacío.
+	GetDriverPosition(context.Context, *GetDriverPositionRequest) (*GetDriverPositionResponse, error)
 	mustEmbedUnimplementedTrackingServiceServer()
 }
 
@@ -120,6 +137,9 @@ func (UnimplementedTrackingServiceServer) RecordPosition(context.Context, *Recor
 }
 func (UnimplementedTrackingServiceServer) EstimateArrival(context.Context, *EstimateArrivalRequest) (*EstimateArrivalResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method EstimateArrival not implemented")
+}
+func (UnimplementedTrackingServiceServer) GetDriverPosition(context.Context, *GetDriverPositionRequest) (*GetDriverPositionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetDriverPosition not implemented")
 }
 func (UnimplementedTrackingServiceServer) mustEmbedUnimplementedTrackingServiceServer() {}
 func (UnimplementedTrackingServiceServer) testEmbeddedByValue()                         {}
@@ -178,6 +198,24 @@ func _TrackingService_EstimateArrival_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _TrackingService_GetDriverPosition_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDriverPositionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TrackingServiceServer).GetDriverPosition(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TrackingService_GetDriverPosition_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TrackingServiceServer).GetDriverPosition(ctx, req.(*GetDriverPositionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // TrackingService_ServiceDesc is the grpc.ServiceDesc for TrackingService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -192,6 +230,10 @@ var TrackingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "EstimateArrival",
 			Handler:    _TrackingService_EstimateArrival_Handler,
+		},
+		{
+			MethodName: "GetDriverPosition",
+			Handler:    _TrackingService_GetDriverPosition_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

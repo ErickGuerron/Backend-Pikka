@@ -4,6 +4,7 @@ package grpc
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	googlegrpc "google.golang.org/grpc"
@@ -19,6 +20,7 @@ import (
 type Tracker interface {
 	RecordPosition(ctx context.Context, driverID string, latitude, longitude float64, recordedAt time.Time) (bool, error)
 	EstimateArrival(ctx context.Context, driverID string, dest domain.Point) (domain.Estimate, error)
+	FreshPosition(ctx context.Context, driverID string) (domain.Position, error)
 }
 
 // Server implements trackingv1.TrackingServiceServer on top of the use case.
@@ -61,6 +63,26 @@ func (s *Server) EstimateArrival(ctx context.Context, req *trackingv1.EstimateAr
 		return nil, toStatus(err)
 	}
 	return &trackingv1.EstimateArrivalResponse{DistanceMeters: est.DistanceMeters, DurationSeconds: est.DurationSeconds}, nil
+}
+
+// GetDriverPosition returns the driver's latest fresh fix. A missing or stale fix is NOT_FOUND: the
+// caller shows no position instead of an old one.
+func (s *Server) GetDriverPosition(ctx context.Context, req *trackingv1.GetDriverPositionRequest) (*trackingv1.GetDriverPositionResponse, error) {
+	if strings.TrimSpace(req.GetDriverId()) == "" {
+		return nil, status.Error(codes.InvalidArgument, "driver_id is required")
+	}
+	fix, err := s.tracker.FreshPosition(ctx, req.GetDriverId())
+	if errors.Is(err, position.ErrNoPosition) || errors.Is(err, position.ErrStalePosition) {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	return &trackingv1.GetDriverPositionResponse{
+		Latitude:   fix.Latitude,
+		Longitude:  fix.Longitude,
+		RecordedAt: fix.RecordedAt.UTC().Format(time.RFC3339),
+	}, nil
 }
 
 // toStatus maps domain and use-case errors to gRPC codes. Unknown errors are Internal, never a

@@ -85,6 +85,10 @@ func (f *fakeTrackingClient) EstimateArrival(_ context.Context, _ grpcclient.Cal
 	return nil, status.Error(codes.Unimplemented, "not used by this test")
 }
 
+func (f *fakeTrackingClient) GetDriverPosition(_ context.Context, _ grpcclient.CallMeta, _ *trackingv1.GetDriverPositionRequest) (*trackingv1.GetDriverPositionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not used by this test")
+}
+
 // locationRouter arma el router con los clientes falsos. Los logs van a out para poder inspeccionarlos.
 func locationRouter(drivers httpapi.DriverClient, tracking httpapi.TrackingClient, out io.Writer) http.Handler {
 	opts := httpapi.Options{
