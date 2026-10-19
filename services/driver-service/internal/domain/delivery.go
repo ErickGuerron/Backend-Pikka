@@ -50,6 +50,8 @@ var (
 	ErrInvalidStopID    = errors.New("stop id is required")
 	ErrInvalidWindow    = errors.New("window start must be before window end")
 	ErrInvalidRadius    = errors.New("radius must be positive")
+	// ErrOutsideRadius: a successful delivery must be made within the arrival radius (decisión D1).
+	ErrOutsideRadius = errors.New("delivery outside the arrival radius")
 )
 
 // ImputableOf devuelve de quién es el motivo, o false si el motivo no pertenece a la lista.

@@ -26,6 +26,13 @@ func NewDeliveryRecorder() *DeliveryRecorder {
 	return &DeliveryRecorder{deliveries: make(map[string]Delivery)}
 }
 
+// Count devuelve cuántos registros hay guardados.
+func (r *DeliveryRecorder) Count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.deliveries)
+}
+
 // Record guarda el registro; la clave es ruta + parada.
 func (r *DeliveryRecorder) Record(_ context.Context, routeID string, rec domain.DeliveryRecord, arrival domain.ArrivalCheck) error {
 	r.mu.Lock()

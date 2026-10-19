@@ -24,6 +24,10 @@ type creatingDrivers struct {
 	err  error
 }
 
+func (f *creatingDrivers) StartRoute(_ context.Context, _ grpcclient.CallMeta, _ *driversv1.StartRouteRequest) (*driversv1.StartRouteResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not used by this test")
+}
+
 func (f *creatingDrivers) CreateDriver(_ context.Context, _ grpcclient.CallMeta, req *driversv1.CreateDriverRequest) (*driversv1.CreateDriverResponse, error) {
 	f.calls++
 	f.last = req

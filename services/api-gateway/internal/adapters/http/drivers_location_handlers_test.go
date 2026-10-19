@@ -251,3 +251,8 @@ func TestReportLocation_DoesNotLogCoordinates(t *testing.T) {
 	assert.NotContains(t, out, loggedLatitude)
 	assert.NotContains(t, out, loggedLongitude)
 }
+
+// StartRoute: not used by this test.
+func (f *fakeDriverLookup) StartRoute(_ context.Context, _ grpcclient.CallMeta, _ *driversv1.StartRouteRequest) (*driversv1.StartRouteResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not used by this test")
+}

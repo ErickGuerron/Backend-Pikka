@@ -457,3 +457,8 @@ func TestTrackingSnapshot_LogsNeverContainTokenCoordinatesOrDriverID(t *testing.
 		assert.False(t, strings.Contains(logs, secret), "log leaks %q", secret)
 	}
 }
+
+// StartRoute: the reserved driver starts the route on its first PICKED_UP; the stop tests expect success.
+func (f *routeDriversFake) StartRoute(_ context.Context, _ grpcclient.CallMeta, _ *driversv1.StartRouteRequest) (*driversv1.StartRouteResponse, error) {
+	return &driversv1.StartRouteResponse{}, nil
+}

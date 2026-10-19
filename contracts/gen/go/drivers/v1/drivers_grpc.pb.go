@@ -27,6 +27,7 @@ const (
 	DriverService_CreateDriver_FullMethodName         = "/drivers.v1.DriverService/CreateDriver"
 	DriverService_ListDrivers_FullMethodName          = "/drivers.v1.DriverService/ListDrivers"
 	DriverService_ReleaseDriver_FullMethodName        = "/drivers.v1.DriverService/ReleaseDriver"
+	DriverService_StartRoute_FullMethodName           = "/drivers.v1.DriverService/StartRoute"
 )
 
 // DriverServiceClient is the client API for DriverService service.
@@ -127,6 +128,11 @@ type DriverServiceClient interface {
 	//   - NOT_FOUND: the driver does not exist.
 	//   - FAILED_PRECONDITION: the driver is reserved for a different route.
 	ReleaseDriver(ctx context.Context, in *ReleaseDriverRequest, opts ...grpc.CallOption) (*ReleaseDriverResponse, error)
+	// StartRoute marca al repartidor como ON_ROUTE en la ruta reservada. Es idempotente en la misma ruta.
+	//   - INVALID_ARGUMENT: driver_id or route_id is blank.
+	//   - NOT_FOUND: the driver does not exist.
+	//   - FAILED_PRECONDITION: the driver is not reserved for that route in ASSIGNED state.
+	StartRoute(ctx context.Context, in *StartRouteRequest, opts ...grpc.CallOption) (*StartRouteResponse, error)
 }
 
 type driverServiceClient struct {
@@ -211,6 +217,16 @@ func (c *driverServiceClient) ReleaseDriver(ctx context.Context, in *ReleaseDriv
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReleaseDriverResponse)
 	err := c.cc.Invoke(ctx, DriverService_ReleaseDriver_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *driverServiceClient) StartRoute(ctx context.Context, in *StartRouteRequest, opts ...grpc.CallOption) (*StartRouteResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartRouteResponse)
+	err := c.cc.Invoke(ctx, DriverService_StartRoute_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -315,6 +331,11 @@ type DriverServiceServer interface {
 	//   - NOT_FOUND: the driver does not exist.
 	//   - FAILED_PRECONDITION: the driver is reserved for a different route.
 	ReleaseDriver(context.Context, *ReleaseDriverRequest) (*ReleaseDriverResponse, error)
+	// StartRoute marca al repartidor como ON_ROUTE en la ruta reservada. Es idempotente en la misma ruta.
+	//   - INVALID_ARGUMENT: driver_id or route_id is blank.
+	//   - NOT_FOUND: the driver does not exist.
+	//   - FAILED_PRECONDITION: the driver is not reserved for that route in ASSIGNED state.
+	StartRoute(context.Context, *StartRouteRequest) (*StartRouteResponse, error)
 	mustEmbedUnimplementedDriverServiceServer()
 }
 
@@ -348,6 +369,9 @@ func (UnimplementedDriverServiceServer) ListDrivers(context.Context, *ListDriver
 }
 func (UnimplementedDriverServiceServer) ReleaseDriver(context.Context, *ReleaseDriverRequest) (*ReleaseDriverResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReleaseDriver not implemented")
+}
+func (UnimplementedDriverServiceServer) StartRoute(context.Context, *StartRouteRequest) (*StartRouteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartRoute not implemented")
 }
 func (UnimplementedDriverServiceServer) mustEmbedUnimplementedDriverServiceServer() {}
 func (UnimplementedDriverServiceServer) testEmbeddedByValue()                       {}
@@ -514,6 +538,24 @@ func _DriverService_ReleaseDriver_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DriverService_StartRoute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartRouteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DriverServiceServer).StartRoute(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DriverService_StartRoute_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DriverServiceServer).StartRoute(ctx, req.(*StartRouteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DriverService_ServiceDesc is the grpc.ServiceDesc for DriverService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -552,6 +594,10 @@ var DriverService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReleaseDriver",
 			Handler:    _DriverService_ReleaseDriver_Handler,
+		},
+		{
+			MethodName: "StartRoute",
+			Handler:    _DriverService_StartRoute_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
