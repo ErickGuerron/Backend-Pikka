@@ -182,6 +182,9 @@ services:
       DRIVER_SERVICE_ADDR: driver-service:9092
       TRACKING_GRPC_ADDR: tracking-service:9093
       ROUTING_SERVICE_ADDR: routing-service:9094
+      # Ruta óptima del repartidor. Requiere el perfil osrm levantado (make osrm-up). Si no está levantado,
+      # el endpoint de plan responde 503 y la app lo muestra. Vacío lo desactiva del todo.
+      OSRM_URL: ${OSRM_URL:-http://osrm:5000}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8081,http://localhost:8082}
       # En local no hay TLS; en producción el HTTPS termina en el balanceador.
       ENABLE_HSTS: "false"

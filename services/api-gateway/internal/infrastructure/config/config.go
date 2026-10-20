@@ -23,7 +23,9 @@ type Config struct {
 	DriverServiceAddr   string
 	TrackingServiceAddr string
 	RoutingServiceAddr  string
-	GRPCTimeout         time.Duration
+	// OSRMURL es el servidor OSRM (por ejemplo http://osrm:5000). Vacío desactiva la ruta óptima del repartidor.
+	OSRMURL     string
+	GRPCTimeout time.Duration
 	// TrackingPollInterval es cada cuánto el WebSocket de seguimiento sondea el snapshot del pedido.
 	TrackingPollInterval time.Duration
 
@@ -57,6 +59,7 @@ func Load() (Config, error) {
 		DriverServiceAddr:    getEnv("DRIVER_SERVICE_ADDR", "localhost:9092"),
 		TrackingServiceAddr:  getEnv("TRACKING_GRPC_ADDR", "localhost:9093"),
 		RoutingServiceAddr:   getEnv("ROUTING_SERVICE_ADDR", "localhost:9094"),
+		OSRMURL:              os.Getenv("OSRM_URL"),
 		GRPCTimeout:          getDuration("GRPC_TIMEOUT", 3*time.Second, &errs),
 		TrackingPollInterval: getDuration("TRACKING_POLL_INTERVAL", 5*time.Second, &errs),
 		JWTSecret:            os.Getenv("JWT_SECRET"),

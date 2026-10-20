@@ -16,6 +16,7 @@ import (
 type driverRouteHandlers struct {
 	drivers DriverClient
 	orders  OrderClient
+	planner RoutePlanner
 }
 
 // driverRouteResponse es GET /api/v1/drivers/me/route. Sin ruta: id vacío y paradas vacías (200).
