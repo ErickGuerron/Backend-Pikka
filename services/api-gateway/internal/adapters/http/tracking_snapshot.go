@@ -15,6 +15,7 @@ import (
 	driversv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/drivers/v1"
 	ordersv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/orders/v1"
 	trackingv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/tracking/v1"
+	"github.com/ErickGuerron/Backend-Pikka/libs/osrm"
 	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/grpcclient"
 )
 
@@ -40,7 +41,10 @@ type trackingSnapshot struct {
 	DeliveryPoint *trackingPoint `json:"delivery_point"`
 	// DriverPosition es la última posición fresca del repartidor del pedido, o null. Sin identidad del repartidor.
 	DriverPosition *trackingDriverPosition `json:"driver_position"`
-	UpdatedAt      string                  `json:"updated_at"`
+	// Road es el camino por calles del repartidor hasta el punto de entrega de ESTE pedido, como pares [lat, lon].
+	// Nunca pasa por otros pedidos. Null si no hay posicion fresca, no hay planificador o este falla.
+	Road      [][2]float64 `json:"road"`
+	UpdatedAt string       `json:"updated_at"`
 }
 
 type trackingPoint struct {
@@ -70,6 +74,7 @@ type customerTrackingHandlers struct {
 	orders   OrderClient
 	drivers  DriverClient
 	tracking TrackingClient
+	planner  RoutePlanner
 	verifier TokenVerifier
 	origins  []string
 	interval time.Duration
@@ -107,6 +112,7 @@ func (h *customerTrackingHandlers) build(ctx context.Context, m grpcclient.CallM
 	}
 	snap.ETA, snap.ETAUnavailableReason = h.eta(ctx, m, order)
 	snap.DriverPosition = h.driverPosition(ctx, m, order)
+	snap.Road = h.road(ctx, snap.DriverPosition, order)
 	return snap, nil
 }
 
@@ -128,6 +134,25 @@ func (h *customerTrackingHandlers) driverPosition(ctx context.Context, m grpccli
 		return nil
 	}
 	return &trackingDriverPosition{Latitude: fix.GetLatitude(), Longitude: fix.GetLongitude(), RecordedAt: fix.GetRecordedAt()}
+}
+
+// road calcula el camino por calles de la posicion fresca del repartidor al punto de entrega del pedido. Solo usa\n// esos dos puntos: ni otros pedidos ni la ruta completa del repartidor llegan al cliente. Cualquier falla del\n// planificador devuelve nil y la vista sigue sin la linea.
+func (h *customerTrackingHandlers) road(ctx context.Context, pos *trackingDriverPosition, order *ordersv1.Order) [][2]float64 {
+	if h.planner == nil || pos == nil {
+		return nil
+	}
+	trip, err := h.planner.Optimize(ctx,
+		osrm.Point{Latitude: pos.Latitude, Longitude: pos.Longitude},
+		[]osrm.Point{{Latitude: order.GetLatitude(), Longitude: order.GetLongitude()}},
+	)
+	if err != nil || len(trip.Geometry) == 0 {
+		return nil
+	}
+	road := make([][2]float64, 0, len(trip.Geometry))
+	for _, p := range trip.Geometry {
+		road = append(road, [2]float64{p.Latitude, p.Longitude})
+	}
+	return road
 }
 
 // stopsBefore pide a Order Service cuántas paradas abiertas quedan antes del pedido del cliente. Sin ruta

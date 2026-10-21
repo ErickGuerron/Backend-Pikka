@@ -1649,6 +1649,15 @@ components:
           type: integer
           nullable: true
           description: Open stops ahead of this order on its route. Null when the order has no route or the count is unavailable.
+        road:
+          type: array
+          nullable: true
+          description: Road path from the driver's latest fresh position to this order's delivery point, as [lat, lon] pairs. Never goes through other orders. Null when there is no fresh position or route planning is unavailable.
+          items:
+            type: array
+            minItems: 2
+            maxItems: 2
+            items: { type: number }
         updated_at: { type: string, format: date-time, description: Server time when the snapshot was built }
     StopStatusResponse:
       type: object
