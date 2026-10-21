@@ -50,6 +50,9 @@ service OrderService {
   // order it owns: a foreign or unknown order returns NOT_FOUND. An order without route or stop_sequence
   // returns 0.
   rpc StopsBeforeForOrder(StopsBeforeForOrderRequest) returns (StopsBeforeForOrderResponse);
+  // ListDriverRouteStops returns the stops of a route for its DRIVER, ordered by stop_sequence.
+  // Only DRIVER. Customer data (name, phone) is never in DriverRouteStop.
+  rpc ListDriverRouteStops(ListDriverRouteStopsRequest) returns (ListDriverRouteStopsResponse);
 }
 
 enum OrderStatus {
@@ -301,4 +304,26 @@ message StopsBeforeForOrderResponse {
 message AssignOrdersToRouteResponse {
   // The orders in the request, now ROUTE_ASSIGNED.
   repeated Order orders = 1;
+}
+
+message ListDriverRouteStopsRequest {
+  // Required route id of the driver's own route.
+  string route_id = 1;
+}
+
+message ListDriverRouteStopsResponse {
+  repeated DriverRouteStop stops = 1;
+}
+
+// One stop of a driver's route. Carries no customer identity.
+message DriverRouteStop {
+  string order_id = 1;
+  int32 sequence = 2;
+  string address = 3;
+  double latitude = 4;
+  double longitude = 5;
+  // Local times HH:mm.
+  string window_start = 6;
+  string window_end = 7;
+  OrderStatus status = 8;
 }

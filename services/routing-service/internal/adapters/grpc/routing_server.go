@@ -12,6 +12,7 @@ import (
 
 	routingv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/routing/v1"
 	"github.com/ErickGuerron/Backend-Pikka/services/routing-service/internal/application/plan"
+	"github.com/ErickGuerron/Backend-Pikka/services/routing-service/internal/domain"
 )
 
 // metadataUserRole carries the caller's role, propagated by the Gateway (ADR 0002).
@@ -50,15 +51,45 @@ func (s *RoutingServer) GeneratePlan(ctx context.Context, req *routingv1.Generat
 	if err != nil {
 		return nil, mapGenerateError(err, len(result.Routes))
 	}
+	// Result.Routes and Result.Assigned are appended together, so index i describes the same route.
+	// The guard keeps the server safe if a result ever carries routes without their planned stops.
 	routes := make([]*routingv1.PlannedRoute, 0, len(result.Routes))
-	for _, route := range result.Routes {
+	for i, route := range result.Routes {
+		var stops []*routingv1.PlannedStop
+		if i < len(result.Assigned) {
+			stops = plannedStops(result.Assigned[i].Stops)
+		}
 		routes = append(routes, &routingv1.PlannedRoute{
 			RouteId:    route.RouteID,
 			DriverId:   route.DriverID,
 			OrderCount: int32(route.OrderCount),
+			DriverName: route.DriverName,
+			Stops:      stops,
 		})
 	}
-	return &routingv1.GeneratePlanResponse{Routes: routes}, nil
+	return &routingv1.GeneratePlanResponse{
+		Routes:             routes,
+		PlanId:             planID(req.GetDeliveryDate()),
+		UnassignedOrderIds: []string{},
+	}, nil
+}
+
+// planID derives the plan id of a delivery date. Phase 1: it is not persisted, so it is only a label.
+func planID(deliveryDate string) string {
+	return "plan-" + deliveryDate
+}
+
+// plannedStops maps the planner's stops to the contract, keeping their sequence.
+func plannedStops(stops []domain.RouteStop) []*routingv1.PlannedStop {
+	out := make([]*routingv1.PlannedStop, 0, len(stops))
+	for _, stop := range stops {
+		out = append(out, &routingv1.PlannedStop{
+			OrderId:  stop.OrderID,
+			Address:  stop.Address,
+			Sequence: int32(stop.Sequence),
+		})
+	}
+	return out
 }
 
 // requirePlannerRole rejects a missing or blank role as UNAUTHENTICATED and any role other than

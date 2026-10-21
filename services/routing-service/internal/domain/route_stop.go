@@ -4,5 +4,6 @@ package domain
 type RouteStop struct {
 	OrderID  string
 	ZoneID   string
+	Address  string
 	Sequence int
 }

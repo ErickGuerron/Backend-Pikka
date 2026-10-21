@@ -38,9 +38,14 @@ func (f *fakeRouting) GeneratePlan(_ context.Context, m grpcclient.CallMeta, req
 	if f.resp != nil {
 		return f.resp, nil
 	}
-	return &routingv1.GeneratePlanResponse{Routes: []*routingv1.PlannedRoute{
-		{RouteId: "2026-10-16/A", DriverId: "d-1", OrderCount: 3},
-		{RouteId: "2026-10-16/B", DriverId: "d-2", OrderCount: 2},
+	return &routingv1.GeneratePlanResponse{PlanId: "plan-2026-10-16", Routes: []*routingv1.PlannedRoute{
+		{RouteId: "2026-10-16/A", DriverId: "d-1", DriverName: "Luis Andrade", OrderCount: 2, Stops: []*routingv1.PlannedStop{
+			{OrderId: "o-1", Address: "Av. Amazonas 100", Sequence: 1},
+			{OrderId: "o-2", Address: "Calle 9 de Octubre 20", Sequence: 2},
+		}},
+		{RouteId: "2026-10-16/B", DriverId: "d-2", DriverName: "Jorge Velez", OrderCount: 1, Stops: []*routingv1.PlannedStop{
+			{OrderId: "o-3", Address: "Av. 6 de Diciembre 50", Sequence: 1},
+		}},
 	}}, nil
 }
 
@@ -85,9 +90,12 @@ func TestRoutePlan_AdminAndOperator_Returns200WithRoutesAndForwardsIdentity(t *t
 			rec := do(h, http.MethodPost, routePlanPath, `{"deliveryDate":"2026-10-16"}`, authHeaderFor(t, role))
 
 			require.Equal(t, http.StatusOK, rec.Code)
-			assert.JSONEq(t, `{"routes":[
-				{"routeId":"2026-10-16/A","driverId":"d-1","orderCount":3},
-				{"routeId":"2026-10-16/B","driverId":"d-2","orderCount":2}]}`, rec.Body.String())
+			assert.JSONEq(t, `{"planId":"plan-2026-10-16","unassignedOrderIds":[],"routes":[
+				{"routeId":"2026-10-16/A","driverId":"d-1","driverName":"Luis Andrade","orderCount":2,"stops":[
+					{"orderId":"o-1","address":"Av. Amazonas 100","sequence":1},
+					{"orderId":"o-2","address":"Calle 9 de Octubre 20","sequence":2}]},
+				{"routeId":"2026-10-16/B","driverId":"d-2","driverName":"Jorge Velez","orderCount":1,"stops":[
+					{"orderId":"o-3","address":"Av. 6 de Diciembre 50","sequence":1}]}]}`, rec.Body.String())
 			require.Equal(t, 1, routing.calls)
 			assert.Equal(t, "2026-10-16", routing.lastReq.GetDeliveryDate())
 			assert.Equal(t, "u-"+role, routing.lastMeta.UserID, "the caller identity is forwarded")
@@ -103,7 +111,7 @@ func TestRoutePlan_NoRoutesPlanned_ReturnsEmptyArrayNotNull(t *testing.T) {
 	rec := do(h, http.MethodPost, routePlanPath, `{"deliveryDate":"2026-10-16"}`, authHeaderFor(t, "ADMIN"))
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	assert.JSONEq(t, `{"routes":[]}`, rec.Body.String())
+	assert.JSONEq(t, `{"planId":"","unassignedOrderIds":[],"routes":[]}`, rec.Body.String())
 }
 
 func TestRoutePlan_InvalidBody_Returns400WithoutCall(t *testing.T) {

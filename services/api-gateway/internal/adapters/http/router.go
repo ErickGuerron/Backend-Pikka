@@ -182,7 +182,12 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 		adminOnly.POST("/drivers", driverAdmin.create)
 		authed.GET("/drivers", driverAdmin.list, StaffOnly())
 		driverOnly := authed.Group("", DriverOnly())
-		driverOnly.GET("/drivers/me/route", driverRouteNotImplemented)
+		if opts.Orders != nil {
+			routes := &driverRouteHandlers{drivers: opts.Drivers, orders: opts.Orders}
+			driverOnly.GET("/drivers/me/route", routes.get)
+		} else {
+			driverOnly.GET("/drivers/me/route", driverRouteNotImplemented)
+		}
 		if opts.Orders != nil {
 			stops := &driverStopHandlers{drivers: opts.Drivers, orders: opts.Orders}
 			driverOnly.PATCH("/drivers/me/routes/:routeId/stops/:stopId/status", stops.advance)

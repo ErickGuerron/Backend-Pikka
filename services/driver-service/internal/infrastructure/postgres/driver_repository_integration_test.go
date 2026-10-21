@@ -37,6 +37,7 @@ func openRepo(t *testing.T) (*postgres.DriverRepository, *pgxpool.Pool) {
 	if dsn == "" {
 		t.Skip("DRIVER_TEST_DATABASE_URL is not set")
 	}
+	refuseProtectedDatabase(t, dsn)
 	ctx := context.Background()
 	admin, err := pgxpool.New(ctx, dsn)
 	require.NoError(t, err)

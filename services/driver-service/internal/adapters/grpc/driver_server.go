@@ -53,7 +53,7 @@ func (s *DriverServer) GetDriverByUserID(ctx context.Context, req *driversv1.Get
 	if err != nil {
 		return nil, toStatus(err)
 	}
-	return &driversv1.GetDriverByUserIDResponse{Driver: &driversv1.DriverSummary{Id: d.ID, UserId: d.UserID}}, nil
+	return &driversv1.GetDriverByUserIDResponse{Driver: &driversv1.DriverSummary{Id: d.ID, UserId: d.UserID, RouteId: d.RouteID}}, nil
 }
 
 // GetDriverByRouteID devuelve solo los identificadores del repartidor reservado para la ruta.

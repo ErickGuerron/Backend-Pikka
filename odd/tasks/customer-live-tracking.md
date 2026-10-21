@@ -96,13 +96,13 @@ pipeline built in the previous stack (#50 to #55).
       `GetMyOrderResponse{order=1}`; handler wired in `cmd/api/main.go`.
     - Not yet done: the gateway must not expose `route_id` in customer DTOs (S3/S4). Any RPC
       returning `Order` now carries it.
-- [ ] S2 (PR 2, driver-service): `GetDriverByRouteID` RPC, port `FindByRouteID`, postgres adapter,
+- [x] S2 (PR 2, driver-service): [verified 2026-10-18: GetDriverByRouteID is served by driver-service grpc adapter] `GetDriverByRouteID` RPC, port `FindByRouteID`, postgres adapter,
       index migration on `drivers.route_id`. TDD: found, not found, blank route_id -> INVALID_ARGUMENT.
       Check: `go test -race ./...` in services/driver-service.
-- [ ] S3 (PR 3, gateway): `grpcclient/tracking.go` `EstimateArrival`; `grpcclient/orders.go`
+- [x] S3 (PR 3, gateway): [verified 2026-10-18: grpcclient/tracking.go EstimateArrival present] `grpcclient/tracking.go` `EstimateArrival`; `grpcclient/orders.go`
       `GetMyOrder`; `grpcclient/drivers.go` `GetDriverByRouteID`; `CustomerOnly` middleware.
       TDD for the wrappers' error mapping. Check: `go test -race ./...` in services/api-gateway.
-- [ ] S4 (PR 4, gateway): snapshot use case, `GET /orders/:id/tracking` and the WebSocket
+- [x] S4 (PR 4, gateway): [verified 2026-10-18: GET /orders/:id/tracking and /orders/:id/tracking/ws registered in router.go] snapshot use case, `GET /orders/:id/tracking` and the WebSocket
       endpoint with subprotocol auth, poll loop, change detection, ETA rules of assumption 7.
       TDD: 404 for foreign order, 403 for DRIVER role, ETA null cases, ws auth rejects a bad
       token, no coordinates in logs. Check: gateway tests with `-race`; manual ws check with

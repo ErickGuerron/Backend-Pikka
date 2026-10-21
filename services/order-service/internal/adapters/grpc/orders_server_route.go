@@ -104,6 +104,37 @@ func (s *OrderServer) StopsBeforeForOrder(ctx context.Context, req *ordersv1.Sto
 	return &ordersv1.StopsBeforeForOrderResponse{StopsBefore: int32(count)}, nil
 }
 
+// ListDriverRouteStops devuelve las paradas de la ruta del conductor, en orden de secuencia.
+// Solo DRIVER (otro rol responde PERMISSION_DENIED sin leer). El Gateway verifica antes que la ruta es del
+// conductor. La respuesta no incluye datos del cliente: ni nombre, ni teléfono, ni su id.
+func (s *OrderServer) ListDriverRouteStops(ctx context.Context, req *ordersv1.ListDriverRouteStopsRequest) (*ordersv1.ListDriverRouteStopsResponse, error) {
+	if s.useCases.DriverRouteStops == nil {
+		return nil, status.Error(codes.Unimplemented, "driver route stops is not wired")
+	}
+	_, role, err := identityFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orders, err := s.useCases.DriverRouteStops.Run(ctx, orderapp.DriverRouteStopsCommand{Role: role, RouteID: req.GetRouteId()})
+	if err != nil {
+		return nil, mapOrderError(err)
+	}
+	stops := make([]*ordersv1.DriverRouteStop, 0, len(orders))
+	for _, o := range orders {
+		stops = append(stops, &ordersv1.DriverRouteStop{
+			OrderId:     o.ID,
+			Sequence:    int32(o.StopSequence),
+			Address:     o.Address,
+			Latitude:    o.Latitude,
+			Longitude:   o.Longitude,
+			WindowStart: o.Window.Start(),
+			WindowEnd:   o.Window.End(),
+			Status:      orderToProto(o).GetStatus(),
+		})
+	}
+	return &ordersv1.ListDriverRouteStopsResponse{Stops: stops}, nil
+}
+
 // routeStopTargetFromProto traduce el estado pedido. Cualquier valor que no sea PICKED_UP o IN_TRANSIT
 // llega al dominio como estado vacío y se rechaza como INVALID_ARGUMENT.
 func routeStopTargetFromProto(target ordersv1.OrderStatus) domain.Status {

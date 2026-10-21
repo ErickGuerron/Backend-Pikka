@@ -34,6 +34,10 @@ message GeneratePlanRequest {
 message GeneratePlanResponse {
   // Rutas creadas, con su repartidor y el número de paradas.
   repeated PlannedRoute routes = 1;
+  // Identificador del plan de la fecha. Fase 1: derivado como "plan-<delivery_date>", no persistido.
+  string plan_id = 2;
+  // Pedidos que no pudieron asignarse. Fase 1: siempre vacio; el planificador asigna todo o falla.
+  repeated string unassigned_order_ids = 3;
 }
 
 message PlannedRoute {
@@ -43,4 +47,15 @@ message PlannedRoute {
   string driver_id = 2;
   // Número de pedidos (paradas) de la ruta.
   int32 order_count = 3;
+  // Nombre del repartidor reservado para la ruta.
+  string driver_name = 4;
+  // Paradas en orden de secuencia, empezando en 1.
+  repeated PlannedStop stops = 5;
+}
+
+message PlannedStop {
+  string order_id = 1;
+  // Direccion del pedido tal como la registro Order Service.
+  string address = 2;
+  int32 sequence = 3;
 }

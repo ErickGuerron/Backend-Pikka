@@ -85,13 +85,14 @@ func (f *fakeDrivers) FindAvailable(_ context.Context, n int) ([]string, error) 
 	return out, nil
 }
 
-func (f *fakeDrivers) Reserve(_ context.Context, driverID, routeID string) error {
+// Reserve returns a deterministic name per driver so tests can check that the name reaches the route.
+func (f *fakeDrivers) Reserve(_ context.Context, driverID, routeID string) (string, error) {
 	if len(f.reserved) == f.reserveFailAt {
-		return f.reserveErr
+		return "", f.reserveErr
 	}
 	f.reserved = append(f.reserved, reservation{driverID: driverID, routeID: routeID})
 	f.trace.add("reserve " + driverID + " " + routeID)
-	return nil
+	return "name-" + driverID, nil
 }
 
 func (f *fakeDrivers) Release(_ context.Context, driverID, routeID string) error {
@@ -165,9 +166,9 @@ func TestGenerateSplitsEachZoneByItsOwnCapacity(t *testing.T) {
 		}
 	}
 	wantRoutes := []AssignedRoute{
-		{RouteID: "2026-10-15-A-1", DriverID: "d1", OrderCount: 2},
-		{RouteID: "2026-10-15-A-2", DriverID: "d2", OrderCount: 1},
-		{RouteID: "2026-10-15-B-1", DriverID: "d3", OrderCount: 2},
+		{RouteID: "2026-10-15-A-1", DriverID: "d1", DriverName: "name-d1", OrderCount: 2},
+		{RouteID: "2026-10-15-A-2", DriverID: "d2", DriverName: "name-d2", OrderCount: 1},
+		{RouteID: "2026-10-15-B-1", DriverID: "d3", DriverName: "name-d3", OrderCount: 2},
 	}
 	if !slices.Equal(got.Routes, wantRoutes) {
 		t.Fatalf("routes = %+v, want %+v", got.Routes, wantRoutes)
@@ -278,8 +279,8 @@ func TestGenerateReservesDriverBeforeAssigningEachRoute(t *testing.T) {
 		t.Fatalf("steps = %v, want %v", tr.steps, want)
 	}
 	wantRoutes := []AssignedRoute{
-		{RouteID: "2026-10-15-A-1", DriverID: "d1", OrderCount: 2},
-		{RouteID: "2026-10-15-A-2", DriverID: "d2", OrderCount: 1},
+		{RouteID: "2026-10-15-A-1", DriverID: "d1", DriverName: "name-d1", OrderCount: 2},
+		{RouteID: "2026-10-15-A-2", DriverID: "d2", DriverName: "name-d2", OrderCount: 1},
 	}
 	if !slices.Equal(got.Routes, wantRoutes) {
 		t.Fatalf("routes = %+v, want %+v", got.Routes, wantRoutes)

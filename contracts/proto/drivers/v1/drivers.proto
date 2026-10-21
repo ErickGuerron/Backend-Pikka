@@ -107,6 +107,7 @@ service DriverService {
   rpc ReleaseDriver(ReleaseDriverRequest) returns (ReleaseDriverResponse);
 }
 
+
 enum DriverStatus {
   DRIVER_STATUS_UNSPECIFIED = 0;
   DRIVER_STATUS_AVAILABLE = 1;
@@ -141,6 +142,8 @@ message DriverSummary {
   string id = 1;
   // Identificador del usuario en Auth Service con rol DRIVER.
   string user_id = 2;
+  // Ruta reservada al repartidor. Vacía cuando no tiene ruta. Campo aditivo.
+  string route_id = 3;
 }
 
 message FindAvailableDriversRequest {

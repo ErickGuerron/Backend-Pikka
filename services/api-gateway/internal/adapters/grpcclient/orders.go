@@ -100,6 +100,13 @@ func (o *Orders) AdvanceRouteStop(ctx context.Context, m CallMeta, req *ordersv1
 	return o.client.AdvanceRouteStop(ctx, req)
 }
 
+// ListDriverRouteStops devuelve las paradas de la ruta del conductor, en orden de secuencia.
+func (o *Orders) ListDriverRouteStops(ctx context.Context, m CallMeta, req *ordersv1.ListDriverRouteStopsRequest) (*ordersv1.ListDriverRouteStopsResponse, error) {
+	ctx, cancel := o.outgoing(ctx, m)
+	defer cancel()
+	return o.client.ListDriverRouteStops(ctx, req)
+}
+
 // ListOrders devuelve los pedidos de todos los clientes para el personal.
 func (o *Orders) ListOrders(ctx context.Context, m CallMeta, req *ordersv1.ListOrdersRequest) (*ordersv1.ListOrdersResponse, error) {
 	ctx, cancel := o.outgoing(ctx, m)

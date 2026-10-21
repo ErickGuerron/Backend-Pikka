@@ -13,6 +13,7 @@ import (
 
 	routingv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/routing/v1"
 	"github.com/ErickGuerron/Backend-Pikka/services/routing-service/internal/application/plan"
+	"github.com/ErickGuerron/Backend-Pikka/services/routing-service/internal/domain"
 )
 
 // fakeGenerate replaces the use case so the server tests only cover the gRPC mapping and the role gate.
@@ -119,5 +120,41 @@ func TestGeneratePlanReturnsRoutesOnSuccess(t *testing.T) {
 	}
 	if routes[1].GetDriverId() != "d2" || routes[1].GetOrderCount() != 1 {
 		t.Fatalf("second route = %+v", routes[1])
+	}
+}
+
+// Phase 1 contract: driver name, ordered stops with addresses, a derived plan id, and no unassigned orders.
+func TestGeneratePlanMapsNamesStopsAndPlanID(t *testing.T) {
+	gen := &fakeGenerate{result: plan.Result{
+		Routes: []plan.AssignedRoute{{RouteID: "2026-10-15-zone-a-1", DriverID: "d1", DriverName: "Luis Andrade", OrderCount: 2}},
+		Assigned: []domain.Route{{ID: "zone-a#1", ZoneID: "zone-a", Stops: []domain.RouteStop{
+			{OrderID: "o-1", ZoneID: "zone-a", Address: "Av. Amazonas 100", Sequence: 1},
+			{OrderID: "o-2", ZoneID: "zone-a", Address: "Calle 9 de Octubre 20", Sequence: 2},
+		}}},
+	}}
+
+	got, err := NewRoutingServer(gen).GeneratePlan(roleCtx("OPERATOR"), &routingv1.GeneratePlanRequest{DeliveryDate: "2026-10-15"})
+	if err != nil {
+		t.Fatalf("GeneratePlan: %v", err)
+	}
+	if got.GetPlanId() != "plan-2026-10-15" {
+		t.Fatalf("plan id = %q, want plan-2026-10-15", got.GetPlanId())
+	}
+	if len(got.GetUnassignedOrderIds()) != 0 {
+		t.Fatalf("unassigned = %v, want none in phase 1", got.GetUnassignedOrderIds())
+	}
+	route := got.GetRoutes()[0]
+	if route.GetDriverName() != "Luis Andrade" {
+		t.Fatalf("driver name = %q", route.GetDriverName())
+	}
+	stops := route.GetStops()
+	if len(stops) != 2 {
+		t.Fatalf("stops = %d, want 2", len(stops))
+	}
+	if stops[0].GetOrderId() != "o-1" || stops[0].GetAddress() != "Av. Amazonas 100" || stops[0].GetSequence() != 1 {
+		t.Fatalf("first stop = %+v", stops[0])
+	}
+	if stops[1].GetOrderId() != "o-2" || stops[1].GetAddress() != "Calle 9 de Octubre 20" || stops[1].GetSequence() != 2 {
+		t.Fatalf("second stop = %+v", stops[1])
 	}
 }

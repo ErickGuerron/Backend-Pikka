@@ -12,7 +12,20 @@ import (
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/domain"
 )
 
-var _ ports.RouteStopRepository = (*OrderRepository)(nil)
+var (
+	_ ports.RouteStopRepository       = (*OrderRepository)(nil)
+	_ ports.DriverRouteStopRepository = (*OrderRepository)(nil)
+)
+
+// ListDriverRouteStops devuelve los pedidos de la ruta con secuencia, ordenados por ella. Excluye CANCELLED:
+// un pedido cancelado conserva su stop_sequence y no es una parada que el conductor deba atender.
+func (r *OrderRepository) ListDriverRouteStops(ctx context.Context, routeID string) ([]domain.Order, error) {
+	return r.queryOrders(ctx,
+		`SELECT `+orderColumns+` FROM orders
+		  WHERE route_id = $1 AND stop_sequence IS NOT NULL AND status <> 'CANCELLED'
+		  ORDER BY stop_sequence ASC`,
+		routeID)
+}
 
 // CountStopsBefore cuenta en una sola consulta las paradas abiertas de la misma ruta con secuencia menor.
 // La fila del pedido propio filtra por cliente en el FROM: un pedido ajeno no tiene fila y responde
