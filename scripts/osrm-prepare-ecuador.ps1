@@ -1,7 +1,7 @@
 # Prepara los datos de OSRM para el mapa de Ecuador (MVP).
 #
 # 1. Descarga el extracto de OpenStreetMap de Geofabrik (si no existe).
-# 2. Ejecuta osrm-extract, osrm-partition y osrm-customize dentro de Docker.
+# 2. Ejecuta osrm-extract, osrm-partition y osrm-customize (MLD) como servicio del compose (queda dentro del grupo).
 #
 # Los datos quedan en infrastructure/osrm/data (ignorado por git). Tarda unos minutos
 # y necesita unos 2 GB de RAM para el paso de extracción.
@@ -31,18 +31,15 @@ if ($Force -or -not (Test-Path $pbfPath)) {
 }
 Write-Host ("Extracto: {0:N1} MB" -f ((Get-Item $pbfPath).Length / 1MB))
 
-$mount = (Resolve-Path $dataDir).Path
-
-function Invoke-Osrm([string]$step, [string[]]$command) {
-    Write-Host "== $step"
-    docker run --rm -v "${mount}:/data" $image @command
-    if ($LASTEXITCODE -ne 0) {
-        throw "$step fallo con codigo $LASTEXITCODE"
-    }
-}
-
-Invoke-Osrm "osrm-extract" @("osrm-extract", "-p", "/opt/car.lua", "/data/$pbfName")
-Invoke-Osrm "osrm-partition" @("osrm-partition", "/data/$baseName")
-Invoke-Osrm "osrm-customize" @("osrm-customize", "/data/$baseName")
+Write-Host "== osrm-extract + osrm-partition + osrm-customize (MLD) como servicio del compose; puede tardar varios minutos"
+Push-Location $root
+try {
+    docker compose --profile osrm-prepare up --abort-on-container-exit --exit-code-from osrm-prepare osrm-prepare
+    $code = $LASTEXITCODE
+    docker compose --profile osrm-prepare rm -f osrm-prepare | Out-Null
+} finally { Pop-Location }
+if ($code -ne 0) { throw "la preparacion de OSRM fallo con codigo $code" }
+if (-not (Test-Path (Join-Path $dataDir "$baseName.cell_metrics"))) { throw "no se genero $baseName.cell_metrics" }
 
 Write-Host "Listo. Levanta el servidor con: make osrm-up"
+
