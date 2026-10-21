@@ -69,6 +69,11 @@ El sistema decide si corresponde recargo, no el repartidor:
 - Si el motivo es imputable al cliente, aplica el recargo del ADR 0006 y
   notifica al cliente en la app, con el motivo.
 - Si el motivo es imputable al negocio, no aplica recargo.
+- **Excepción por dirección (enmienda):** si el motivo es `WRONG_ADDRESS`
+  (dirección mal ingresada o inválida), el recargo queda en **verificación
+  pendiente**. No se cobra ni se notifica como definitivo hasta que un operador
+  confirme que la dirección era incorrecta. Si el operador lo descarta, no hay
+  recargo. Los demás motivos siguen el flujo automático.
 
 ### 6. Disputas
 

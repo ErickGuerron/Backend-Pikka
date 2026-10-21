@@ -180,6 +180,24 @@ func (s *DriverServer) ReserveDriver(ctx context.Context, req *driversv1.Reserve
 	return &driversv1.ReserveDriverResponse{Driver: toProto(d)}, nil
 }
 
+// StartRoute marca al repartidor como ON_ROUTE en su ruta reservada. Lo llama el gateway con el primer
+// PICKED_UP de la ruta. Sin gate de rol: el gateway ya verificó que la ruta es del repartidor.
+func (s *DriverServer) StartRoute(ctx context.Context, req *driversv1.StartRouteRequest) (*driversv1.StartRouteResponse, error) {
+	driverID := strings.TrimSpace(req.GetDriverId())
+	routeID := strings.TrimSpace(req.GetRouteId())
+	if driverID == "" {
+		return nil, status.Error(codes.InvalidArgument, "driver_id is required")
+	}
+	if routeID == "" {
+		return nil, status.Error(codes.InvalidArgument, "route_id is required")
+	}
+	d, err := s.svc.StartRoute(ctx, driverID, routeID)
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	return &driversv1.StartRouteResponse{Driver: toProto(d)}, nil
+}
+
 // ReleaseDriver frees the reservation of driver_id for route_id. Like ReserveDriver, it has no
 // role gate: it is called by the Routing Service, which is internal.
 func (s *DriverServer) ReleaseDriver(ctx context.Context, req *driversv1.ReleaseDriverRequest) (*driversv1.ReleaseDriverResponse, error) {
@@ -212,6 +230,8 @@ func toStatus(err error) error {
 		return status.Error(codes.FailedPrecondition, "driver is offline")
 	case errors.Is(err, domain.ErrDriverAlreadyReserved):
 		return status.Error(codes.FailedPrecondition, "driver is already reserved for another route")
+	case errors.Is(err, domain.ErrOutsideRadius):
+		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, domain.ErrRouteMismatch), errors.Is(err, domain.ErrInvalidTransition):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, domain.ErrInvalidRouteID), errors.Is(err, domain.ErrInvalidDriverID):

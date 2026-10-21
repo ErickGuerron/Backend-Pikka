@@ -20,6 +20,10 @@ type fakeDriverClient struct {
 
 var errNoLlamar = errors.New("el gateway no debe llamar al servicio de repartidores aquí")
 
+func (f *fakeDriverClient) StartRoute(_ context.Context, _ grpcclient.CallMeta, _ *driversv1.StartRouteRequest) (*driversv1.StartRouteResponse, error) {
+	return nil, errNoLlamar
+}
+
 func (f *fakeDriverClient) GetDriverByUserID(_ context.Context, _ grpcclient.CallMeta, _ *driversv1.GetDriverByUserIDRequest) (*driversv1.GetDriverByUserIDResponse, error) {
 	f.calls++
 	return nil, errNoLlamar

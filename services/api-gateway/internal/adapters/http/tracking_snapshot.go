@@ -36,7 +36,22 @@ type trackingSnapshot struct {
 	ETA                  *trackingETA   `json:"eta"`
 	ETAUnavailableReason *string        `json:"eta_unavailable_reason"`
 	StopsBefore          *int           `json:"stops_before"`
-	UpdatedAt            string         `json:"updated_at"`
+	// DeliveryPoint es el punto de entrega del pedido del cliente: su propio dato, nunca de otro pedido.
+	DeliveryPoint *trackingPoint `json:"delivery_point"`
+	// DriverPosition es la última posición fresca del repartidor del pedido, o null. Sin identidad del repartidor.
+	DriverPosition *trackingDriverPosition `json:"driver_position"`
+	UpdatedAt      string                  `json:"updated_at"`
+}
+
+type trackingPoint struct {
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+}
+
+type trackingDriverPosition struct {
+	Latitude   float64 `json:"latitude"`
+	Longitude  float64 `json:"longitude"`
+	RecordedAt string  `json:"recorded_at"`
 }
 
 type trackingWindow struct {
@@ -87,10 +102,32 @@ func (h *customerTrackingHandlers) build(ctx context.Context, m grpcclient.CallM
 		DeliveryAddress: order.GetAddress(),
 		DeliveryWindow:  trackingWindow{Start: order.GetWindowStart(), End: order.GetWindowEnd()},
 		StopsBefore:     h.stopsBefore(ctx, m, order),
+		DeliveryPoint:   &trackingPoint{Latitude: order.GetLatitude(), Longitude: order.GetLongitude()},
 		UpdatedAt:       h.now().UTC().Format(time.RFC3339),
 	}
 	snap.ETA, snap.ETAUnavailableReason = h.eta(ctx, m, order)
+	snap.DriverPosition = h.driverPosition(ctx, m, order)
 	return snap, nil
+}
+
+// driverPosition pide a Tracking la última posición fresca del repartidor de la ruta. Sin ruta, sin repartidor,
+// sin posición fresca o con falla de Tracking devuelve nil: la vista sigue sin mapa, nunca con una posición vieja.
+func (h *customerTrackingHandlers) driverPosition(ctx context.Context, m grpcclient.CallMeta, order *ordersv1.Order) *trackingDriverPosition {
+	if order.GetRouteId() == "" {
+		return nil
+	}
+	route, err := h.drivers.GetDriverByRouteID(ctx, m, &driversv1.GetDriverByRouteIDRequest{RouteId: order.GetRouteId()})
+	if err != nil || route.GetDriverId() == "" {
+		return nil
+	}
+	fix, err := h.tracking.GetDriverPosition(ctx, m, &trackingv1.GetDriverPositionRequest{DriverId: route.GetDriverId()})
+	if err != nil {
+		if status.Code(err) != codes.NotFound {
+			h.log.Warn("tracking: driver position unavailable", "code", status.Code(err).String())
+		}
+		return nil
+	}
+	return &trackingDriverPosition{Latitude: fix.GetLatitude(), Longitude: fix.GetLongitude(), RecordedAt: fix.GetRecordedAt()}
 }
 
 // stopsBefore pide a Order Service cuántas paradas abiertas quedan antes del pedido del cliente. Sin ruta

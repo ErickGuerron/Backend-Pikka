@@ -62,6 +62,10 @@ func (d *Deliveries) RegisterDelivery(ctx context.Context, driverID, routeID str
 	if err != nil {
 		return Registration{}, err
 	}
+	// D1: una entrega exitosa solo se acepta dentro del radio. Un no entregado se registra siempre.
+	if rec.Outcome == domain.OutcomeDelivered && !arrival.WithinRadius {
+		return Registration{}, domain.ErrOutsideRadius
+	}
 	if err := d.recorder.Record(ctx, routeID, rec, arrival); err != nil {
 		return Registration{}, err
 	}

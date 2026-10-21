@@ -105,6 +105,22 @@ service DriverService {
   //   - NOT_FOUND: the driver does not exist.
   //   - FAILED_PRECONDITION: the driver is reserved for a different route.
   rpc ReleaseDriver(ReleaseDriverRequest) returns (ReleaseDriverResponse);
+  // StartRoute marca al repartidor como ON_ROUTE en la ruta reservada. Es idempotente en la misma ruta.
+  //   - INVALID_ARGUMENT: driver_id or route_id is blank.
+  //   - NOT_FOUND: the driver does not exist.
+  //   - FAILED_PRECONDITION: the driver is not reserved for that route in ASSIGNED state.
+  rpc StartRoute(StartRouteRequest) returns (StartRouteResponse);
+}
+
+message StartRouteRequest {
+  // Required; must not be blank.
+  string driver_id = 1;
+  // Route being started; required.
+  string route_id = 2;
+}
+
+message StartRouteResponse {
+  Driver driver = 1;
 }
 
 

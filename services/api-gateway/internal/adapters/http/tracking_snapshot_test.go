@@ -150,6 +150,11 @@ func (f *trackingETAFake) EstimateArrival(_ context.Context, _ grpcclient.CallMe
 	return f.res, nil
 }
 
+// GetDriverPosition: estos tests se centran en la estimación; sin posición fresca el snapshot devuelve null.
+func (f *trackingETAFake) GetDriverPosition(_ context.Context, _ grpcclient.CallMeta, _ *trackingv1.GetDriverPositionRequest) (*trackingv1.GetDriverPositionResponse, error) {
+	return nil, status.Error(codes.NotFound, "no fresh position")
+}
+
 // ownOrder es un pedido del cliente con ruta asignada.
 func ownOrder(s ordersv1.OrderStatus, routeID string) *ordersv1.Order {
 	return &ordersv1.Order{
@@ -428,7 +433,8 @@ func TestTrackingSnapshot_ResponseLeaksNoDriverRouteOrOtherOrders(t *testing.T) 
 
 	raw := do(h, http.MethodGet, snapshotPath(trackedOrderID), "", customerHeaders(t)).Body.String()
 
-	for _, leak := range []string{trackedDriverID, trackedRouteID, otherOrderID, "u-driver", "latitude", "longitude", "driver", "route"} {
+	// "driver_position" is the position of the driver, not an identity: only identifiers must stay out.
+	for _, leak := range []string{trackedDriverID, trackedRouteID, otherOrderID, "u-driver", "driver_id", "driverId", "route"} {
 		assert.NotContains(t, raw, leak)
 	}
 }
@@ -450,4 +456,9 @@ func TestTrackingSnapshot_LogsNeverContainTokenCoordinatesOrDriverID(t *testing.
 	for _, secret := range []string{bearer, trackedDriverID, "0.1807", "78.4678"} {
 		assert.False(t, strings.Contains(logs, secret), "log leaks %q", secret)
 	}
+}
+
+// StartRoute: the reserved driver starts the route on its first PICKED_UP; the stop tests expect success.
+func (f *routeDriversFake) StartRoute(_ context.Context, _ grpcclient.CallMeta, _ *driversv1.StartRouteRequest) (*driversv1.StartRouteResponse, error) {
+	return &driversv1.StartRouteResponse{}, nil
 }

@@ -44,6 +44,13 @@ func (t *Tracking) EstimateArrival(ctx context.Context, m CallMeta, req *trackin
 	return t.client.EstimateArrival(ctx, req)
 }
 
+// GetDriverPosition devuelve la última posición fresca del repartidor (NOT_FOUND si no hay o está vencida).
+func (t *Tracking) GetDriverPosition(ctx context.Context, m CallMeta, req *trackingv1.GetDriverPositionRequest) (*trackingv1.GetDriverPositionResponse, error) {
+	ctx, cancel := t.outgoing(ctx, m)
+	defer cancel()
+	return t.client.GetDriverPosition(ctx, req)
+}
+
 // RecordPosition envía un fix del repartidor al Tracking Service. La posición no se registra en logs.
 func (t *Tracking) RecordPosition(ctx context.Context, m CallMeta, req *trackingv1.RecordPositionRequest) (*trackingv1.RecordPositionResponse, error) {
 	ctx, cancel := t.outgoing(ctx, m)

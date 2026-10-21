@@ -17,6 +17,7 @@ type DriverClient interface {
 	GetDriverByRouteID(ctx context.Context, m grpcclient.CallMeta, req *driversv1.GetDriverByRouteIDRequest) (*driversv1.GetDriverByRouteIDResponse, error)
 	CreateDriver(ctx context.Context, m grpcclient.CallMeta, req *driversv1.CreateDriverRequest) (*driversv1.CreateDriverResponse, error)
 	ListDrivers(ctx context.Context, m grpcclient.CallMeta, req *driversv1.ListDriversRequest) (*driversv1.ListDriversResponse, error)
+	StartRoute(ctx context.Context, m grpcclient.CallMeta, req *driversv1.StartRouteRequest) (*driversv1.StartRouteResponse, error)
 }
 
 // driverRouteNotImplemented responde 501 en las rutas de ruta y parada. Su backend aún no existe:

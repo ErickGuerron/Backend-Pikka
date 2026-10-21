@@ -56,6 +56,17 @@ func (h *driverStopHandlers) advance(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusNotFound, "route not found")
 	}
 
+	// El primer PICKED_UP pone al repartidor ON_ROUTE antes de avanzar el pedido. Es idempotente en Driver Service.
+	if target == ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP {
+		me, err := h.drivers.GetDriverByUserID(ctx, m, &driversv1.GetDriverByUserIDRequest{UserId: id.UserID})
+		if err != nil {
+			return err
+		}
+		if _, err := h.drivers.StartRoute(ctx, m, &driversv1.StartRouteRequest{DriverId: me.GetDriver().GetId(), RouteId: routeID}); err != nil {
+			return err
+		}
+	}
+
 	res, err := h.orders.AdvanceRouteStop(ctx, m, &ordersv1.AdvanceRouteStopRequest{
 		RouteId:      routeID,
 		OrderId:      stopID,

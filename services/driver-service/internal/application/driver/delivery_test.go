@@ -75,9 +75,14 @@ func TestRegisterDeliveryUsaElRadioConfigurado(t *testing.T) {
 	onRoute(t, repo, "d1", "route-1")
 	uc := driver.NewDeliveries(repo, memory.NewDeliveryRecorder(), 10)
 
-	got, err := uc.RegisterDelivery(context.Background(), "d1", "route-1", stop, deliveryInput("stop-1", nearStop))
+	in := driver.DeliveryInput{
+		StopID: "stop-1", Outcome: domain.OutcomeNotDelivered, Reason: domain.ReasonClientAbsent,
+		At: t0.Add(time.Hour), Location: nearStop,
+	}
 
-	require.NoError(t, err)
+	got, err := uc.RegisterDelivery(context.Background(), "d1", "route-1", stop, in)
+
+	require.NoError(t, err, "un no entregado se registra aunque esté fuera del radio")
 	assert.False(t, got.Arrival.WithinRadius, "~40 m no entran en un radio de 10 m")
 }
 

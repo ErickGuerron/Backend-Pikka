@@ -16,6 +16,7 @@ import (
 type TrackingClient interface {
 	RecordPosition(ctx context.Context, m grpcclient.CallMeta, req *trackingv1.RecordPositionRequest) (*trackingv1.RecordPositionResponse, error)
 	EstimateArrival(ctx context.Context, m grpcclient.CallMeta, req *trackingv1.EstimateArrivalRequest) (*trackingv1.EstimateArrivalResponse, error)
+	GetDriverPosition(ctx context.Context, m grpcclient.CallMeta, req *trackingv1.GetDriverPositionRequest) (*trackingv1.GetDriverPositionResponse, error)
 }
 
 // driverLocationHandlers recibe la posición GPS del repartidor autenticado. El gateway valida la

@@ -27,6 +27,22 @@ service TrackingService {
   //   - FAILED_PRECONDITION: la última posición tiene más de 120 s; el repartidor debe reportar otra.
   //   - INTERNAL: cualquier otro fallo, por ejemplo el motor de rutas no responde.
   rpc EstimateArrival(EstimateArrivalRequest) returns (EstimateArrivalResponse);
+  // GetDriverPosition devuelve la última posición de un repartidor solo si sigue dentro de la ventana fresca.
+  // Códigos: NOT_FOUND si no hay posición o está vencida; INVALID_ARGUMENT si driver_id está vacío.
+  rpc GetDriverPosition(GetDriverPositionRequest) returns (GetDriverPositionResponse);
+}
+
+message GetDriverPositionRequest {
+  // Repartidor cuya posición se pide; obligatorio.
+  string driver_id = 1;
+}
+
+message GetDriverPositionResponse {
+  // Grados decimales WGS 84.
+  double latitude = 1;
+  double longitude = 2;
+  // Momento del fix en el dispositivo, RFC 3339 en UTC.
+  string recorded_at = 3;
 }
 
 message RecordPositionRequest {

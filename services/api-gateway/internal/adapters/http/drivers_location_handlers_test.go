@@ -85,6 +85,10 @@ func (f *fakeTrackingClient) EstimateArrival(_ context.Context, _ grpcclient.Cal
 	return nil, status.Error(codes.Unimplemented, "not used by this test")
 }
 
+func (f *fakeTrackingClient) GetDriverPosition(_ context.Context, _ grpcclient.CallMeta, _ *trackingv1.GetDriverPositionRequest) (*trackingv1.GetDriverPositionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not used by this test")
+}
+
 // locationRouter arma el router con los clientes falsos. Los logs van a out para poder inspeccionarlos.
 func locationRouter(drivers httpapi.DriverClient, tracking httpapi.TrackingClient, out io.Writer) http.Handler {
 	opts := httpapi.Options{
@@ -246,4 +250,9 @@ func TestReportLocation_DoesNotLogCoordinates(t *testing.T) {
 	require.Contains(t, out, `"http request"`, "the request logger must have run, so the assertion means something")
 	assert.NotContains(t, out, loggedLatitude)
 	assert.NotContains(t, out, loggedLongitude)
+}
+
+// StartRoute: not used by this test.
+func (f *fakeDriverLookup) StartRoute(_ context.Context, _ grpcclient.CallMeta, _ *driversv1.StartRouteRequest) (*driversv1.StartRouteResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not used by this test")
 }

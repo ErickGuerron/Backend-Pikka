@@ -65,6 +65,13 @@ func (d *Drivers) RegisterDelivery(ctx context.Context, m CallMeta, req *drivers
 	return d.client.RegisterDelivery(ctx, req)
 }
 
+// StartRoute marca al repartidor como ON_ROUTE en su ruta reservada (primer PICKED_UP de la ruta).
+func (d *Drivers) StartRoute(ctx context.Context, m CallMeta, req *driversv1.StartRouteRequest) (*driversv1.StartRouteResponse, error) {
+	ctx, cancel := d.outgoing(ctx, m)
+	defer cancel()
+	return d.client.StartRoute(ctx, req)
+}
+
 // ListDrivers devuelve la flota para el personal.
 func (d *Drivers) ListDrivers(ctx context.Context, m CallMeta, req *driversv1.ListDriversRequest) (*driversv1.ListDriversResponse, error) {
 	ctx, cancel := d.outgoing(ctx, m)
