@@ -260,6 +260,8 @@ services:
     cpus: 2.0
     volumes:
       - ./infrastructure/osrm/data:/data
+      # Perfil de coche ajustado para Ecuador (weight_name routability); reemplaza el car.lua de la imagen.
+      - ./infrastructure/osrm/profiles/car.lua:/opt/car.lua:ro
 
   # Motor de rutas OSRM con el mapa de Ecuador y algoritmo MLD (único contenedor OSRM). Opcional: se levanta
   # con `make osrm-up` y requiere haber ejecutado antes `make osrm-prepare`.
