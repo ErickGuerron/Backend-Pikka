@@ -2,6 +2,7 @@ package position
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -31,7 +32,7 @@ func TestFreshPositionStaleFixIsErrStalePosition(t *testing.T) {
 
 	_, err := tr.FreshPosition(context.Background(), "driver-1")
 
-	if err != ErrStalePosition {
+	if !errors.Is(err, ErrStalePosition) {
 		t.Fatalf("err = %v, want ErrStalePosition", err)
 	}
 }
@@ -41,7 +42,7 @@ func TestFreshPositionUnknownDriverIsErrNoPosition(t *testing.T) {
 
 	_, err := tr.FreshPosition(context.Background(), "nobody")
 
-	if err != ErrNoPosition {
+	if !errors.Is(err, ErrNoPosition) {
 		t.Fatalf("err = %v, want ErrNoPosition", err)
 	}
 }
