@@ -2,6 +2,7 @@ package order
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/domain"
@@ -48,7 +49,7 @@ func TestDriverRouteStopsRejectsNonDriverBeforeReading(t *testing.T) {
 
 		_, err := uc.Run(context.Background(), DriverRouteStopsCommand{Role: role, RouteID: "route-7"})
 
-		if err != domain.ErrNotDriver {
+		if !errors.Is(err, domain.ErrNotDriver) {
 			t.Fatalf("role %q: err = %v, want ErrNotDriver", role, err)
 		}
 		if repo.calls != 0 {
@@ -63,7 +64,7 @@ func TestDriverRouteStopsBlankRouteIsInvalid(t *testing.T) {
 
 	_, err := uc.Run(context.Background(), DriverRouteStopsCommand{Role: RoleDriver, RouteID: "   "})
 
-	if err != domain.ErrInvalidRouteID {
+	if !errors.Is(err, domain.ErrInvalidRouteID) {
 		t.Fatalf("err = %v, want ErrInvalidRouteID", err)
 	}
 	if repo.calls != 0 {
