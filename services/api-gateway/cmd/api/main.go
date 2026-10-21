@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ErickGuerron/Backend-Pikka/libs/osrm"
 	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/grpcclient"
 	httpapi "github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/http"
 	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/infrastructure/config"
@@ -20,6 +21,9 @@ import (
 )
 
 const serviceName = "api-gateway"
+
+// osrmCallTimeout limita cada consulta de ruta óptima; por encima de esto el repartidor ve un error en vez de esperar.
+const osrmCallTimeout = 5 * time.Second
 
 func main() {
 	log := logging.New(serviceName, os.Getenv("LOG_LEVEL"))
@@ -82,7 +86,14 @@ func run(log *slog.Logger) error {
 	defer func() { _ = routingConn.Close() }()
 	routing := grpcclient.NewRouting(routingConn, cfg.GRPCTimeout)
 
+	// La ruta óptima es opcional: sin OSRM_URL el endpoint de plan responde 503 y el resto sigue igual.
+	var planner httpapi.RoutePlanner
+	if cfg.OSRMURL != "" {
+		planner = osrm.NewTripper(cfg.OSRMURL, osrmCallTimeout)
+	}
+
 	e := httpapi.NewRouter(log, httpapi.Options{
+		Planner:              planner,
 		CORSAllowedOrigins:   cfg.CORSAllowedOrigins,
 		RateLimitPerSecond:   cfg.RateLimitPerSecond,
 		RateLimitBurst:       cfg.RateLimitBurst,

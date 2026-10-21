@@ -58,7 +58,7 @@ osrm-prepare: ## Descarga el mapa de Ecuador y genera los datos de OSRM (una vez
 	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/osrm-prepare-ecuador.ps1
 
 osrm-up: ## Levanta el servidor OSRM de Ecuador en 127.0.0.1:5000 (requiere `make osrm-prepare`)
-	docker compose --profile osrm up -d osrm
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/osrm-up-ecuador.ps1
 
 osrm-down: ## Detiene el servidor OSRM
 	docker compose --profile osrm stop osrm

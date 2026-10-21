@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/ErickGuerron/Backend-Pikka/contracts v0.0.0
+	github.com/ErickGuerron/Backend-Pikka/libs/osrm v0.0.0-00010101000000-000000000000
 	github.com/coder/websocket v1.8.15
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
@@ -29,3 +30,5 @@ require (
 )
 
 replace github.com/ErickGuerron/Backend-Pikka/contracts => ../../contracts
+
+replace github.com/ErickGuerron/Backend-Pikka/libs/osrm => ../../libs/osrm

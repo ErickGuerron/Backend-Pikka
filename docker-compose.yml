@@ -182,6 +182,9 @@ services:
       DRIVER_SERVICE_ADDR: driver-service:9092
       TRACKING_GRPC_ADDR: tracking-service:9093
       ROUTING_SERVICE_ADDR: routing-service:9094
+      # Ruta óptima del repartidor. Requiere el perfil osrm levantado (make osrm-up). Si no está levantado,
+      # el endpoint de plan responde 503 y la app lo muestra. Vacío lo desactiva del todo.
+      OSRM_URL: ${OSRM_URL:-http://osrm:5000}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8081,http://localhost:8082}
       # En local no hay TLS; en producción el HTTPS termina en el balanceador.
       ENABLE_HSTS: "false"
@@ -242,14 +245,32 @@ services:
     depends_on:
       - api-gateway
 
-  # Motor de rutas OSRM con el mapa de Ecuador (MVP). Opcional: se levanta con
-  # `make osrm-up`. Los datos se generan una vez con scripts/osrm-prepare-ecuador.ps1.
-  # Un contenedor por región; cada región expone su propio puerto.
+  # Preparación de datos OSRM (una vez): osrm-extract + osrm-partition + osrm-customize (MLD). Es un servicio del compose
+  # (no `compose run`) para que su contenedor quede dentro del grupo last-mile-logistics.
+  # Se usa MLD y no CH: osrm-contract no converge con el mapa de Ecuador en este entorno (2 CPU / 4 GB) y MLD
+  # prepara en ~2 min y soporta /trip y /route igual.
+  # Uso: make osrm-prepare
+  osrm-prepare:
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
+    profiles: ["osrm-prepare"]
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - osrm-extract -p /opt/car.lua /data/ecuador-latest.osm.pbf && osrm-partition /data/ecuador-latest.osrm && osrm-customize /data/ecuador-latest.osrm
+    cpus: 2.0
+    volumes:
+      - ./infrastructure/osrm/data:/data
+
+  # Motor de rutas OSRM con el mapa de Ecuador y algoritmo MLD (único contenedor OSRM). Opcional: se levanta
+  # con `make osrm-up` y requiere haber ejecutado antes `make osrm-prepare`.
   osrm:
-    image: osrm/osrm-backend:v5.25.0
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
     profiles: ["osrm"]
     restart: unless-stopped
-    command: osrm-routed --algorithm mld /data/ecuador-latest.osrm
+    # MLD: /trip (orden óptimo) funciona en v5.27.1. Requiere `make osrm-prepare`.
+    # 2 hilos bastan para unas pocas consultas de ruta por repartidor y no saturan el equipo.
+    command: osrm-routed -t 2 --algorithm mld /data/ecuador-latest.osrm
+    cpus: 2.0
     volumes:
       - ./infrastructure/osrm/data:/data:ro
     ports:
