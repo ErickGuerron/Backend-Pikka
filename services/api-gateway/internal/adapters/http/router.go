@@ -217,7 +217,7 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 			ticker = defaultTicker
 		}
 		ct := &customerTrackingHandlers{
-			orders: opts.Orders, drivers: opts.Drivers, tracking: opts.Tracking,
+			orders: opts.Orders, drivers: opts.Drivers, tracking: opts.Tracking, planner: opts.Planner,
 			verifier: verifier, origins: opts.CORSAllowedOrigins,
 			interval: interval, ticker: ticker, now: time.Now, log: log,
 		}
