@@ -66,19 +66,29 @@ El sistema decide si corresponde recargo, no el repartidor:
 
 - Verifica que la llegada cuenta como válida: GPS dentro de un radio de la
   dirección y dentro de la ventana.
+- Con cada resultado (`DELIVERED` o `NOT_DELIVERED`), la posición del repartidor
+  se envía con la información del pedido. Sirve para confirmar la entrega y
+  alimenta las métricas de auditoría del operador. No se exige foto.
 - Si el motivo es imputable al cliente, aplica el recargo del ADR 0006 y
   notifica al cliente en la app, con el motivo.
 - Si el motivo es imputable al negocio, no aplica recargo.
 - **Excepción por dirección (enmienda):** si el motivo es `WRONG_ADDRESS`
   (dirección mal ingresada o inválida), el recargo queda en **verificación
   pendiente**. No se cobra ni se notifica como definitivo hasta que un operador
-  confirme que la dirección era incorrecta. Si el operador lo descarta, no hay
-  recargo. Los demás motivos siguen el flujo automático.
+  valide con el cliente, o determine por qué el repartidor no llegó a la
+  dirección del pedido (por ejemplo, el cliente no estaba y no hay nadie que
+  reciba). El resultado final según la causa queda pendiente de decisión. Los
+  demás motivos siguen el flujo automático.
 
 ### 6. Disputas
 
 El cliente puede presentar una disputa desde la app dentro de un plazo (por
 ejemplo 2 horas desde la notificación). La disputa pasa a la cola del operador.
+
+Una disputa sobre un recargo por no entrega también sirve de apelación: el
+cliente puede justificar la no entrega y acordar con el operador reasignar el
+pedido a otro día con un cobro reducido. Un incidente resuelto por apelación
+cuenta para el umbral de reincidencia del ADR 0006.
 Mientras está abierta, el recargo queda en suspenso.
 
 ### 7. Pagos
