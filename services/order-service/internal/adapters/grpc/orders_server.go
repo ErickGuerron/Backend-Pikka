@@ -41,6 +41,8 @@ type OrderUseCases struct {
 	StopsBefore *orderapp.StopsBeforeForOrder
 	// DriverRouteStops lista las paradas de la ruta del conductor (ListDriverRouteStops).
 	DriverRouteStops *orderapp.DriverRouteStops
+	// RecordOutcome cierra una parada de la ruta del conductor: DELIVERED o NOT_DELIVERED (RecordRouteStopOutcome).
+	RecordOutcome *orderapp.RecordStopOutcome
 }
 
 // OrderServer implementa ordersv1.OrderServiceServer. Solo traduce: la regla de
@@ -346,7 +348,8 @@ func mapOrderError(err error) error {
 		errors.Is(err, domain.ErrInvalidOrderID),
 		errors.Is(err, domain.ErrInvalidStopSequence),
 		errors.Is(err, domain.ErrDuplicateStopSequence),
-		errors.Is(err, domain.ErrInvalidAdvanceTarget):
+		errors.Is(err, domain.ErrInvalidAdvanceTarget),
+		errors.Is(err, domain.ErrInvalidStopOutcome):
 		return status.Error(codes.InvalidArgument, err.Error())
 	default:
 		return mapError(err)
