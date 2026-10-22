@@ -100,6 +100,14 @@ func (o *Orders) AdvanceRouteStop(ctx context.Context, m CallMeta, req *ordersv1
 	return o.client.AdvanceRouteStop(ctx, req)
 }
 
+// RecordRouteStopOutcome cierra una parada de la ruta del repartidor como DELIVERED o NOT_DELIVERED.
+// Solo se llama después de que Driver Service aceptó el registro de entrega.
+func (o *Orders) RecordRouteStopOutcome(ctx context.Context, m CallMeta, req *ordersv1.RecordRouteStopOutcomeRequest) (*ordersv1.RecordRouteStopOutcomeResponse, error) {
+	ctx, cancel := o.outgoing(ctx, m)
+	defer cancel()
+	return o.client.RecordRouteStopOutcome(ctx, req)
+}
+
 // ListDriverRouteStops devuelve las paradas de la ruta del conductor, en orden de secuencia.
 func (o *Orders) ListDriverRouteStops(ctx context.Context, m CallMeta, req *ordersv1.ListDriverRouteStopsRequest) (*ordersv1.ListDriverRouteStopsResponse, error) {
 	ctx, cancel := o.outgoing(ctx, m)
