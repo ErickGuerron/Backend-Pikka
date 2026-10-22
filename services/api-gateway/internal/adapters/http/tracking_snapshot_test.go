@@ -51,9 +51,14 @@ type trackingOrdersFake struct {
 	getCalls    int
 	stopsCalls  int
 	advanceReq  *ordersv1.AdvanceRouteStopRequest
-	gotGetID    string
-	gotStopsID  string
-	gotMeta     grpcclient.CallMeta
+	// Resultado de parada (driver_result_test.go): paradas de la ruta y cierre del pedido.
+	routeStopsRes *ordersv1.ListDriverRouteStopsResponse
+	routeStopsErr error
+	outcomeReq    *ordersv1.RecordRouteStopOutcomeRequest
+	outcomeErr    error
+	gotGetID      string
+	gotStopsID    string
+	gotMeta       grpcclient.CallMeta
 }
 
 func (f *trackingOrdersFake) GetMyOrder(_ context.Context, m grpcclient.CallMeta, req *ordersv1.GetMyOrderRequest) (*ordersv1.GetMyOrderResponse, error) {
@@ -110,6 +115,9 @@ type routeDriversFake struct {
 	userDriver string
 	routeCalls int
 	gotRouteID string
+	// Registro de entrega (driver_result_test.go): lo que recibió Driver Service y su fallo, si lo hay.
+	registerReq *driversv1.RegisterDeliveryRequest
+	registerErr error
 }
 
 func (f *routeDriversFake) GetDriverByRouteID(_ context.Context, _ grpcclient.CallMeta, req *driversv1.GetDriverByRouteIDRequest) (*driversv1.GetDriverByRouteIDResponse, error) {

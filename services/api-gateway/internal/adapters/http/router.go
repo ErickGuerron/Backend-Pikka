@@ -197,7 +197,12 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 		} else {
 			driverOnly.PATCH("/drivers/me/routes/:routeId/stops/:stopId/status", driverRouteNotImplemented)
 		}
-		driverOnly.POST("/drivers/me/routes/:routeId/stops/:stopId/result", driverRouteNotImplemented)
+		if opts.Orders != nil {
+			stops := &driverStopHandlers{drivers: opts.Drivers, orders: opts.Orders}
+			driverOnly.POST("/drivers/me/routes/:routeId/stops/:stopId/result", stops.result)
+		} else {
+			driverOnly.POST("/drivers/me/routes/:routeId/stops/:stopId/result", driverRouteNotImplemented)
+		}
 		if opts.Tracking != nil {
 			loc := &driverLocationHandlers{drivers: opts.Drivers, tracking: opts.Tracking}
 			driverOnly.PUT("/drivers/me/location", loc.report)
