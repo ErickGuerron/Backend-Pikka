@@ -26,9 +26,20 @@ de tarjeta.
 - **Enmienda, dirección incorrecta**: cuando el motivo es `WRONG_ADDRESS`
   (dirección mal ingresada o inválida), el recargo pasa a estado
   **`PENDING_VERIFICATION`**. No se cobra ni se notifica como definitivo hasta
-  que un operador lo confirme. Si el operador lo confirma, se aplica la regla
-  normal; si lo descarta, el recargo se anula. Ningún cobro simulado se registra
-  en este estado.
+  que un operador valide con el cliente, o determine por qué el repartidor no
+  está en la dirección del pedido (por ejemplo, el cliente está fuera de casa y
+  no hay nadie que reciba). Ningún cobro simulado se registra en este estado.
+  Si el repartidor la reporta en el punto de entrega, el recargo se cobra; si
+  el cliente la avisa antes de que el pedido salga, no se cobra y puede
+  reprogramar la fecha. Si el repartidor ya va en camino y el cliente da un
+  motivo, el pedido se reasigna con un cobro adicional por el viaje del
+  repartidor, calculado por distancia con el precio de la gasolina como
+  referencia y ajustable por un administrador. Ese cobro se incluye también en el
+  caso de dirección errónea.
+- **Reincidencia**: la primera no entrega causada por el cliente inicia un plazo
+  de 2 semanas. Una tercera dentro de ese plazo marca al cliente como reincidente
+  y el operador puede aplicar el cobro con justificación, sujeto a auditoría.
+  Cuenta cualquier motivo de no entrega causado por el cliente.
 
 ### 2. Cobro simulado
 
