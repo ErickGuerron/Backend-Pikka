@@ -57,3 +57,17 @@ func TestParseRadiusRechazaValoresInvalidos(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadLeeLaDireccionDeOrdersYVaciaPorDefecto(t *testing.T) {
+	t.Setenv("DRIVER_DB_PASSWORD", "secreto")
+	t.Setenv("ORDERS_GRPC_ADDR", "")
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	assert.Equal(t, "", cfg.OrdersGRPCAddr)
+
+	t.Setenv("ORDERS_GRPC_ADDR", "order-service:9091")
+	cfg, err = config.Load()
+	require.NoError(t, err)
+	assert.Equal(t, "order-service:9091", cfg.OrdersGRPCAddr)
+}

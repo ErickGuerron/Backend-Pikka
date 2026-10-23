@@ -122,14 +122,15 @@ func (s *OrderServer) ListDriverRouteStops(ctx context.Context, req *ordersv1.Li
 	stops := make([]*ordersv1.DriverRouteStop, 0, len(orders))
 	for _, o := range orders {
 		stops = append(stops, &ordersv1.DriverRouteStop{
-			OrderId:     o.ID,
-			Sequence:    int32(o.StopSequence),
-			Address:     o.Address,
-			Latitude:    o.Latitude,
-			Longitude:   o.Longitude,
-			WindowStart: o.Window.Start(),
-			WindowEnd:   o.Window.End(),
-			Status:      orderToProto(o).GetStatus(),
+			OrderId:      o.ID,
+			Sequence:     int32(o.StopSequence),
+			Address:      o.Address,
+			Latitude:     o.Latitude,
+			Longitude:    o.Longitude,
+			WindowStart:  o.Window.Start(),
+			WindowEnd:    o.Window.End(),
+			Status:       orderToProto(o).GetStatus(),
+			DeliveryDate: o.DeliveryDate.String(),
 		})
 	}
 	return &ordersv1.ListDriverRouteStopsResponse{Stops: stops}, nil
