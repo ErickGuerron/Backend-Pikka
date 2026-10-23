@@ -29,7 +29,7 @@ type fakeStops struct {
 	err  error
 }
 
-func (f fakeStops) Stop(_ context.Context, _, _ string) (domain.Stop, error) {
+func (f fakeStops) Stop(_ context.Context, _, _ string, _ time.Time) (domain.Stop, error) {
 	return f.stop, f.err
 }
 

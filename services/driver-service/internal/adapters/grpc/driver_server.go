@@ -19,7 +19,7 @@ import (
 // StopSource entrega la dirección y la ventana de una parada de una ruta. Su origen es el
 // Routing Service, que aún no existe.
 type StopSource interface {
-	Stop(ctx context.Context, routeID, stopID string) (domain.Stop, error)
+	Stop(ctx context.Context, routeID, stopID string, at time.Time) (domain.Stop, error)
 }
 
 // DriverServer implementa driversv1.DriverServiceServer delegando en la capa de aplicación.
@@ -81,7 +81,7 @@ func (s *DriverServer) RegisterDelivery(ctx context.Context, req *driversv1.Regi
 	}
 	routeID := strings.TrimSpace(req.GetRouteId())
 	stopID := strings.TrimSpace(req.GetStopId())
-	stop, err := s.stops.Stop(ctx, routeID, stopID)
+	stop, err := s.stops.Stop(ctx, routeID, stopID, recordedAt)
 	if err != nil {
 		return nil, toStatus(err)
 	}

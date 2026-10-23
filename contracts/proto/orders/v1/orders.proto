@@ -345,4 +345,6 @@ message DriverRouteStop {
   string window_start = 6;
   string window_end = 7;
   OrderStatus status = 8;
+  // Planned delivery day, YYYY-MM-DD. The window above applies to this day.
+  string delivery_date = 9;
 }
