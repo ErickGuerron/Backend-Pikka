@@ -58,3 +58,16 @@ func (c *Classifier) ClassifyPoint(ctx context.Context, latitude, longitude floa
 	}
 	return res.GetZone().GetId(), nil
 }
+
+// MaxOrdersPerRoute devuelve max_orders_per_route de la zona: cuantos pedidos cabe en la ruta de un repartidor
+// dentro de ella. Es la misma capacidad que Routing Service usa al planificar.
+func (c *Classifier) MaxOrdersPerRoute(ctx context.Context, zoneID string) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	ctx = metadata.AppendToOutgoingContext(ctx, metadataUserRole, serviceRole)
+	res, err := c.client.GetZone(ctx, &zonesv1.GetZoneRequest{Id: zoneID})
+	if err != nil {
+		return 0, err
+	}
+	return int(res.GetZone().GetSettings().GetMaxOrdersPerRoute()), nil
+}

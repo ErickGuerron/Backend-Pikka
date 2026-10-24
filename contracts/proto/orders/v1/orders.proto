@@ -332,6 +332,8 @@ message ListDriverRouteStopsRequest {
 
 message ListDriverRouteStopsResponse {
   repeated DriverRouteStop stops = 1;
+  // Pedidos maximos que cabe en esta ruta (max_orders_per_route de la zona). 0 cuando no se conoce.
+  int32 max_orders = 2;
 }
 
 // One stop of a driver's route. Carries no customer identity.

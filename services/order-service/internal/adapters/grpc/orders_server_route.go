@@ -133,7 +133,20 @@ func (s *OrderServer) ListDriverRouteStops(ctx context.Context, req *ordersv1.Li
 			DeliveryDate: o.DeliveryDate.String(),
 		})
 	}
-	return &ordersv1.ListDriverRouteStopsResponse{Stops: stops}, nil
+	return &ordersv1.ListDriverRouteStopsResponse{Stops: stops, MaxOrders: s.routeMaxOrders(ctx, orders)}, nil
+}
+
+// routeMaxOrders is the capacity of the route's zone. A route is planned inside one zone, so the first stop
+// names it. A failure does not hide the stops from the driver: 0 means the capacity is unknown.
+func (s *OrderServer) routeMaxOrders(ctx context.Context, orders []domain.Order) int32 {
+	if s.routeCapacity == nil || len(orders) == 0 || orders[0].ZoneID == "" {
+		return 0
+	}
+	capacity, err := s.routeCapacity.MaxOrdersPerRoute(ctx, orders[0].ZoneID)
+	if err != nil {
+		return 0
+	}
+	return int32(capacity)
 }
 
 // RecordRouteStopOutcome cierra una parada de la ruta del conductor como DELIVERED o NOT_DELIVERED. Solo

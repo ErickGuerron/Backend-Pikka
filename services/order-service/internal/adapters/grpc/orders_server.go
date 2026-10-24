@@ -49,12 +49,24 @@ type OrderUseCases struct {
 // negocio vive en internal/application/order y en el dominio.
 type OrderServer struct {
 	ordersv1.UnimplementedOrderServiceServer
-	useCases OrderUseCases
+	useCases      OrderUseCases
+	routeCapacity RouteCapacity
+}
+
+// RouteCapacity answers how many orders fit in one driver route of a zone (Zone Service).
+type RouteCapacity interface {
+	MaxOrdersPerRoute(ctx context.Context, zoneID string) (int, error)
 }
 
 // NewOrderServer inyecta los casos de uso.
 func NewOrderServer(uc OrderUseCases) *OrderServer {
 	return &OrderServer{useCases: uc}
+}
+
+// WithRouteCapacity lets the driver's route report the capacity of its zone. Without it max_orders is 0.
+func (s *OrderServer) WithRouteCapacity(capacity RouteCapacity) *OrderServer {
+	s.routeCapacity = capacity
+	return s
 }
 
 // CreateOrder registra un pedido del cliente autenticado. Las coordenadas son opcionales.

@@ -18,9 +18,10 @@ import (
 // fakeZoneClient responde con un error o una zona, y registra la metadata recibida.
 type fakeZoneClient struct {
 	zonesv1.ZoneServiceClient
-	err      error
-	zoneID   string
-	metadata metadata.MD
+	err         error
+	zoneID      string
+	maxPerRoute int32
+	metadata    metadata.MD
 }
 
 func (f *fakeZoneClient) ClassifyPoint(ctx context.Context, _ *zonesv1.ClassifyPointRequest, _ ...grpc.CallOption) (*zonesv1.ClassifyPointResponse, error) {
