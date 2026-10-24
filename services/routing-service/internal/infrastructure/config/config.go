@@ -16,6 +16,8 @@ type Config struct {
 	OrderServiceAddr  string
 	ZoneServiceAddr   string
 	DriverServiceAddr string
+	// TrackingServiceAddr serves the drivers' last positions, used to send each route to the driver nearest its zone.
+	TrackingServiceAddr string
 }
 
 // Load builds the configuration from the environment. Missing variables fall back to the
@@ -29,10 +31,11 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("ROUTING_GRPC_PORT must be between 1 and 65535, got %d", port)
 	}
 	return Config{
-		GRPCPort:          port,
-		OrderServiceAddr:  getEnv("ORDER_SERVICE_ADDR", "localhost:9091"),
-		ZoneServiceAddr:   getEnv("ZONE_SERVICE_ADDR", "localhost:9090"),
-		DriverServiceAddr: getEnv("DRIVER_SERVICE_ADDR", "localhost:9092"),
+		GRPCPort:            port,
+		OrderServiceAddr:    getEnv("ORDER_SERVICE_ADDR", "localhost:9091"),
+		ZoneServiceAddr:     getEnv("ZONE_SERVICE_ADDR", "localhost:9090"),
+		DriverServiceAddr:   getEnv("DRIVER_SERVICE_ADDR", "localhost:9092"),
+		TrackingServiceAddr: getEnv("TRACKING_SERVICE_ADDR", "localhost:9093"),
 	}, nil
 }
 

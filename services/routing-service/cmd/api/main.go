@@ -18,6 +18,7 @@ import (
 	driversv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/drivers/v1"
 	ordersv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/orders/v1"
 	routingv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/routing/v1"
+	trackingv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/tracking/v1"
 	zonesv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/zones/v1"
 	"github.com/ErickGuerron/Backend-Pikka/services/routing-service/internal/adapters/clients"
 	grpcadapter "github.com/ErickGuerron/Backend-Pikka/services/routing-service/internal/adapters/grpc"
@@ -61,14 +62,22 @@ func run(log *slog.Logger) error {
 	}
 	defer func() { _ = driverConn.Close() }()
 
+	trackingConn, err := dial(cfg.TrackingServiceAddr)
+	if err != nil {
+		return fmt.Errorf("dial tracking service: %w", err)
+	}
+	defer func() { _ = trackingConn.Close() }()
+
 	generate := plan.New(
 		clients.NewOrderGateway(ordersv1.NewOrderServiceClient(orderConn)),
 		clients.NewZoneCapacities(zonesv1.NewZoneServiceClient(zoneConn)),
 		clients.NewDriverPool(driversv1.NewDriverServiceClient(driverConn)),
+		clients.NewDriverLocations(trackingv1.NewTrackingServiceClient(trackingConn)),
 		domain.ZoneCapacityPlanner{},
 	)
 	log.Info("routing service wired", "orderService", cfg.OrderServiceAddr,
-		"zoneService", cfg.ZoneServiceAddr, "driverService", cfg.DriverServiceAddr)
+		"zoneService", cfg.ZoneServiceAddr, "driverService", cfg.DriverServiceAddr,
+		"trackingService", cfg.TrackingServiceAddr)
 
 	return serveGRPC(ctx, log, cfg.GRPCPort, grpcadapter.NewRoutingServer(generate))
 }

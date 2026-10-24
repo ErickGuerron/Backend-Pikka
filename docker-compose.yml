@@ -162,6 +162,7 @@ services:
       ORDER_SERVICE_ADDR: order-service:9091
       ZONE_SERVICE_ADDR: zone-service:9090
       DRIVER_SERVICE_ADDR: driver-service:9092
+      TRACKING_SERVICE_ADDR: tracking-service:9093
     # Internal traffic: no published host port; only the Gateway reaches it. No database: state lives in
     # Order and Driver Service, so this service has no DB_PASSWORD and no depends_on on postgres.
     depends_on:

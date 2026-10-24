@@ -22,6 +22,8 @@ var ErrNoDriverAvailable = errors.New("no driver available for route")
 
 const (
 	dateLayout = "2006-01-02"
+	// candidatePool bounds how many available drivers are ranked for one route.
+	candidatePool = 100
 	// releaseTimeout bounds the best-effort release of a driver after a failed assignment.
 	releaseTimeout = 5 * time.Second
 )
@@ -53,15 +55,16 @@ type Result struct {
 // reservation, the driver is released (best effort); if the release also fails, the error
 // reports both and the driver stays reserved.
 type Generate struct {
-	orders  ports.OrderGateway
-	zones   ports.ZoneCapacities
-	drivers ports.DriverPool
-	planner domain.RoutePlanner
+	orders    ports.OrderGateway
+	zones     ports.ZoneCapacities
+	drivers   ports.DriverPool
+	locations ports.DriverLocations
+	planner   domain.RoutePlanner
 }
 
-// New injects the gateways, the driver pool and the planner.
-func New(orders ports.OrderGateway, zones ports.ZoneCapacities, drivers ports.DriverPool, planner domain.RoutePlanner) *Generate {
-	return &Generate{orders: orders, zones: zones, drivers: drivers, planner: planner}
+// New injects the gateways, the driver pool, the driver locations and the planner.
+func New(orders ports.OrderGateway, zones ports.ZoneCapacities, drivers ports.DriverPool, locations ports.DriverLocations, planner domain.RoutePlanner) *Generate {
+	return &Generate{orders: orders, zones: zones, drivers: drivers, locations: locations, planner: planner}
 }
 
 // Run generates and assigns the routes for deliveryDate (YYYY-MM-DD).
@@ -74,7 +77,7 @@ func (uc *Generate) Run(ctx context.Context, deliveryDate string) (Result, error
 		return Result{}, fmt.Errorf("load pending orders: %w", err)
 	}
 
-	planned, err := uc.planByZone(ctx, pending)
+	planned, centers, err := uc.planByZone(ctx, pending)
 	if err != nil {
 		return Result{}, err
 	}
@@ -82,7 +85,9 @@ func (uc *Generate) Run(ctx context.Context, deliveryDate string) (Result, error
 	var result Result
 	for _, route := range planned {
 		routeID := scopedRouteID(deliveryDate, route.ID)
-		driverID, driverName, err := uc.reserveDriver(ctx, routeID)
+		// The route goes to the available driver nearest to its zone. A zone without geometry ranks nobody.
+		center, hasCenter := centers[route.ZoneID]
+		driverID, driverName, err := uc.reserveDriver(ctx, routeID, center, hasCenter)
 		if err != nil {
 			return result, err
 		}
@@ -101,13 +106,19 @@ func (uc *Generate) Run(ctx context.Context, deliveryDate string) (Result, error
 
 // reserveDriver takes the first AVAILABLE driver for one route. It asks for a single driver
 // each time, so every route sees the drivers reserved by the routes before it.
-func (uc *Generate) reserveDriver(ctx context.Context, routeID string) (driverID, driverName string, err error) {
-	candidates, err := uc.drivers.FindAvailable(ctx, 1)
+func (uc *Generate) reserveDriver(ctx context.Context, routeID string, center domain.Point, hasCenter bool) (driverID, driverName string, err error) {
+	candidates, err := uc.drivers.FindAvailable(ctx, candidatePool)
 	if err != nil {
 		return "", "", fmt.Errorf("find driver for route %s: %w", routeID, err)
 	}
 	if len(candidates) == 0 {
 		return "", "", fmt.Errorf("route %s: %w", routeID, ErrNoDriverAvailable)
+	}
+	if hasCenter {
+		candidates, err = uc.rankByDistance(ctx, candidates, center)
+		if err != nil {
+			return "", "", fmt.Errorf("rank drivers for route %s: %w", routeID, err)
+		}
 	}
 	driverID = candidates[0]
 	driverName, err = uc.drivers.Reserve(ctx, driverID, routeID)
@@ -115,6 +126,48 @@ func (uc *Generate) reserveDriver(ctx context.Context, routeID string) (driverID
 		return "", "", fmt.Errorf("reserve driver %s for route %s: %w", driverID, routeID, err)
 	}
 	return driverID, driverName, nil
+}
+
+// rankByDistance orders the candidates from nearest to farthest to the zone center. A driver without a fresh
+// position goes last, keeping Driver Service's order among those. The input is not modified.
+func (uc *Generate) rankByDistance(ctx context.Context, candidates []string, center domain.Point) ([]string, error) {
+	type ranked struct {
+		id    string
+		known bool
+		dist  float64
+	}
+	items := make([]ranked, 0, len(candidates))
+	for _, id := range candidates {
+		position, ok, err := uc.locations.LastPosition(ctx, id)
+		if err != nil {
+			return nil, fmt.Errorf("position of driver %s: %w", id, err)
+		}
+		item := ranked{id: id, known: ok}
+		if ok {
+			item.dist = domain.DistanceMeters(position, center)
+		}
+		items = append(items, item)
+	}
+	slices.SortStableFunc(items, func(a, b ranked) int {
+		switch {
+		case a.known != b.known:
+			if a.known {
+				return -1
+			}
+			return 1
+		case a.dist < b.dist:
+			return -1
+		case a.dist > b.dist:
+			return 1
+		default:
+			return 0
+		}
+	})
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		out = append(out, item.id)
+	}
+	return out, nil
 }
 
 // releaseDriver undoes a reservation whose route could not be assigned. It runs even when the
@@ -127,29 +180,37 @@ func (uc *Generate) releaseDriver(ctx context.Context, driverID, routeID string)
 }
 
 // planByZone groups the orders by zone, in zone order, and plans each zone with its own capacity.
-func (uc *Generate) planByZone(ctx context.Context, pending []domain.PlannableOrder) ([]domain.Route, error) {
+func (uc *Generate) planByZone(ctx context.Context, pending []domain.PlannableOrder) ([]domain.Route, map[string]domain.Point, error) {
 	groups := make(map[string][]domain.PlannableOrder)
 	for _, order := range pending {
 		groups[order.ZoneID] = append(groups[order.ZoneID], order)
 	}
 
 	var planned []domain.Route
+	centers := make(map[string]domain.Point)
 	for _, zoneID := range slices.Sorted(maps.Keys(groups)) {
 		if zoneID == "" {
 			// Never ask Zone Service about a blank zone: the order itself is invalid.
-			return nil, fmt.Errorf("plan: %w", domain.ErrInvalidOrder)
+			return nil, nil, fmt.Errorf("plan: %w", domain.ErrInvalidOrder)
 		}
 		capacity, err := uc.zones.MaxOrdersPerRoute(ctx, zoneID)
 		if err != nil {
-			return nil, fmt.Errorf("zone %s capacity: %w", zoneID, err)
+			return nil, nil, fmt.Errorf("zone %s capacity: %w", zoneID, err)
+		}
+		center, ok, err := uc.zones.ZoneCenter(ctx, zoneID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("zone %s center: %w", zoneID, err)
+		}
+		if ok {
+			centers[zoneID] = center
 		}
 		routes, err := uc.planner.Plan(groups[zoneID], capacity)
 		if err != nil {
-			return nil, fmt.Errorf("plan zone %s: %w", zoneID, err)
+			return nil, nil, fmt.Errorf("plan zone %s: %w", zoneID, err)
 		}
 		planned = append(planned, routes...)
 	}
-	return planned, nil
+	return planned, centers, nil
 }
 
 // scopedRouteID prefixes the planner id with the delivery date. Planner ids are
