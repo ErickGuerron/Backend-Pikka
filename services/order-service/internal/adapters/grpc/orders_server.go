@@ -41,18 +41,32 @@ type OrderUseCases struct {
 	StopsBefore *orderapp.StopsBeforeForOrder
 	// DriverRouteStops lista las paradas de la ruta del conductor (ListDriverRouteStops).
 	DriverRouteStops *orderapp.DriverRouteStops
+	// RecordOutcome cierra una parada de la ruta del conductor: DELIVERED o NOT_DELIVERED (RecordRouteStopOutcome).
+	RecordOutcome *orderapp.RecordStopOutcome
 }
 
 // OrderServer implementa ordersv1.OrderServiceServer. Solo traduce: la regla de
 // negocio vive en internal/application/order y en el dominio.
 type OrderServer struct {
 	ordersv1.UnimplementedOrderServiceServer
-	useCases OrderUseCases
+	useCases      OrderUseCases
+	routeCapacity RouteCapacity
+}
+
+// RouteCapacity answers how many orders fit in one driver route of a zone (Zone Service).
+type RouteCapacity interface {
+	MaxOrdersPerRoute(ctx context.Context, zoneID string) (int, error)
 }
 
 // NewOrderServer inyecta los casos de uso.
 func NewOrderServer(uc OrderUseCases) *OrderServer {
 	return &OrderServer{useCases: uc}
+}
+
+// WithRouteCapacity lets the driver's route report the capacity of its zone. Without it max_orders is 0.
+func (s *OrderServer) WithRouteCapacity(capacity RouteCapacity) *OrderServer {
+	s.routeCapacity = capacity
+	return s
 }
 
 // CreateOrder registra un pedido del cliente autenticado. Las coordenadas son opcionales.
@@ -346,7 +360,8 @@ func mapOrderError(err error) error {
 		errors.Is(err, domain.ErrInvalidOrderID),
 		errors.Is(err, domain.ErrInvalidStopSequence),
 		errors.Is(err, domain.ErrDuplicateStopSequence),
-		errors.Is(err, domain.ErrInvalidAdvanceTarget):
+		errors.Is(err, domain.ErrInvalidAdvanceTarget),
+		errors.Is(err, domain.ErrInvalidStopOutcome):
 		return status.Error(codes.InvalidArgument, err.Error())
 	default:
 		return mapError(err)

@@ -129,6 +129,7 @@ services:
       DRIVER_DB_PASSWORD: ${DRIVER_DB_PASSWORD}
       DRIVER_DB_SCHEMA: drivers
       DRIVER_ARRIVAL_RADIUS_METERS: ${DRIVER_ARRIVAL_RADIUS_METERS:-50}
+      ORDERS_GRPC_ADDR: order-service:9091
     # Tráfico interno: sin puertos publicados al host. Las pruebas la alcanzan dentro de la red de compose.
     depends_on:
       postgres:
@@ -161,6 +162,7 @@ services:
       ORDER_SERVICE_ADDR: order-service:9091
       ZONE_SERVICE_ADDR: zone-service:9090
       DRIVER_SERVICE_ADDR: driver-service:9092
+      TRACKING_SERVICE_ADDR: tracking-service:9093
     # Internal traffic: no published host port; only the Gateway reaches it. No database: state lives in
     # Order and Driver Service, so this service has no DB_PASSWORD and no depends_on on postgres.
     depends_on:
@@ -260,6 +262,8 @@ services:
     cpus: 2.0
     volumes:
       - ./infrastructure/osrm/data:/data
+      # Perfil de coche ajustado para Ecuador (weight_name routability); reemplaza el car.lua de la imagen.
+      - ./infrastructure/osrm/profiles/car.lua:/opt/car.lua:ro
 
   # Motor de rutas OSRM con el mapa de Ecuador y algoritmo MLD (único contenedor OSRM). Opcional: se levanta
   # con `make osrm-up` y requiere haber ejecutado antes `make osrm-prepare`.

@@ -280,6 +280,10 @@ func (f *fakeOrderClient) ListDriverRouteStops(_ context.Context, _ grpcclient.C
 	return nil, status.Error(codes.Unimplemented, "not used by this test")
 }
 
+func (f *fakeOrderClient) RecordRouteStopOutcome(_ context.Context, _ grpcclient.CallMeta, _ *ordersv1.RecordRouteStopOutcomeRequest) (*ordersv1.RecordRouteStopOutcomeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not used by this test")
+}
+
 func TestCancelOrder_CustomerGets200WithCancelledOrder(t *testing.T) {
 	fake := &fakeOrderClient{}
 	rec := do(ordersRouter(fake), http.MethodPost, "/api/v1/orders/o-7/cancel", "", authHdr(t, "CUSTOMER"))

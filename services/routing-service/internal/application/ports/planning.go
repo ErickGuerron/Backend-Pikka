@@ -18,10 +18,19 @@ type OrderGateway interface {
 	AssignToRoute(ctx context.Context, routeID string, stops []domain.RouteStop) error
 }
 
-// ZoneCapacities reads the per-route capacity of a zone from Zone Service.
+// ZoneCapacities reads the per-route capacity and the geometry of a zone from Zone Service.
 type ZoneCapacities interface {
 	// MaxOrdersPerRoute returns the zone's max_orders_per_route.
 	MaxOrdersPerRoute(ctx context.Context, zoneID string) (int, error)
+
+	// ZoneCenter returns the center of the zone's outer ring. It reports false when the zone has no geometry.
+	ZoneCenter(ctx context.Context, zoneID string) (domain.Point, bool, error)
+}
+
+// DriverLocations reads where drivers are now, from Tracking Service.
+type DriverLocations interface {
+	// LastPosition returns the driver's last fresh position. It reports false when there is none recent enough.
+	LastPosition(ctx context.Context, driverID string) (domain.Point, bool, error)
 }
 
 // DriverPool finds available drivers and reserves one for a route in Driver Service.

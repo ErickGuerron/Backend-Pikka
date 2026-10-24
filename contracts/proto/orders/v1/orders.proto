@@ -45,6 +45,12 @@ service OrderService {
   // INVALID_ARGUMENT; an order not on that route returns NOT_FOUND; an illegal transition returns
   // FAILED_PRECONDITION. DELIVERED and NOT_DELIVERED belong to RegisterDelivery, not to this RPC.
   rpc AdvanceRouteStop(AdvanceRouteStopRequest) returns (AdvanceRouteStopResponse);
+  // RecordRouteStopOutcome closes a stop of the driver's route: IN_TRANSIT -> DELIVERED or NOT_DELIVERED.
+  // Internal, called by the Gateway only after Driver Service accepted the delivery record. Blank route_id
+  // or order_id returns INVALID_ARGUMENT; an outcome other than DELIVERED or NOT_DELIVERED returns
+  // INVALID_ARGUMENT; an order not on that route returns NOT_FOUND; an order not IN_TRANSIT returns
+  // FAILED_PRECONDITION.
+  rpc RecordRouteStopOutcome(RecordRouteStopOutcomeRequest) returns (RecordRouteStopOutcomeResponse);
   // StopsBeforeForOrder counts the orders of the same route with a smaller stop_sequence that are still
   // open (not DELIVERED, NOT_DELIVERED or CANCELLED). Only the CUSTOMER role can call it, and only for an
   // order it owns: a foreign or unknown order returns NOT_FOUND. An order without route or stop_sequence
@@ -291,6 +297,19 @@ message AdvanceRouteStopResponse {
   Order order = 1;
 }
 
+message RecordRouteStopOutcomeRequest {
+  // Required route the driver is running.
+  string route_id = 1;
+  // Required UUID of an order on that route.
+  string order_id = 2;
+  // DELIVERED or NOT_DELIVERED. Any other value returns INVALID_ARGUMENT.
+  OrderStatus outcome = 3;
+}
+
+message RecordRouteStopOutcomeResponse {
+  Order order = 1;
+}
+
 message StopsBeforeForOrderRequest {
   // Required UUID of an order owned by the caller.
   string order_id = 1;
@@ -313,6 +332,8 @@ message ListDriverRouteStopsRequest {
 
 message ListDriverRouteStopsResponse {
   repeated DriverRouteStop stops = 1;
+  // Pedidos maximos que cabe en esta ruta (max_orders_per_route de la zona). 0 cuando no se conoce.
+  int32 max_orders = 2;
 }
 
 // One stop of a driver's route. Carries no customer identity.
@@ -326,4 +347,6 @@ message DriverRouteStop {
   string window_start = 6;
   string window_end = 7;
   OrderStatus status = 8;
+  // Planned delivery day, YYYY-MM-DD. The window above applies to this day.
+  string delivery_date = 9;
 }

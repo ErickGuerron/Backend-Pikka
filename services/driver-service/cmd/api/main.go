@@ -17,13 +17,19 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	driversv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/drivers/v1"
+	ordersv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/orders/v1"
 	grpcadapter "github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/adapters/grpc"
+	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/adapters/orders"
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/application/driver"
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/infrastructure/config"
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/infrastructure/postgres"
 )
+
+// ordersCallTimeout acota cada consulta de paradas a Order Service.
+const ordersCallTimeout = 5 * time.Second
 
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("service", "driver-service")
@@ -54,17 +60,27 @@ func run(log *slog.Logger) error {
 
 	repo := postgres.NewDriverRepository(pool)
 	drivers := driver.NewService(repo, time.Now)
-	// La fuente de paradas la aporta el Routing Service, que aún no existe: sin ella RegisterDelivery
-	// responde UNIMPLEMENTED en lugar de aceptar una ubicación de parada del llamador.
 	deliveries := driver.NewDeliveries(repo, postgres.NewDeliveryRecorder(pool), cfg.ArrivalRadiusMeters)
-	log.Info("driver service wired", "arrivalRadiusMeters", cfg.ArrivalRadiusMeters)
+
+	// Sin ORDERS_GRPC_ADDR la fuente de paradas queda sin configurar: RegisterDelivery responde
+	// UNIMPLEMENTED en lugar de aceptar una ubicacion de parada del llamador.
+	var stops grpcadapter.StopSource
+	if cfg.OrdersGRPCAddr != "" {
+		conn, err := grpc.NewClient(cfg.OrdersGRPCAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			return fmt.Errorf("orders grpc client: %w", err)
+		}
+		defer func() { _ = conn.Close() }()
+		stops = orders.NewStopSource(ordersv1.NewOrderServiceClient(conn), ordersCallTimeout)
+	}
+	log.Info("driver service wired", "arrivalRadiusMeters", cfg.ArrivalRadiusMeters, "stopSource", stops != nil)
 
 	// Si gRPC falla, se cancela el proceso entero: un servicio a medias no debe seguir sirviendo.
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	grpcErr := make(chan error, 1)
 	go func() {
-		err := serveGRPC(runCtx, log, cfg.GRPCPort, drivers, deliveries)
+		err := serveGRPC(runCtx, log, cfg.GRPCPort, drivers, deliveries, stops)
 		if err != nil {
 			cancel()
 		}
@@ -76,15 +92,16 @@ func run(log *slog.Logger) error {
 	return errors.Join(httpErr, <-grpcErr)
 }
 
-// serveGRPC expone el contrato drivers.v1 hasta que ctx se cancela.
-func serveGRPC(ctx context.Context, log *slog.Logger, port int, svc *driver.Service, deliveries *driver.Deliveries) error {
+// serveGRPC expone el contrato drivers.v1 hasta que ctx se cancela. stops nil deja RegisterDelivery
+// sin fuente de paradas.
+func serveGRPC(ctx context.Context, log *slog.Logger, port int, svc *driver.Service, deliveries *driver.Deliveries, stops grpcadapter.StopSource) error {
 	var lc net.ListenConfig
 	lis, err := lc.Listen(ctx, "tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return fmt.Errorf("grpc listen: %w", err)
 	}
 	srv := grpc.NewServer()
-	driversv1.RegisterDriverServiceServer(srv, grpcadapter.NewDriverServer(svc).WithDeliveries(deliveries, nil))
+	driversv1.RegisterDriverServiceServer(srv, grpcadapter.NewDriverServer(svc).WithDeliveries(deliveries, stops))
 	log.Info("grpc listening", "port", port)
 
 	errCh := make(chan error, 1)
@@ -129,7 +146,7 @@ func serve(ctx context.Context, log *slog.Logger, port int, pool *pgxpool.Pool) 
 		}
 		return err
 	case <-ctx.Done():
-		// El contexto ya está cancelado; WithoutCancel conserva los valores y da tiempo al apagado.
+		// El contexto ya esta cancelado; WithoutCancel conserva los valores y da tiempo al apagado.
 		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)

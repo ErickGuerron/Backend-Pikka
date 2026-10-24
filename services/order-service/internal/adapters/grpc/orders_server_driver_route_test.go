@@ -35,9 +35,11 @@ func newDriverRouteServer(repo *driverRouteServerRepo) *OrderServer {
 func TestListDriverRouteStops_DriverGetsStopsInSequenceWithoutCustomerData(t *testing.T) {
 	window, err := domain.NewDeliveryWindow("10:00", "12:00")
 	require.NoError(t, err)
+	date, err := domain.ParseDeliveryDate("2026-10-25")
+	require.NoError(t, err)
 	repo := &driverRouteServerRepo{stops: []domain.Order{
 		{ID: "o-1", Address: "Av. Amazonas 100", StopSequence: 1, Status: domain.StatusRouteAssigned,
-			Window: window, Latitude: -0.18, Longitude: -78.48,
+			DeliveryDate: date, Window: window, Latitude: -0.18, Longitude: -78.48,
 			ContactPhone: "0999999999", CustomerID: "customer-secret"},
 		{ID: "o-2", Address: "Calle Larga 5", StopSequence: 2, Status: domain.StatusPickedUp},
 	}}
@@ -53,6 +55,7 @@ func TestListDriverRouteStops_DriverGetsStopsInSequenceWithoutCustomerData(t *te
 	assert.Equal(t, "Av. Amazonas 100", first.GetAddress())
 	assert.Equal(t, "10:00", first.GetWindowStart())
 	assert.Equal(t, "12:00", first.GetWindowEnd())
+	assert.Equal(t, "2026-10-25", first.GetDeliveryDate())
 	assert.Equal(t, ordersv1.OrderStatus_ORDER_STATUS_ROUTE_ASSIGNED, first.GetStatus())
 	assert.Equal(t, ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP, res.GetStops()[1].GetStatus())
 }

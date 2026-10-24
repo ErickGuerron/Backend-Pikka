@@ -122,17 +122,67 @@ func (s *OrderServer) ListDriverRouteStops(ctx context.Context, req *ordersv1.Li
 	stops := make([]*ordersv1.DriverRouteStop, 0, len(orders))
 	for _, o := range orders {
 		stops = append(stops, &ordersv1.DriverRouteStop{
-			OrderId:     o.ID,
-			Sequence:    int32(o.StopSequence),
-			Address:     o.Address,
-			Latitude:    o.Latitude,
-			Longitude:   o.Longitude,
-			WindowStart: o.Window.Start(),
-			WindowEnd:   o.Window.End(),
-			Status:      orderToProto(o).GetStatus(),
+			OrderId:      o.ID,
+			Sequence:     int32(o.StopSequence),
+			Address:      o.Address,
+			Latitude:     o.Latitude,
+			Longitude:    o.Longitude,
+			WindowStart:  o.Window.Start(),
+			WindowEnd:    o.Window.End(),
+			Status:       orderToProto(o).GetStatus(),
+			DeliveryDate: o.DeliveryDate.String(),
 		})
 	}
-	return &ordersv1.ListDriverRouteStopsResponse{Stops: stops}, nil
+	return &ordersv1.ListDriverRouteStopsResponse{Stops: stops, MaxOrders: s.routeMaxOrders(ctx, orders)}, nil
+}
+
+// routeMaxOrders is the capacity of the route's zone. A route is planned inside one zone, so the first stop
+// names it. A failure does not hide the stops from the driver: 0 means the capacity is unknown.
+func (s *OrderServer) routeMaxOrders(ctx context.Context, orders []domain.Order) int32 {
+	if s.routeCapacity == nil || len(orders) == 0 || orders[0].ZoneID == "" {
+		return 0
+	}
+	capacity, err := s.routeCapacity.MaxOrdersPerRoute(ctx, orders[0].ZoneID)
+	if err != nil {
+		return 0
+	}
+	return int32(capacity)
+}
+
+// RecordRouteStopOutcome cierra una parada de la ruta del conductor como DELIVERED o NOT_DELIVERED. Solo
+// DRIVER. El Gateway llama aqui solo despues de que Driver Service acepto el registro de entrega.
+// Un pedido fuera de la ruta responde NOT_FOUND; un pedido que no esta IN_TRANSIT responde FAILED_PRECONDITION.
+func (s *OrderServer) RecordRouteStopOutcome(ctx context.Context, req *ordersv1.RecordRouteStopOutcomeRequest) (*ordersv1.RecordRouteStopOutcomeResponse, error) {
+	if s.useCases.RecordOutcome == nil {
+		return nil, status.Error(codes.Unimplemented, "record route stop outcome is not wired")
+	}
+	_, role, err := identityFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	order, err := s.useCases.RecordOutcome.Run(ctx, orderapp.RecordStopOutcomeCommand{
+		Role:    role,
+		RouteID: req.GetRouteId(),
+		OrderID: req.GetOrderId(),
+		Outcome: routeStopOutcomeFromProto(req.GetOutcome()),
+	})
+	if err != nil {
+		return nil, mapOrderError(err)
+	}
+	return &ordersv1.RecordRouteStopOutcomeResponse{Order: orderToProto(order)}, nil
+}
+
+// routeStopOutcomeFromProto traduce el resultado pedido. Cualquier valor distinto de DELIVERED o
+// NOT_DELIVERED llega al dominio como estado vacio y se rechaza como INVALID_ARGUMENT.
+func routeStopOutcomeFromProto(outcome ordersv1.OrderStatus) domain.Status {
+	switch outcome {
+	case ordersv1.OrderStatus_ORDER_STATUS_DELIVERED:
+		return domain.StatusDelivered
+	case ordersv1.OrderStatus_ORDER_STATUS_NOT_DELIVERED:
+		return domain.StatusNotDelivered
+	default:
+		return ""
+	}
 }
 
 // routeStopTargetFromProto traduce el estado pedido. Cualquier valor que no sea PICKED_UP o IN_TRANSIT

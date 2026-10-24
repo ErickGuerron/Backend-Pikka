@@ -112,6 +112,7 @@ func (f *fakeDrivers) isReserved(driverID string) bool {
 
 type fakeZones struct {
 	capacity map[string]int
+	centers  map[string]domain.Point // zones with geometry; a missing zone has no center
 	err      error
 	errZone  string // when set, only this zone fails
 }
@@ -124,7 +125,7 @@ func (f fakeZones) MaxOrdersPerRoute(_ context.Context, zoneID string) (int, err
 }
 
 func newUseCase(orders *fakeOrders, zones fakeZones, drivers *fakeDrivers) *Generate {
-	return New(orders, zones, drivers, domain.ZoneCapacityPlanner{})
+	return New(orders, zones, drivers, fakeLocations{}, domain.ZoneCapacityPlanner{})
 }
 
 func TestGenerateSplitsEachZoneByItsOwnCapacity(t *testing.T) {

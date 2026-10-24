@@ -23,6 +23,9 @@ type driverRouteHandlers struct {
 type driverRouteResponse struct {
 	ID    string               `json:"id"`
 	Stops []driverRouteStopDTO `json:"stops"`
+	// MaxOrders is how many orders fit in this route (its zone's capacity). Omitted when unknown or when
+	// there is no route, so the empty response keeps its shape.
+	MaxOrders int `json:"max_orders,omitempty"`
 }
 
 // driverRouteStopDTO es una parada para la app del repartidor. Sin datos del cliente: solo dirección,
@@ -62,7 +65,7 @@ func (h *driverRouteHandlers) get(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, driverRouteResponse{ID: routeID, Stops: toDriverRouteStops(res.GetStops())})
+	return c.JSON(http.StatusOK, driverRouteResponse{ID: routeID, Stops: toDriverRouteStops(res.GetStops()), MaxOrders: int(res.GetMaxOrders())})
 }
 
 func emptyDriverRoute() driverRouteResponse {

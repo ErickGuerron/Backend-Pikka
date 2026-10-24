@@ -148,3 +148,17 @@ func (z *ZoneCapacities) MaxOrdersPerRoute(ctx context.Context, zoneID string) (
 	}
 	return int(res.GetZone().GetSettings().GetMaxOrdersPerRoute()), nil
 }
+
+// ZoneCenter returns the centroid of the zone's outer ring. A zone without ring has no center.
+func (z *ZoneCapacities) ZoneCenter(ctx context.Context, zoneID string) (domain.Point, bool, error) {
+	res, err := z.client.GetZone(forwardIdentity(ctx), &zonesv1.GetZoneRequest{Id: zoneID})
+	if err != nil {
+		return domain.Point{}, false, err
+	}
+	ring := make([]domain.Point, 0, len(res.GetZone().GetRing()))
+	for _, c := range res.GetZone().GetRing() {
+		ring = append(ring, domain.Point{Latitude: c.GetLatitude(), Longitude: c.GetLongitude()})
+	}
+	center, ok := domain.Centroid(ring)
+	return center, ok, nil
+}
