@@ -70,7 +70,7 @@ func run(log *slog.Logger) error {
 		if err != nil {
 			return fmt.Errorf("orders grpc client: %w", err)
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		stops = orders.NewStopSource(ordersv1.NewOrderServiceClient(conn), ordersCallTimeout)
 	}
 	log.Info("driver service wired", "arrivalRadiusMeters", cfg.ArrivalRadiusMeters, "stopSource", stops != nil)
