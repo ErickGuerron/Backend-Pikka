@@ -21,11 +21,18 @@ type GetCommand struct {
 type GetMyOrder struct {
 	customers ports.CustomerRepository
 	orders    ports.OrderRepository
+	queue     *ZoneQueue
 }
 
 // NewGetMyOrder inyecta los repositorios.
 func NewGetMyOrder(customers ports.CustomerRepository, orders ports.OrderRepository) *GetMyOrder {
 	return &GetMyOrder{customers: customers, orders: orders}
+}
+
+// WithZoneQueue adjunta al pedido en espera su lugar en la cola de su zona.
+func (uc *GetMyOrder) WithZoneQueue(queue *ZoneQueue) *GetMyOrder {
+	uc.queue = queue
+	return uc
 }
 
 // Run devuelve el pedido indicado si pertenece al cliente autenticado.
@@ -37,5 +44,14 @@ func (uc *GetMyOrder) Run(ctx context.Context, cmd GetCommand) (domain.Order, er
 	if err != nil {
 		return domain.Order{}, err
 	}
-	return uc.orders.GetForCustomer(ctx, cmd.OrderID, customer.ID)
+	order, err := uc.orders.GetForCustomer(ctx, cmd.OrderID, customer.ID)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	position, err := uc.queue.positionOf(ctx, order)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	order.QueuePosition = position
+	return order, nil
 }

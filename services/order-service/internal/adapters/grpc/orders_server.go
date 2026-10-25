@@ -395,6 +395,7 @@ func orderToProto(o domain.Order) *ordersv1.Order {
 		CreatedAt:     o.CreatedAt.UTC().Format(time.RFC3339),
 		ZoneId:        o.ZoneID,
 		RouteId:       o.RouteID,
+		QueuePosition: int32(o.QueuePosition),
 
 		AddressReference: o.AddressReference,
 		PostalCode:       o.PostalCode,

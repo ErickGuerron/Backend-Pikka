@@ -52,6 +52,14 @@ type CreateOrder struct {
 	place     placement
 	location  *time.Location
 	clock     func() time.Time
+	queue     *ZoneQueue
+}
+
+// WithZoneQueue hace que un pedido que no encuentra cupo libre en su zona quede en la cola de espera
+// y tome el primer cupo que se libere (ver ZoneQueue).
+func (uc *CreateOrder) WithZoneQueue(queue *ZoneQueue) *CreateOrder {
+	uc.queue = queue
+	return uc
 }
 
 // NewCreateOrder inyecta dependencias. location es la zona horaria operativa.
@@ -125,6 +133,13 @@ func (uc *CreateOrder) Place(ctx context.Context, cmd Command) (Placed, error) {
 	saved, err := uc.placer.PlaceOrder(ctx, order, lines, notice, &actor)
 	if err != nil {
 		return Placed{}, err
+	}
+	if saved.Status == domain.StatusPending {
+		uc.queue.fillNonFatal(ctx, saved.ZoneID, saved.DeliveryDate.String())
+		// The fill may have routed the order already; the stored state decides its place in line.
+		if position, err := uc.queue.positionOf(ctx, saved); err == nil {
+			saved.QueuePosition = position
+		}
 	}
 	total, err := domain.OrderTotal(lines)
 	if err != nil {

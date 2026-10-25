@@ -87,6 +87,8 @@ type orderDTO struct {
 	AddressReference string `json:"addressReference,omitempty"`
 	PostalCode       string `json:"postalCode,omitempty"`
 	ContactPhone     string `json:"contactPhone,omitempty"`
+	// QueuePosition es el lugar en la cola de espera de la zona (1 es el siguiente); 0 cuando el pedido no espera.
+	QueuePosition int `json:"queuePosition"`
 }
 
 // createdOrderDTO es la respuesta del alta: el pedido más sus productos y su total (ADR 0009).
@@ -312,6 +314,7 @@ func toOrderDTO(o *ordersv1.Order) orderDTO {
 		CreatedAt:     o.GetCreatedAt(),
 
 		AddressReference: o.GetAddressReference(),
+		QueuePosition:    int(o.GetQueuePosition()),
 		PostalCode:       o.GetPostalCode(),
 		ContactPhone:     o.GetContactPhone(),
 	}

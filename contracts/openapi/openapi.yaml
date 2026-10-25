@@ -1304,6 +1304,7 @@ components:
           type: array
           description: Motivos por los que el pedido quedó en revisión. Vacío si no aplica.
           items: { $ref: "#/components/schemas/ReviewReason" }
+        queuePosition: { type: integer, minimum: 0, description: Lugar en la cola de espera de la zona (1 es el siguiente). 0 cuando el pedido no espera. Solo lo calculan los endpoints de pedidos del cliente }
         createdAt: { type: string, format: date-time, description: Instante de registro asignado por el servidor en RFC 3339 UTC }
         addressReference: { type: string, minLength: 3, maxLength: 200, description: Referencia para ubicar el punto de entrega. Omitida en pedidos anteriores a este dato }
         postalCode: { type: string, minLength: 4, maxLength: 10, description: Código postal si el cliente lo indicó }
