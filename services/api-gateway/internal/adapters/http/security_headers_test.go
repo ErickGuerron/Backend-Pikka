@@ -54,3 +54,25 @@ func TestRateLimitAnswersTooManyRequests(t *testing.T) {
 	}
 	assert.Contains(t, codes, http.StatusTooManyRequests, "la API debe limitar por IP")
 }
+
+// ZAP 90004: toda respuesta, incluidas las de error, lleva Cross-Origin-Resource-Policy.
+func TestAPIResponsesSendCrossOriginResourcePolicy(t *testing.T) {
+	h := newRouterWithSignup(&fakeAuth{}, httpapi.Options{EnableDocs: true})
+
+	for _, tc := range []struct {
+		name, path string
+		status     int
+	}{
+		{"health", "/health", http.StatusOK},
+		{"ready", "/ready", http.StatusOK},
+		{"openapi", "/openapi.yaml", http.StatusOK},
+		{"api route", "/api/v1/users", http.StatusUnauthorized},
+		{"unauthorized", "/api/v1/auth/me", http.StatusUnauthorized},
+		{"not found", "/api/v1/no-such-route", http.StatusNotFound},
+	} {
+		rec := do(h, http.MethodGet, tc.path, "", nil)
+
+		assert.Equal(t, tc.status, rec.Code, tc.name)
+		assert.Equal(t, "same-origin", rec.Header().Get("Cross-Origin-Resource-Policy"), tc.name)
+	}
+}

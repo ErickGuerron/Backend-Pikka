@@ -224,7 +224,7 @@ services:
   # OpenAPI publicado por el Gateway. Es un escaneo ACTIVO: envía payloads de
   # ataque, así que sólo debe ejecutarse contra el entorno local o de pruebas,
   # nunca contra producción.
-  # Códigos de salida: 0 sin alertas, 1 sólo advertencias, 2 hay alertas FAIL.
+  # Códigos de salida: 0 sin alertas, 1 al menos una alerta FAIL, 2 sólo advertencias, 3 otro fallo.
   zap:
     image: ghcr.io/zaproxy/zaproxy:stable
     profiles: ["security"]
