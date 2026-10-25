@@ -87,10 +87,24 @@ func (r *OrderRepository) QueuePosition(ctx context.Context, order domain.Order)
 	return position, nil
 }
 
-// routeWithRoom returns the route of the zone and day that has the fewest active orders and still
-// has room, with the next stop sequence it would use. Closed orders keep their sequence, so the next
+// routeWithRoom returns the route of the zone and day with the fewest active orders, with the next stop
+// sequence it would use, as long as the zone as a whole still has room. The capacity is the zone's total
+// of active orders per day, shared by all its routes. Closed orders keep their sequence, so the next
 // sequence comes from the highest one ever used on the route.
-func routeWithRoom(ctx context.Context, tx pgx.Tx, zoneID, deliveryDate string, maxPerRoute int) (string, int, bool, error) {
+func routeWithRoom(ctx context.Context, tx pgx.Tx, zoneID, deliveryDate string, maxPerZone int) (string, int, bool, error) {
+	var zoneActive int
+	if err := tx.QueryRow(ctx,
+		`SELECT count(*) FROM orders
+		  WHERE zone_id = $1::uuid AND delivery_date = $2::date
+		    AND status IN ('ROUTE_ASSIGNED', 'PICKED_UP', 'IN_TRANSIT')`,
+		zoneID, deliveryDate,
+	).Scan(&zoneActive); err != nil {
+		return "", 0, false, fmt.Errorf("zone queue: zone active: %w", err)
+	}
+	if zoneActive >= maxPerZone {
+		return "", 0, false, nil
+	}
+
 	var routeID string
 	var lastSequence, active int
 	err := tx.QueryRow(ctx,
@@ -100,10 +114,9 @@ func routeWithRoom(ctx context.Context, tx pgx.Tx, zoneID, deliveryDate string, 
 		   FROM orders
 		  WHERE zone_id = $1::uuid AND delivery_date = $2::date AND route_id IS NOT NULL
 		  GROUP BY route_id
-		 HAVING count(*) FILTER (WHERE status IN ('ROUTE_ASSIGNED', 'PICKED_UP', 'IN_TRANSIT')) < $3
 		  ORDER BY active ASC, route_id ASC
 		  LIMIT 1`,
-		zoneID, deliveryDate, maxPerRoute,
+		zoneID, deliveryDate,
 	).Scan(&routeID, &lastSequence, &active)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", 0, false, nil

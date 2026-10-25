@@ -79,6 +79,42 @@ func TestZoneQueueRoutesOldestWaitingIntoFreedSlots(t *testing.T) {
 	require.Equal(t, 0, routed)
 }
 
+// The capacity is the zone's total of active orders per day, not per route: two routes that together
+// hold the zone's capacity leave no room for a third route to take a waiting order.
+func TestZoneQueueCapacityIsZoneTotalAcrossRoutes(t *testing.T) {
+	store, pool := setup(t)
+	ctx := context.Background()
+	customer := newCustomer(t, pool)
+	p := newProduct(t, store, "Mango", stock(100))
+	orders := persistence.NewOrderRepository(pool)
+	zone := uuid.NewString()
+	const maxZone = 2
+
+	holderA := placeInZone(t, store, customer, zone, p)
+	_, err := orders.AssignToRoute(ctx, []string{holderA.ID}, func(o domain.Order) (domain.Order, error) {
+		return o.AssignToRoute("zone#A", 1)
+	})
+	require.NoError(t, err)
+	holderB := placeInZone(t, store, customer, zone, p)
+	_, err = orders.AssignToRoute(ctx, []string{holderB.ID}, func(o domain.Order) (domain.Order, error) {
+		return o.AssignToRoute("zone#B", 1)
+	})
+	require.NoError(t, err)
+
+	waiting := placeInZone(t, store, customer, zone, p)
+	routed, err := orders.FillZoneQueue(ctx, zone, "2030-04-12", maxZone)
+	require.NoError(t, err)
+	require.Equal(t, 0, routed, "the zone already holds maxZone active orders across its routes")
+	require.Equal(t, domain.StatusPending, getOrder(t, orders, waiting.ID, customer).Status)
+
+	// Delivering one holder frees one zone slot; the waiting order takes it on the route with fewer active orders.
+	closeStop(t, orders, holderA.ID, "zone#A", customer)
+	routed, err = orders.FillZoneQueue(ctx, zone, "2030-04-12", maxZone)
+	require.NoError(t, err)
+	require.Equal(t, 1, routed)
+	require.Equal(t, "zone#A", getOrder(t, orders, waiting.ID, customer).RouteID, "zone#A has no active orders left")
+}
+
 // Zero capacity means the zone offers no route slot: nothing is routed and nothing changes.
 func TestZoneQueueZeroCapacityRoutesNothing(t *testing.T) {
 	store, pool := setup(t)
