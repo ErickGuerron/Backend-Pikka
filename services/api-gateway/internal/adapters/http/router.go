@@ -66,6 +66,7 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 		e.IPExtractor = echo.ExtractIPDirect()
 	}
 
+	e.Use(crossOriginResourcePolicy)
 	e.Use(middleware.RequestIDWithConfig(middleware.RequestIDConfig{
 		Generator: uuid.NewString,
 		Skipper: func(c echo.Context) bool {
