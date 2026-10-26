@@ -91,7 +91,16 @@ jobs:
         env:
           ORDER_TEST_DATABASE_URL: postgres://order_service_user:x@localhost:5432/last_mile_ci?sslmode=disable&search_path=orders,public
         # -p 1: the migration test rolls the shared schema down and up, so packages must not run in parallel.
-        run: go test -race -p 1 -tags integration -count=1 ./...
+        # Coverage of the SQL adapters is produced only here, so it is published for SonarQube.
+        run: go test -race -p 1 -tags integration -count=1 -coverprofile=coverage.out ./...
+
+      - name: Upload order-service integration coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-integration-order
+          path: services/order-service/coverage.out
+          if-no-files-found: ignore
 
       - name: Driver Service integration tests
         working-directory: services/driver-service
@@ -162,7 +171,7 @@ jobs:
   sonarqube:
     name: SonarQube
     runs-on: ubuntu-latest
-    needs: go
+    needs: [go, integration]
     # Se activa cuando el repositorio tenga configurados SONAR_TOKEN y SONAR_HOST_URL.
     if: ${{ vars.SONAR_ENABLED == 'true' }}
     steps:
