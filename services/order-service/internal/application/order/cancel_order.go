@@ -21,11 +21,18 @@ type CancelCommand struct {
 type CancelOrder struct {
 	customers ports.CustomerRepository
 	orders    ports.OrderRepository
+	queue     *ZoneQueue
 }
 
 // NewCancelOrder inyecta los repositorios.
 func NewCancelOrder(customers ports.CustomerRepository, orders ports.OrderRepository) *CancelOrder {
 	return &CancelOrder{customers: customers, orders: orders}
+}
+
+// WithZoneQueue hace que cancelar un pedido que ocupaba un cupo libere ese cupo para la cola de su zona.
+func (uc *CancelOrder) WithZoneQueue(queue *ZoneQueue) *CancelOrder {
+	uc.queue = queue
+	return uc
 }
 
 // Run cancela el pedido si pertenece al cliente y su estado lo permite.
@@ -37,7 +44,15 @@ func (uc *CancelOrder) Run(ctx context.Context, cmd CancelCommand) (domain.Order
 	if err != nil {
 		return domain.Order{}, err
 	}
-	return uc.orders.CancelForCustomer(ctx, cmd.OrderID, customer.ID, func(current domain.Order) (domain.Order, error) {
+	cancelled, err := uc.orders.CancelForCustomer(ctx, cmd.OrderID, customer.ID, func(current domain.Order) (domain.Order, error) {
 		return current.CancelByCustomer()
 	})
+	if err != nil {
+		return domain.Order{}, err
+	}
+	// Only an order that held a route slot releases one; a PENDING cancellation frees nothing.
+	if cancelled.RouteID != "" {
+		uc.queue.fillNonFatal(ctx, cancelled.ZoneID, cancelled.DeliveryDate.String())
+	}
+	return cancelled, nil
 }

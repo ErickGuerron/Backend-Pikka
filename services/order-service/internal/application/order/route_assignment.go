@@ -34,11 +34,18 @@ type AssignToRouteCommand struct {
 // RouteAssignment expone los pedidos pendientes por fecha y su asignación a ruta.
 type RouteAssignment struct {
 	orders ports.RouteAssignmentRepository
+	queue  *ZoneQueue
 }
 
 // NewRouteAssignment inyecta el repositorio.
 func NewRouteAssignment(orders ports.RouteAssignmentRepository) *RouteAssignment {
 	return &RouteAssignment{orders: orders}
+}
+
+// WithZoneQueue hace que, tras planificar rutas, los pedidos en espera de cada zona ocupen los cupos que queden libres.
+func (uc *RouteAssignment) WithZoneQueue(queue *ZoneQueue) *RouteAssignment {
+	uc.queue = queue
+	return uc
 }
 
 // PendingByDate devuelve los pedidos PENDING de la fecha de entrega indicada.
@@ -71,9 +78,24 @@ func (uc *RouteAssignment) Assign(ctx context.Context, cmd AssignToRouteCommand)
 		ids = append(ids, stop.OrderID)
 		sequences[stop.OrderID] = stop.Sequence
 	}
-	return uc.orders.AssignToRoute(ctx, ids, func(current domain.Order) (domain.Order, error) {
+	assigned, err := uc.orders.AssignToRoute(ctx, ids, func(current domain.Order) (domain.Order, error) {
 		return current.AssignToRoute(routeID, sequences[current.ID])
 	})
+	if err != nil {
+		return nil, err
+	}
+	// A planned route can leave room in its zone; the waiting orders of that zone may take it.
+	type zoneDay struct{ zone, date string }
+	filled := make(map[zoneDay]bool, len(assigned))
+	for _, order := range assigned {
+		key := zoneDay{order.ZoneID, order.DeliveryDate.String()}
+		if filled[key] {
+			continue
+		}
+		filled[key] = true
+		uc.queue.fillNonFatal(ctx, key.zone, key.date)
+	}
+	return assigned, nil
 }
 
 // normalizeStops validates the stops (or the legacy order ids) before any repository call.

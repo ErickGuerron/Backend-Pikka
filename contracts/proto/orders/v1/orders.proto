@@ -119,6 +119,9 @@ message Order {
   // Driver route the order was assigned to. Empty until Routing assigns it. Used internally to find
   // the assigned driver. Internal field: the Gateway customer DTO must not expose it.
   string route_id = 15;
+  // FIFO place (1 is next) of a PENDING order waiting for a free route slot in its zone. 0 when the
+  // order is not waiting. Computed for reads; the Gateway customer DTO exposes it as queuePosition.
+  int32 queue_position = 16;
 }
 
 message CreateOrderRequest {

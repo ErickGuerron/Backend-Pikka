@@ -34,6 +34,10 @@ type Order struct {
 	ReviewReasons []ReviewReason
 	CreatedAt     time.Time
 	Version       int64
+	// QueuePosition is the FIFO place (1 is next) of a PENDING order waiting for a free route slot in
+	// its zone. 0 when the order is not waiting. It is computed by the application layer for reads
+	// and is never persisted.
+	QueuePosition int
 }
 
 // NewOrderInput contains only caller-controlled delivery data.
