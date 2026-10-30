@@ -28,9 +28,10 @@ type RecordStopOutcomeCommand struct {
 // Reutiliza la misma transacción con bloqueo que AdvanceRouteStop, para que el alcance (pedido
 // dentro de la ruta) y el estado se lean y escriban bajo el mismo bloqueo.
 type RecordStopOutcome struct {
-	orders     ports.OrderRepository
-	queue      *ZoneQueue
-	surcharges ports.SurchargeRepository
+	orders      ports.OrderRepository
+	queue       *ZoneQueue
+	surcharges  ports.SurchargeRepository
+	reincidence *Reincidence
 }
 
 // NewRecordStopOutcome inyecta el repositorio.
@@ -51,6 +52,12 @@ func (uc *RecordStopOutcome) WithSurcharges(surcharges ports.SurchargeRepository
 	return uc
 }
 
+// WithReincidence marks the customer as recidivist when a new incident reaches the threshold.
+func (uc *RecordStopOutcome) WithReincidence(r *Reincidence) *RecordStopOutcome {
+	uc.reincidence = r
+	return uc
+}
+
 // recordSurchargeNonFatal runs after the stop is already closed. A failure is logged and not
 // returned: the driver cannot retry a closed stop, and the unique order_id keeps a later retry safe.
 func (uc *RecordStopOutcome) recordSurchargeNonFatal(ctx context.Context, closed domain.Order, reason string) {
@@ -58,11 +65,18 @@ func (uc *RecordStopOutcome) recordSurchargeNonFatal(ctx context.Context, closed
 		return
 	}
 	incident, err := domain.NewSurchargeIncident(closed.CustomerID, closed.ID, reason, time.Now())
+	var saved domain.Surcharge
+	var created bool
 	if err == nil {
-		_, _, err = uc.surcharges.RecordSurchargeIncident(ctx, incident)
+		saved, created, err = uc.surcharges.RecordSurchargeIncident(ctx, incident)
 	}
 	if err != nil {
 		slog.Default().Error("surcharge incident not recorded; it must be recorded by hand", "order", closed.ID, "reason", reason, "error", err)
+		return
+	}
+	// Only a new incident that counts now can complete the threshold; one waiting for the operator counts later.
+	if created && saved.Status == domain.SurchargePending {
+		uc.reincidence.evaluateNonFatal(ctx, saved.CustomerID)
 	}
 }
 

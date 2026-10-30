@@ -23,12 +23,20 @@ type ResolveSurchargeCommand struct {
 // ResolveSurchargeVerification lets an operator or admin confirm or waive a PENDING_VERIFICATION
 // surcharge, and list the ones still waiting.
 type ResolveSurchargeVerification struct {
-	surcharges ports.SurchargeRepository
-	clock      func() time.Time
+	surcharges  ports.SurchargeRepository
+	clock       func() time.Time
+	reincidence *Reincidence
 }
 
 func NewResolveSurchargeVerification(surcharges ports.SurchargeRepository) *ResolveSurchargeVerification {
 	return &ResolveSurchargeVerification{surcharges: surcharges, clock: time.Now}
+}
+
+// WithReincidence evaluates reincidence when a verification is confirmed, because from then on the
+// incident counts.
+func (uc *ResolveSurchargeVerification) WithReincidence(r *Reincidence) *ResolveSurchargeVerification {
+	uc.reincidence = r
+	return uc
 }
 
 // Run validates the input and resolves under the repository's lock.
@@ -47,9 +55,16 @@ func (uc *ResolveSurchargeVerification) Run(ctx context.Context, cmd ResolveSurc
 	if _, err := domain.ReviewDecisionReason(cmd.Reason); err != nil {
 		return domain.Surcharge{}, err
 	}
-	return uc.surcharges.ResolveSurchargeVerification(ctx, id.String(), func(current domain.Surcharge) (domain.Surcharge, error) {
+	resolved, err := uc.surcharges.ResolveSurchargeVerification(ctx, id.String(), func(current domain.Surcharge) (domain.Surcharge, error) {
 		return current.Resolve(decision, cmd.OperatorID, cmd.Reason, uc.clock())
 	})
+	if err != nil {
+		return domain.Surcharge{}, err
+	}
+	if decision == domain.DecisionConfirm {
+		uc.reincidence.evaluateNonFatal(ctx, resolved.CustomerID)
+	}
+	return resolved, nil
 }
 
 // ListPending returns the operator's queue of surcharges waiting for verification.
