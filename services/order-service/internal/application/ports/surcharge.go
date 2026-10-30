@@ -2,6 +2,7 @@ package ports
 
 import (
 	"context"
+	"time"
 
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/domain"
 )
@@ -16,4 +17,10 @@ type SurchargeRepository interface {
 	ResolveSurchargeVerification(ctx context.Context, id string, decide func(domain.Surcharge) (domain.Surcharge, error)) (domain.Surcharge, error)
 	// ListSurchargesPendingVerification is the operator's queue, oldest first.
 	ListSurchargesPendingVerification(ctx context.Context) ([]domain.Surcharge, error)
+	// CountedIncidentTimes returns when each incident that counts for reincidence was created: the
+	// customer's incidents that are PENDING, APPLIED or PAID. WAIVED ones and those still waiting for
+	// verification do not count.
+	CountedIncidentTimes(ctx context.Context, customerID string) ([]time.Time, error)
+	// MarkCustomerRecidivist sets the mark once. It returns false when the customer already had it.
+	MarkCustomerRecidivist(ctx context.Context, customerID string, at time.Time) (bool, error)
 }

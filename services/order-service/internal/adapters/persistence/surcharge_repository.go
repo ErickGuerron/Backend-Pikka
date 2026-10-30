@@ -107,6 +107,43 @@ func (r *SurchargeRepository) ListSurchargesPendingVerification(ctx context.Cont
 	return out, nil
 }
 
+// CountedIncidentTimes returns the creation time of the customer's incidents that count for
+// reincidence, oldest first. WAIVED and PENDING_VERIFICATION do not count.
+func (r *SurchargeRepository) CountedIncidentTimes(ctx context.Context, customerID string) ([]time.Time, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT created_at
+		  FROM surcharges
+		 WHERE customer_id = $1 AND status IN ('PENDING', 'APPLIED', 'PAID')
+		 ORDER BY created_at ASC`, customerID)
+	if err != nil {
+		return nil, fmt.Errorf("counted incident times: %w", err)
+	}
+	defer rows.Close()
+
+	out := []time.Time{}
+	for rows.Next() {
+		var at time.Time
+		if err := rows.Scan(&at); err != nil {
+			return nil, fmt.Errorf("counted incident times: %w", err)
+		}
+		out = append(out, at.UTC())
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("counted incident times: %w", err)
+	}
+	return out, nil
+}
+
+// MarkCustomerRecidivist sets customers.recidivist_at once; a customer already marked keeps its date.
+func (r *SurchargeRepository) MarkCustomerRecidivist(ctx context.Context, customerID string, at time.Time) (bool, error) {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE customers SET recidivist_at = $2 WHERE id = $1 AND recidivist_at IS NULL`, customerID, at.UTC())
+	if err != nil {
+		return false, fmt.Errorf("mark customer recidivist: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
 func scanSurcharge(scan func(...any) error) (domain.Surcharge, error) {
 	var (
 		s          domain.Surcharge

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -171,4 +172,52 @@ func TestListarVerificacionesPendientesSoloDevuelveLasEnEspera(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 	assert.Equal(t, waiting.ID, list[0].ID)
+}
+
+// insertAt guarda una incidencia con fecha y estado propios, para probar el conteo de reincidencia.
+func insertAt(t *testing.T, pool *pgxpool.Pool, customer string, status domain.SurchargeStatus, at time.Time) {
+	t.Helper()
+	_, err := pool.Exec(context.Background(),
+		`INSERT INTO surcharges (customer_id, order_id, reason, status, created_at) VALUES ($1, gen_random_uuid(), 'CLIENT_REFUSED', $2, $3)`,
+		customer, string(status), at)
+	require.NoError(t, err)
+}
+
+func TestIncidenciasQueCuentanParaReincidencia(t *testing.T) {
+	_, pool := setup(t)
+	repo := persistence.NewSurchargeRepository(pool)
+	customer, other := newCustomer(t, pool), newCustomer(t, pool)
+	base := time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
+	insertAt(t, pool, customer, domain.SurchargePending, base)
+	insertAt(t, pool, customer, domain.SurchargeApplied, base.AddDate(0, 0, 2))
+	insertAt(t, pool, customer, domain.SurchargePaid, base.AddDate(0, 0, 4))
+	insertAt(t, pool, customer, domain.SurchargeWaived, base.AddDate(0, 0, 5))
+	insertAt(t, pool, customer, domain.SurchargePendingVerification, base.AddDate(0, 0, 6))
+	insertAt(t, pool, other, domain.SurchargePending, base)
+
+	times, err := repo.CountedIncidentTimes(context.Background(), customer)
+
+	require.NoError(t, err)
+	require.Len(t, times, 3, "no cuentan las dispensadas, las que esperan verificacion ni las de otro cliente")
+	assert.True(t, times[0].Equal(base))
+	assert.True(t, domain.ReincidenceReached(times))
+}
+
+func TestMarcarReincidenteConservaLaPrimeraFecha(t *testing.T) {
+	_, pool := setup(t)
+	repo := persistence.NewSurchargeRepository(pool)
+	customer := newCustomer(t, pool)
+	first := time.Date(2026, 10, 10, 9, 0, 0, 0, time.UTC)
+
+	marked, err := repo.MarkCustomerRecidivist(context.Background(), customer, first)
+	require.NoError(t, err)
+	assert.True(t, marked)
+
+	again, err := repo.MarkCustomerRecidivist(context.Background(), customer, first.AddDate(0, 0, 3))
+	require.NoError(t, err)
+	assert.False(t, again, "ya estaba marcado")
+
+	var stored time.Time
+	require.NoError(t, pool.QueryRow(context.Background(), `SELECT recidivist_at FROM customers WHERE id = $1`, customer).Scan(&stored))
+	assert.True(t, stored.Equal(first))
 }

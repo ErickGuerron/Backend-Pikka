@@ -107,8 +107,11 @@ func run(log *slog.Logger) error {
 	advanceRouteStop := orderapp.NewAdvanceRouteStop(orderRepo)
 	stopsBefore := orderapp.NewStopsBeforeForOrder(customerRepo, orderRepo)
 	driverRouteStops := orderapp.NewDriverRouteStops(orderRepo)
+	surchargeRepo := persistence.NewSurchargeRepository(pool)
+	reincidence := orderapp.NewReincidence(surchargeRepo)
 	recordStopOutcome := orderapp.NewRecordStopOutcome(orderRepo).WithZoneQueue(zoneQueue).
-		WithSurcharges(persistence.NewSurchargeRepository(pool))
+		WithSurcharges(surchargeRepo).
+		WithReincidence(reincidence)
 	log.Info("order use cases wired", "create", createOrder != nil, "review", reviewOrder != nil)
 
 	// gRPC server para Customer y Order. La autorización por rol se aplica en
@@ -128,7 +131,7 @@ func run(log *slog.Logger) error {
 		StopsBefore:      stopsBefore,
 		DriverRouteStops: driverRouteStops,
 		RecordOutcome:    recordStopOutcome,
-		Surcharges:       orderapp.NewResolveSurchargeVerification(persistence.NewSurchargeRepository(pool)),
+		Surcharges:       orderapp.NewResolveSurchargeVerification(surchargeRepo).WithReincidence(reincidence),
 	}).WithRouteCapacity(zoneClassifier))
 	// Catálogo de productos (ADR 0009): el operador administra, el cliente lee lo activo.
 	catalogv1.RegisterCatalogServiceServer(grpcServer, grpcadapter.NewCatalogServer(
