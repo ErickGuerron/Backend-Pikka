@@ -151,6 +151,7 @@ Reglas implementadas y dónde viven (Order Service, salvo que se indique):
 | Bloqueo por saldo vencido | `BlockOverdueBalances` (barrido), `domain.BalanceOverdue` |
 | Pago del saldo y desbloqueo | `POST /customers/me/balance/payment` (Gateway), `BalanceRepository.SettleBalance` |
 | El cliente ve su saldo | `GET /customers/me/balance`; `pendingSurcharge` en la respuesta de crear pedido |
+| Pantallas del cliente (saldo, pago, etiqueta «simulado», bloqueo) | Frontend-Pikka: PR 47 (web) y PR 48 (móvil), `BalanceCard` |
 
 Los contratos están en `contracts/openapi/openapi.yaml` (etiqueta `surcharges`) y el detalle de
 tareas, decisiones y pruebas en `odd/tasks/penalty-engine.md`.
@@ -159,7 +160,8 @@ tareas, decisiones y pruebas en `odd/tasks/penalty-engine.md`.
 pedido (D6'); el saldo se paga desde la app y no se cobra automáticamente con el siguiente pedido;
 crear un pedido con la cuenta bloqueada por saldo se rechaza.
 
-**Pendiente o fuera de alcance:**
+**Pendiente o fuera de alcance** (el detalle de cada función, su orden, las decisiones que necesita y sus criterios
+de aceptación están en [`docs/planning/penalizaciones-pendientes.md`](../planning/penalizaciones-pendientes.md)):
 
 - Cobro adicional por reasignación (sección 1, dirección incorrecta): falta definir la fórmula de
   distancia, el precio de la gasolina de referencia y dónde guarda el administrador su ajuste.
@@ -170,7 +172,7 @@ crear un pedido con la cuenta bloqueada por saldo se rechaza.
   quitar la marca de reincidente (hoy es permanente, por lo que se aplica un solo recargo extra
   por cliente).
 - Un operador puede aplicar el recargo extra pero no listar clientes (`GET /customers` es solo ADMIN).
-- Pantallas del frontend (línea de recargo, saldo, pago, etiqueta "simulado").
+- Cancelar un pedido con la cuenta bloqueada solo lo rechaza el servidor; las apps aún muestran el botón.
 - Reconciliación: si falla el registro de una incidencia después de cerrar la parada, solo queda
   un log de error; no hay un barrido que la recupere.
 - Las incidencias de pedidos sin productos (anteriores al catálogo) se registran sin monto y no
