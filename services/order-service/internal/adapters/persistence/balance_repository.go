@@ -2,10 +2,13 @@ package persistence
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/shopspring/decimal"
 
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/application/ports"
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/domain"
@@ -23,7 +26,8 @@ func NewBalanceRepository(pool *pgxpool.Pool) *BalanceRepository {
 }
 
 // ListActiveObligations lists what still counts against an ACTIVO customer:
-//   - a surcharge incident still PENDING (owed, not paid). Its clock started when
+//   - a priced surcharge incident still PENDING (owed, not paid; one without amount cannot be paid, so it
+//     never blocks). Its clock started when
 //     the system confirmed it: the operator's verification time for a WRONG_ADDRESS, else its creation.
 //   - a recidivism charge not yet paid (its clock starts when applied).
 //
@@ -34,7 +38,7 @@ func (r *BalanceRepository) ListActiveObligations(ctx context.Context) ([]domain
 		SELECT s.customer_id::text, COALESCE(s.resolved_at, s.created_at)
 		  FROM surcharges s
 		  JOIN customers c ON c.id = s.customer_id
-		 WHERE c.status = 'ACTIVO' AND s.status = 'PENDING'
+		 WHERE c.status = 'ACTIVO' AND s.status = 'PENDING' AND s.amount IS NOT NULL
 		UNION ALL
 		SELECT rc.customer_id::text, rc.created_at
 		  FROM recidivism_charges rc
@@ -59,6 +63,53 @@ func (r *BalanceRepository) ListActiveObligations(ctx context.Context) ([]domain
 		return nil, fmt.Errorf("list active obligations: %w", err)
 	}
 	return out, nil
+}
+
+// SettleBalance applies a full payment atomically. The customer row is locked first, so a payment and a
+// new surcharge cannot interleave: the balance is compared with what was charged under the lock.
+func (r *BalanceRepository) SettleBalance(ctx context.Context, customerID string, amount decimal.Decimal, at time.Time) (bool, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("settle balance: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var status string
+	var owed decimal.Decimal
+	err = tx.QueryRow(ctx, `SELECT status, pending_surcharge FROM customers WHERE id = $1 FOR UPDATE`, customerID).Scan(&status, &owed)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, domain.ErrCustomerNotFound
+	}
+	if err != nil {
+		return false, fmt.Errorf("settle balance: load customer: %w", err)
+	}
+	if !owed.Equal(amount) {
+		return false, domain.ErrBalanceChanged
+	}
+
+	// Only priced incidents are paid: one without amount was never added to the balance.
+	if _, err := tx.Exec(ctx, `
+		UPDATE surcharges SET status = 'PAID', paid_at = $2
+		 WHERE customer_id = $1 AND status IN ('PENDING', 'APPLIED') AND amount IS NOT NULL`, customerID, at.UTC()); err != nil {
+		return false, fmt.Errorf("settle balance: surcharges: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE recidivism_charges SET paid_at = $2 WHERE customer_id = $1 AND paid_at IS NULL`, customerID, at.UTC()); err != nil {
+		return false, fmt.Errorf("settle balance: recidivism charges: %w", err)
+	}
+	unblocked := status == string(domain.StatusBlockedSurcharge)
+	if _, err := tx.Exec(ctx, `
+		UPDATE customers
+		   SET pending_surcharge = pending_surcharge - $2,
+		       status = CASE WHEN status = 'BLOQUEADO_POR_SALDO' THEN 'ACTIVO' ELSE status END,
+		       updated_at = now()
+		 WHERE id = $1`, customerID, amount); err != nil {
+		return false, fmt.Errorf("settle balance: customer: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("settle balance: commit: %w", err)
+	}
+	return unblocked, nil
 }
 
 // BlockCustomersForBalance changes only customers that are still ACTIVO.

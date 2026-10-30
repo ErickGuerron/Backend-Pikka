@@ -599,6 +599,28 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /api/v1/customers/me/balance/payment:
+    post:
+      tags: [surcharges]
+      operationId: payMyBalance
+      summary: Paga el saldo pendiente completo con el cobro simulado (solo CUSTOMER)
+      description: |
+        Cobra todo el saldo pendiente del cliente autenticado con la tarjeta simulada (ADR 0006, sección 5). No lleva
+        cuerpo: no se elige el monto, solo se paga el saldo completo. Si el cobro se aprueba, los recargos quedan
+        pagados y una cuenta BLOQUEADO_POR_SALDO vuelve a ACTIVO en ese momento (`unblocked: true`). Si la tarjeta
+        simulada rechaza, responde 200 con `SIMULATED_DECLINED` y nada cambia. No hay pasarela real: `simulated`
+        es siempre true y ningún dato de tarjeta se pide ni se guarda.
+        Sin saldo responde 422; si el saldo cambió mientras se pagaba, el cobro se devuelve y responde 409.
+      responses:
+        "200":
+          description: Resultado del cobro simulado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BalancePayment" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
   /api/v1/customers/{id}/recidivist/clear:
     post:
       tags: [surcharges]
@@ -1467,6 +1489,16 @@ components:
         amount: { type: string, example: "12.50" }
         reason: { type: string }
         appliedBy: { type: string, format: uuid, description: Operador que lo aplico }
+        createdAt: { type: string, format: date-time }
+    BalancePayment:
+      type: object
+      required: [status, simulated, amount, reference, unblocked, createdAt]
+      properties:
+        status: { type: string, enum: [SIMULATED_APPROVED, SIMULATED_DECLINED] }
+        simulated: { type: boolean, description: Siempre true. El cobro nunca es real en el MVP }
+        amount: { type: string, example: "7.50", description: Saldo que se cobro }
+        reference: { type: string, description: Referencia interna del intento de cobro }
+        unblocked: { type: boolean, description: true si este pago devolvio la cuenta de BLOQUEADO_POR_SALDO a ACTIVO }
         createdAt: { type: string, format: date-time }
     Surcharge:
       type: object

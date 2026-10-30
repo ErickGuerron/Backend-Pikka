@@ -106,6 +106,13 @@ func (o *Orders) ListRecidivists(ctx context.Context, m CallMeta, req *ordersv1.
 	return o.client.ListRecidivists(ctx, req)
 }
 
+// PayMyBalance paga el saldo completo del cliente autenticado con el cobro simulado.
+func (o *Orders) PayMyBalance(ctx context.Context, m CallMeta, req *ordersv1.PayMyBalanceRequest) (*ordersv1.PayMyBalanceResponse, error) {
+	ctx, cancel := o.outgoing(ctx, m)
+	defer cancel()
+	return o.client.PayMyBalance(ctx, req)
+}
+
 // CancelOrder cancela un pedido del cliente autenticado.
 func (o *Orders) CancelOrder(ctx context.Context, m CallMeta, req *ordersv1.CancelOrderRequest) (*ordersv1.CancelOrderResponse, error) {
 	ctx, cancel := o.outgoing(ctx, m)

@@ -176,6 +176,8 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 		surchargeStaff.GET("/customers/recidivists", sh.listRecidivists)
 		// Quitar la marca solo la hace ADMIN (ADR 0006, F5): 403 antes de llegar al servicio.
 		adminOnly.POST("/customers/:id/recidivist/clear", sh.clearRecidivist)
+		// The customer pays their own balance (ADR 0006, section 5). The role is applied here and by Order Service.
+		authed.POST("/customers/me/balance/payment", sh.payMyBalance, CustomerOnly())
 	}
 
 	// Catálogo de productos (ADR 0009). Cualquier usuario autenticado lee lo activo; el personal

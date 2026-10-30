@@ -18,6 +18,7 @@ type SurchargeClient interface {
 	ApplyRecidivismCharge(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ApplyRecidivismChargeRequest) (*ordersv1.ApplyRecidivismChargeResponse, error)
 	ClearRecidivist(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ClearRecidivistRequest) (*ordersv1.ClearRecidivistResponse, error)
 	ListRecidivists(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ListRecidivistsRequest) (*ordersv1.ListRecidivistsResponse, error)
+	PayMyBalance(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.PayMyBalanceRequest) (*ordersv1.PayMyBalanceResponse, error)
 }
 
 type surchargeHandlers struct {
@@ -178,5 +179,29 @@ func (h *surchargeHandlers) clearRecidivist(c echo.Context) error {
 	return c.JSON(http.StatusOK, recidivistClearDTO{
 		ID: k.GetId(), CustomerID: k.GetCustomerId(), RecidivistAt: k.GetRecidivistAt(), Reason: k.GetReason(),
 		ClearedBy: k.GetClearedBy(), CreatedAt: k.GetCreatedAt(),
+	})
+}
+
+type balancePaymentDTO struct {
+	Status string `json:"status"`
+	// Simulated is always true: there is no real gateway, so the interface can never show a real charge
+	// (ADR 0006, section 4).
+	Simulated bool   `json:"simulated"`
+	Amount    string `json:"amount"`
+	Reference string `json:"reference"`
+	Unblocked bool   `json:"unblocked"`
+	CreatedAt string `json:"createdAt"`
+}
+
+// payMyBalance pays the whole balance of the authenticated customer. It reads no body: nothing the
+// client sends can change the amount. A declined simulated card answers 200 with its status.
+func (h *surchargeHandlers) payMyBalance(c echo.Context) error {
+	res, err := h.surcharges.PayMyBalance(c.Request().Context(), callMeta(c), &ordersv1.PayMyBalanceRequest{})
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, balancePaymentDTO{
+		Status: res.GetStatus(), Simulated: true, Amount: res.GetAmount(), Reference: res.GetReference(),
+		Unblocked: res.GetUnblocked(), CreatedAt: res.GetCreatedAt(),
 	})
 }
