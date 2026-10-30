@@ -109,7 +109,8 @@ Para que el saldo no quede indefinido:
   de 2 semanas empieza cuando el sistema confirma la penalización y notifica al
   cliente en la app. El repartidor no inicia el reloj.
   *Implementación:* el reloj empieza al confirmarse la penalización (al ocurrir, o
-  cuando el operador confirma un `WRONG_ADDRESS`); todavía no existe el aviso en la app.
+  cuando el operador confirma un `WRONG_ADDRESS`), y el aviso en la app (`SURCHARGE_APPLIED`) se crea en la misma
+  transacción que suma el recargo al saldo. En la app móvil el aviso aún no se muestra (F2b).
 - **Bloqueo**: si pasadas 2 semanas el saldo sigue sin pagar, la cuenta pasa a
   `BLOQUEADO_POR_SALDO`. El cliente no puede crear pedidos ni cancelarlos.
   Puede seguir entrando a la app y ver el saldo.
@@ -152,6 +153,7 @@ Reglas implementadas y dónde viven (Order Service, salvo que se indique):
 | Pago del saldo y desbloqueo | `POST /customers/me/balance/payment` (Gateway), `BalanceRepository.SettleBalance` |
 | El cliente ve su saldo | `GET /customers/me/balance`; `pendingSurcharge` en la respuesta de crear pedido |
 | Recuperar un recargo que no se registró al cerrar la parada | `order_penalty_reasons` (motivo guardado con el cierre), `ReconcileIncidents` en el barrido |
+| Aviso al cliente al confirmarse el recargo y al bloquearse la cuenta | `SURCHARGE_APPLIED` y `ACCOUNT_BLOCKED_BY_BALANCE` en `customer_notifications`; panel de avisos de la web |
 | Pantallas del cliente (saldo, pago, etiqueta «simulado», bloqueo) | Frontend-Pikka: PR 47 (web) y PR 48 (móvil), `BalanceCard` |
 
 Los contratos están en `contracts/openapi/openapi.yaml` (etiqueta `surcharges`) y el detalle de
@@ -167,7 +169,7 @@ de aceptación están en [`docs/planning/penalizaciones-pendientes.md`](../plann
 - Cobro adicional por reasignación (sección 1, dirección incorrecta): falta definir la fórmula de
   distancia, el precio de la gasolina de referencia y dónde guarda el administrador su ajuste.
 - Pausa del reloj por disputa abierta y apelación (ADR 0007, sección 6): las disputas aún no existen.
-- Aviso en la app al confirmarse la penalización (la notificación de recargo no existe).
+- Mostrar los avisos en la app móvil, que no tiene panel de avisos (F2b).
 - "Pago sin cuenta", que el ADR 0005 atribuye a este documento y que aquí no está definido.
 - Tope al monto del recargo extra (hoy solo lo limita la columna `NUMERIC(12,2)`) y forma de
   quitar la marca de reincidente (hoy es permanente, por lo que se aplica un solo recargo extra

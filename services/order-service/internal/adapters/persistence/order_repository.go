@@ -313,7 +313,8 @@ func insertNotification(ctx context.Context, tx pgx.Tx, customerID, orderID stri
 	if err != nil {
 		return fmt.Errorf("notification customer id: %w", err)
 	}
-	oid, err := uuid.Parse(orderID)
+	// The account-block notice has no order: it is stored with a NULL order_id.
+	oid, err := optionalUUID(orderID)
 	if err != nil {
 		return fmt.Errorf("notification order id: %w", err)
 	}

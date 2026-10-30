@@ -1401,12 +1401,16 @@ func (x *ListMyNotificationsResponse) GetNotifications() []*Notification {
 
 // Notice sent to the customer when the automatic validation or an operator review changes an order.
 type Notification struct {
-	state   protoimpl.MessageState `protogen:"open.v1"`
-	Id      string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	OrderId string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
-	// ORDER_IN_REVIEW, ORDER_CONFIRMED, ORDER_CORRECTED or ORDER_REJECTED.
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Empty for ACCOUNT_BLOCKED_BY_BALANCE: that notice belongs to the account, not to an order.
+	OrderId string `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	// ORDER_IN_REVIEW, ORDER_CONFIRMED, ORDER_CORRECTED, ORDER_REJECTED, SURCHARGE_APPLIED or
+	// ACCOUNT_BLOCKED_BY_BALANCE.
 	Kind string `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
-	// Review reasons (ORDER_IN_REVIEW) or the operator's audit reason (other kinds).
+	// Review reasons (ORDER_IN_REVIEW), the operator's audit reason (ORDER_CONFIRMED, ORDER_CORRECTED, ORDER_REJECTED),
+	// "REASON,AMOUNT,DUE" for SURCHARGE_APPLIED (a closed reason code, a decimal amount and the RFC 3339 due date) or empty
+	// for ACCOUNT_BLOCKED_BY_BALANCE.
 	Detail string `protobuf:"bytes,4,opt,name=detail,proto3" json:"detail,omitempty"`
 	// RFC 3339, UTC.
 	CreatedAt     string `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`

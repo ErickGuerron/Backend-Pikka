@@ -266,10 +266,14 @@ message ListMyNotificationsResponse {
 // Notice sent to the customer when the automatic validation or an operator review changes an order.
 message Notification {
   string id = 1;
+  // Empty for ACCOUNT_BLOCKED_BY_BALANCE: that notice belongs to the account, not to an order.
   string order_id = 2;
-  // ORDER_IN_REVIEW, ORDER_CONFIRMED, ORDER_CORRECTED or ORDER_REJECTED.
+  // ORDER_IN_REVIEW, ORDER_CONFIRMED, ORDER_CORRECTED, ORDER_REJECTED, SURCHARGE_APPLIED or
+  // ACCOUNT_BLOCKED_BY_BALANCE.
   string kind = 3;
-  // Review reasons (ORDER_IN_REVIEW) or the operator's audit reason (other kinds).
+  // Review reasons (ORDER_IN_REVIEW), the operator's audit reason (ORDER_CONFIRMED, ORDER_CORRECTED, ORDER_REJECTED),
+  // "REASON,AMOUNT,DUE" for SURCHARGE_APPLIED (a closed reason code, a decimal amount and the RFC 3339 due date) or empty
+  // for ACCOUNT_BLOCKED_BY_BALANCE.
   string detail = 4;
   // RFC 3339, UTC.
   string created_at = 5;

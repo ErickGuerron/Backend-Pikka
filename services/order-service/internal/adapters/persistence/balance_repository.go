@@ -149,17 +149,46 @@ func (r *BalanceRepository) SettleBalance(ctx context.Context, customerID string
 	return unblocked, nil
 }
 
-// BlockCustomersForBalance changes only customers that are still ACTIVO.
+// BlockCustomersForBalance changes only customers that are still ACTIVO, and tells each newly blocked customer in
+// the same transaction. One that was already blocked is not touched and is not notified again.
 func (r *BalanceRepository) BlockCustomersForBalance(ctx context.Context, customerIDs []string) (int, error) {
 	if len(customerIDs) == 0 {
 		return 0, nil
 	}
-	tag, err := r.pool.Exec(ctx, `
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("block customers for balance: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	rows, err := tx.Query(ctx, `
 		UPDATE customers
 		   SET status = 'BLOQUEADO_POR_SALDO', updated_at = now()
-		 WHERE id = ANY($1::uuid[]) AND status = 'ACTIVO'`, customerIDs)
+		 WHERE id = ANY($1::uuid[]) AND status = 'ACTIVO'
+		RETURNING id::text`, customerIDs)
 	if err != nil {
 		return 0, fmt.Errorf("block customers for balance: %w", err)
 	}
-	return int(tag.RowsAffected()), nil
+	var blocked []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("block customers for balance: %w", err)
+		}
+		blocked = append(blocked, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("block customers for balance: %w", err)
+	}
+	for _, id := range blocked {
+		if err := insertNotification(ctx, tx, id, "", domain.NewAccountBlockedNotification(id)); err != nil {
+			return 0, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("block customers for balance: commit: %w", err)
+	}
+	return len(blocked), nil
 }

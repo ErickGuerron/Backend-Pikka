@@ -72,3 +72,15 @@ Cambios a operaciones existentes, todos aditivos salvo los dos 403:
 Códigos: sin saldo que pagar, `FAILED_PRECONDITION` (422); saldo que cambió mientras se pagaba, `ABORTED` (409,
 el cobro se devuelve); recargo o cliente inexistente, `NOT_FOUND`. Un rechazo de la tarjeta simulada **no** es un
 error: responde 200 con `SIMULATED_DECLINED`.
+
+## Avisos del recargo y del bloqueo
+
+`GET /api/v1/notifications/mine` devuelve dos tipos más de aviso (ADR 0006, sección 5):
+
+| Tipo | Cuándo | `orderId` | `detail` |
+|---|---|---|---|
+| `SURCHARGE_APPLIED` | Un recargo con monto pasa a deberse: incidencia nueva, o el operador confirma un `WRONG_ADDRESS`. No se crea para `PENDING_VERIFICATION`, dispensados ni sin monto | El pedido no entregado | `MOTIVO,MONTO,FECHA_LIMITE`: código cerrado, decimal con dos dígitos y fecha RFC 3339 |
+| `ACCOUNT_BLOCKED_BY_BALANCE` | El barrido bloquea la cuenta por saldo vencido (una vez por bloqueo) | Vacío: es de la cuenta | Vacío |
+
+El detalle no lleva idioma: cada app traduce el motivo y da formato al monto y a la fecha. Un cliente que no conozca los
+tipos nuevos debe ignorarlos en vez de fallar.
