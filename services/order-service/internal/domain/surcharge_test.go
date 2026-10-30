@@ -103,3 +103,32 @@ func TestResolveRequiresValidDecisionOperatorAndReason(t *testing.T) {
 	_, err = pendingVerification(t).Resolve(domain.DecisionConfirm, "op-1", "abc", time.Now())
 	assert.ErrorIs(t, err, domain.ErrReasonRequired)
 }
+
+// Decision D6': el 15 % se calcula al ocurrir la incidencia, sobre el precio base del pedido no entregado.
+func TestPriceSetsFifteenPercentOfTheBase(t *testing.T) {
+	s, err := domain.NewSurchargeIncident("c1", "o1", "CLIENT_REFUSED", time.Now())
+	require.NoError(t, err)
+
+	priced, err := s.Price(decimal.RequireFromString("33.33"))
+
+	require.NoError(t, err)
+	assert.True(t, priced.Amount.Valid)
+	assert.True(t, priced.Amount.Decimal.Equal(decimal.RequireFromString("5.00")), "got %s", priced.Amount.Decimal)
+	assert.Equal(t, domain.SurchargePending, priced.Status, "pricing does not change the state")
+}
+
+func TestPriceRejectsABaseThatIsNotPositive(t *testing.T) {
+	s, _ := domain.NewSurchargeIncident("c1", "o1", "CLIENT_REFUSED", time.Now())
+	_, err := s.Price(decimal.Zero)
+	assert.ErrorIs(t, err, domain.ErrInvalidSurchargeBase)
+}
+
+func TestPriceTwiceIsRejected(t *testing.T) {
+	s, _ := domain.NewSurchargeIncident("c1", "o1", "CLIENT_REFUSED", time.Now())
+	priced, err := s.Price(decimal.NewFromInt(10))
+	require.NoError(t, err)
+
+	_, err = priced.Price(decimal.NewFromInt(99))
+
+	assert.ErrorIs(t, err, domain.ErrSurchargeAlreadyPriced)
+}

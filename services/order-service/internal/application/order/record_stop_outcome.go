@@ -52,6 +52,27 @@ func (uc *RecordStopOutcome) WithSurcharges(surcharges ports.SurchargeRepository
 	return uc
 }
 
+// priceIncident sets the 15 % over the undelivered order's base price. An order without lines, a failed
+// lookup or a base too small to price leave the incident unpriced: it is still recorded, so the penalty
+// is never lost, and the cause is logged.
+func (uc *RecordStopOutcome) priceIncident(ctx context.Context, incident domain.Surcharge) domain.Surcharge {
+	base, found, err := uc.surcharges.OrderBasePrice(ctx, incident.OrderID)
+	if err != nil {
+		slog.Default().Error("surcharge base price unavailable; recorded unpriced", "order", incident.OrderID, "error", err)
+		return incident
+	}
+	if !found {
+		slog.Default().Warn("order has no lines; surcharge recorded unpriced", "order", incident.OrderID)
+		return incident
+	}
+	priced, err := incident.Price(base)
+	if err != nil {
+		slog.Default().Error("surcharge could not be priced; recorded unpriced", "order", incident.OrderID, "error", err)
+		return incident
+	}
+	return priced
+}
+
 // WithReincidence marks the customer as recidivist when a new incident reaches the threshold.
 func (uc *RecordStopOutcome) WithReincidence(r *Reincidence) *RecordStopOutcome {
 	uc.reincidence = r
@@ -68,7 +89,7 @@ func (uc *RecordStopOutcome) recordSurchargeNonFatal(ctx context.Context, closed
 	var saved domain.Surcharge
 	var created bool
 	if err == nil {
-		saved, created, err = uc.surcharges.RecordSurchargeIncident(ctx, incident)
+		saved, created, err = uc.surcharges.RecordSurchargeIncident(ctx, uc.priceIncident(ctx, incident))
 	}
 	if err != nil {
 		slog.Default().Error("surcharge incident not recorded; it must be recorded by hand", "order", closed.ID, "reason", reason, "error", err)

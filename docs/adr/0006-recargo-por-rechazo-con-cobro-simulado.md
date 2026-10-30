@@ -19,7 +19,11 @@ de tarjeta.
 - **Condición**: el repartidor llegó dentro de la ventana y el rechazo del
   cliente no tiene justificación válida. Las justificaciones válidas son una
   lista cerrada del negocio.
-- **Monto**: 15 % del precio base del siguiente pedido del cliente.
+- **Monto**: 15 % del precio base del pedido no entregado (suma de precio por cantidad de sus
+  productos), redondeado a centavos. Se fija cuando ocurre la incidencia, no con el siguiente pedido:
+  así el saldo es real desde el primer día y una cuenta bloqueada siempre tiene un monto que pagar
+  (decisión D6'). Un pedido sin productos, anterior al catálogo, no tiene precio base: su incidencia se
+  registra sin monto y no suma al saldo.
 - **Una sola vez por incidencia.** No se acumula sobre el mismo pedido.
 - **Quién lo aplica**: el sistema, según la regla. El repartidor solo registra el
   hecho y el motivo (ADR 0007). El operador atiende las disputas.
