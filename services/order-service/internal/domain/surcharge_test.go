@@ -60,3 +60,46 @@ func TestNewSurchargeIncidentForWrongAddressStartsPendingVerification(t *testing
 	assert.Equal(t, domain.SurchargePendingVerification, s.Status)
 	assert.False(t, s.Amount.Valid)
 }
+
+func pendingVerification(t *testing.T) domain.Surcharge {
+	t.Helper()
+	s, err := domain.NewSurchargeIncident("c1", "o1", "WRONG_ADDRESS", time.Now())
+	require.NoError(t, err)
+	return s
+}
+
+// El operador valida con el cliente: CONFIRM lo vuelve un recargo normal; WAIVE lo dispensa. Ambos con motivo auditado.
+func TestResolveConfirmMovesToPendingAndKeepsAudit(t *testing.T) {
+	at := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	got, err := pendingVerification(t).Resolve(domain.DecisionConfirm, "op-1", "  El cliente estaba fuera de casa  ", at)
+	require.NoError(t, err)
+	assert.Equal(t, domain.SurchargePending, got.Status)
+	assert.Equal(t, "op-1", got.ResolvedBy)
+	assert.Equal(t, "El cliente estaba fuera de casa", got.ResolutionReason)
+	assert.True(t, got.ResolvedAt.Equal(at))
+	assert.False(t, got.Amount.Valid, "el monto se calcula con el siguiente pedido")
+}
+
+func TestResolveWaiveClosesTheSurcharge(t *testing.T) {
+	got, err := pendingVerification(t).Resolve(domain.DecisionWaive, "op-1", "La direccion era del negocio", time.Now())
+	require.NoError(t, err)
+	assert.Equal(t, domain.SurchargeWaived, got.Status)
+}
+
+func TestResolveOnlyFromPendingVerification(t *testing.T) {
+	for _, status := range []domain.SurchargeStatus{domain.SurchargePending, domain.SurchargeApplied, domain.SurchargePaid, domain.SurchargeWaived} {
+		s := pendingVerification(t)
+		s.Status = status
+		_, err := s.Resolve(domain.DecisionConfirm, "op-1", "motivo valido", time.Now())
+		assert.ErrorIs(t, err, domain.ErrSurchargeNotPendingVerification, string(status))
+	}
+}
+
+func TestResolveRequiresValidDecisionOperatorAndReason(t *testing.T) {
+	_, err := pendingVerification(t).Resolve("MAYBE", "op-1", "motivo valido", time.Now())
+	assert.ErrorIs(t, err, domain.ErrUnknownSurchargeDecision)
+	_, err = pendingVerification(t).Resolve(domain.DecisionConfirm, "", "motivo valido", time.Now())
+	assert.ErrorIs(t, err, domain.ErrInvalidSurchargeIncident)
+	_, err = pendingVerification(t).Resolve(domain.DecisionConfirm, "op-1", "abc", time.Now())
+	assert.ErrorIs(t, err, domain.ErrReasonRequired)
+}

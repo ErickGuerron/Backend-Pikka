@@ -11,6 +11,10 @@ import (
 var (
 	ErrInvalidSurchargeBase     = errors.New("surcharge base price must be greater than zero")
 	ErrInvalidSurchargeIncident = errors.New("surcharge needs a customer, an order and a reason")
+
+	ErrSurchargeNotFound               = errors.New("surcharge not found")
+	ErrSurchargeNotPendingVerification = errors.New("surcharge is not waiting for verification")
+	ErrUnknownSurchargeDecision        = errors.New("surcharge decision must be CONFIRM or WAIVE")
 )
 
 // SurchargeRate is the penalty over the base price of the customer's next order (ADR 0006, section 1).
@@ -38,6 +42,47 @@ type Surcharge struct {
 	Status     SurchargeStatus
 	Amount     decimal.NullDecimal
 	CreatedAt  time.Time
+
+	// Audit of the operator's verification (empty until PENDING_VERIFICATION is resolved).
+	ResolvedBy       string
+	ResolutionReason string
+	ResolvedAt       time.Time
+}
+
+// SurchargeDecision is what the operator decides about a PENDING_VERIFICATION surcharge.
+type SurchargeDecision string
+
+const (
+	// DecisionConfirm: the customer is responsible; the surcharge follows the normal flow.
+	DecisionConfirm SurchargeDecision = "CONFIRM"
+	// DecisionWaive: the customer is not responsible; no surcharge is charged.
+	DecisionWaive SurchargeDecision = "WAIVE"
+)
+
+// Resolve closes the verification. Only PENDING_VERIFICATION can be resolved, once, with an audited
+// reason (5 to 300 characters) and the operator who decided.
+func (s Surcharge) Resolve(decision SurchargeDecision, operatorID, reason string, at time.Time) (Surcharge, error) {
+	if s.Status != SurchargePendingVerification {
+		return s, ErrSurchargeNotPendingVerification
+	}
+	var next SurchargeStatus
+	switch decision {
+	case DecisionConfirm:
+		next = SurchargePending
+	case DecisionWaive:
+		next = SurchargeWaived
+	default:
+		return s, ErrUnknownSurchargeDecision
+	}
+	if operatorID == "" {
+		return s, ErrInvalidSurchargeIncident
+	}
+	reason, err := ReviewDecisionReason(reason)
+	if err != nil {
+		return s, err
+	}
+	s.Status, s.ResolvedBy, s.ResolutionReason, s.ResolvedAt = next, operatorID, reason, at.UTC()
+	return s, nil
 }
 
 // SurchargeFor returns exactly 15 % of the base price, rounded to cents.
