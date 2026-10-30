@@ -1,12 +1,14 @@
 # ADR 0006: Recargo por rechazo injustificado con cobro simulado
 
-Estado: aceptada (MVP)
+Estado: aceptada (MVP). Implementada en el backend (Order Service y Gateway); lo que falta y
+lo que se apartó de la letra de este documento está en la sección 7.
 
 ## Contexto
 
 Un pedido `NOT_DELIVERED` por rechazo del cliente sin justificación válida, con
 el repartidor ya en el domicilio, genera un recargo. El negocio decidió un 15 %
-del precio base del siguiente pedido, aplicable igual en efectivo y con tarjeta.
+del precio base del pedido no entregado (ver la decisión D6' en la sección 1),
+aplicable igual en efectivo y con tarjeta.
 
 El alcance del proyecto (enunciado) no incluye pagos, cobros ni tarjetas. Para
 el MVP no se conecta una pasarela de pagos real. Tampoco se almacena ningún dato
@@ -43,14 +45,24 @@ de tarjeta.
   **Resolución del operador (decisión D4):** el operador decide una de dos
   cosas, siempre con un motivo de 5 a 300 caracteres que queda auditado junto
   con su identidad y la hora. `CONFIRM`: el cliente es responsable, el recargo
-  sale de verificación y sigue el flujo normal (15 % del siguiente pedido).
+  sale de verificación y sigue el flujo normal (el 15 % ya fijado, que entra al saldo en ese momento).
   `WAIVE`: el cliente no es responsable y el recargo se dispensa, sin cobro. Solo
   se resuelve una vez. Mientras espera no se cobra ni se notifica como
   definitivo. El cobro adicional por reasignación se define aparte (tarea T5).
-- **Reincidencia**: la primera no entrega causada por el cliente inicia un plazo
-  de 2 semanas. Una tercera dentro de ese plazo marca al cliente como reincidente
-  y el operador puede aplicar el cobro con justificación, sujeto a auditoría.
-  Cuenta cualquier motivo de no entrega causado por el cliente.
+- **Reincidencia** (plazo de reincidencia, distinto del plazo de pago de la sección 5):
+  la primera no entrega causada por el cliente inicia un plazo de 2 semanas. Una
+  tercera dentro de ese plazo marca al cliente como reincidente y el operador
+  puede aplicar el cobro con justificación, sujeto a auditoría. Cuenta cualquier
+  motivo de no entrega causado por el cliente.
+  **Cómo se aplica (decisiones D7):** el plazo son 14 días contados desde la primera
+  incidencia que cuenta, el día 14 incluido, y **no se desliza**: la primera incidencia
+  posterior al plazo abre uno nuevo. Cuentan los recargos pendientes, aplicados o
+  pagados; no cuentan los dispensados ni los que esperan verificación (un
+  `WRONG_ADDRESS` cuenta desde que el operador lo confirma). La marca de reincidente
+  se pone una sola vez, conserva su primera fecha y es permanente.
+  **Cobro al reincidente (decisión D7b):** "el cobro" es un **recargo extra** cuyo monto
+  y justificación (5 a 300 caracteres) define el operador. Se suma al saldo, queda
+  auditado con su identidad y la hora, y se aplica una vez por reincidencia.
 
 ### 2. Cobro simulado
 
@@ -86,18 +98,35 @@ de tarjeta.
 El recargo queda como saldo pendiente del cliente. Se cobra con su próximo
 pedido, sin importar cuándo ocurra (opción A).
 
+> **Enmienda de implementación (D6' y S10).** El monto ya existe desde la incidencia y
+> el cliente lo paga desde la app cuando quiera, sin esperar a un pedido nuevo: una cuenta
+> bloqueada no puede crear pedidos, así que no podría pagar "con el siguiente". El pedido
+> siguiente muestra lo que se debe como línea aparte, pero no lo cobra por su cuenta.
+
 Para que el saldo no quede indefinido:
 
-- **Plazo**: el reloj de 2 semanas empieza cuando el sistema confirma la
-  penalización y notifica al cliente en la app. El repartidor no inicia el
-  reloj.
+- **Plazo** (plazo de pago, distinto del plazo de reincidencia de la sección 1): el reloj
+  de 2 semanas empieza cuando el sistema confirma la penalización y notifica al
+  cliente en la app. El repartidor no inicia el reloj.
+  *Implementación:* el reloj empieza al confirmarse la penalización (al ocurrir, o
+  cuando el operador confirma un `WRONG_ADDRESS`); todavía no existe el aviso en la app.
 - **Bloqueo**: si pasadas 2 semanas el saldo sigue sin pagar, la cuenta pasa a
   `BLOQUEADO_POR_SALDO`. El cliente no puede crear pedidos ni cancelarlos.
   Puede seguir entrando a la app y ver el saldo.
+  *Implementación:* "pasadas" es estrictamente más de 14 días; a los 14 justos aún no.
+  Un barrido periódico (al arrancar y cada `BALANCE_SWEEP_MINUTES`, 15 por defecto)
+  bloquea las cuentas `ACTIVO` vencidas y nunca pisa un bloqueo por incidencias. Crear
+  un pedido estando bloqueado por saldo se rechaza con 403 (enmienda al ADR 0007, sección 3:
+  el bloqueo por incidencias sí va a la cola de excepciones).
 - **Pago**: el cliente paga el saldo desde la app con el cobro simulado. El pago
   queda registrado como `SIMULATED_APPROVED` en `payment_attempts`.
+  *Implementación:* solo se paga el saldo completo, con la tarjeta simulada (el efectivo lo
+  confirma el repartidor, no la app). Un rechazo simulado también queda registrado
+  (`SIMULATED_DECLINED`) y no cambia nada. Si el saldo cambia entre el cobro y el cierre,
+  el cobro se devuelve y queda su reembolso registrado.
 - **Desbloqueo**: al pagar el saldo completo, la cuenta vuelve a `ACTIVO` en
   ese mismo momento. No hace falta intervención del operador.
+  *Implementación:* un pago nunca levanta un bloqueo por incidencias.
 - **Disputa abierta**: mientras haya una disputa abierta sobre esa penalización,
   el reloj se pausa y no se bloquea la cuenta.
 - **Bloqueo por incidencias**: es un mecanismo distinto, según el umbral de
@@ -108,6 +137,44 @@ Para que el saldo no quede indefinido:
 Un recargo por incumplimiento puede considerarse penalidad. En un producto real
 debe revisarse con un abogado y con la autoridad de protección al consumidor
 correspondiente antes de cobrarlo. En el MVP es simulado y no hay cobro real.
+
+### 7. Estado de la implementación
+
+Reglas implementadas y dónde viven (Order Service, salvo que se indique):
+
+| Regla | Dónde |
+|---|---|
+| Recargo del 15 % al ocurrir, una vez por pedido | `domain.Surcharge.Price`, tabla `surcharges` (`order_id` único), `RecordStopOutcome` |
+| `WRONG_ADDRESS` en verificación y decisión del operador | `PENDING_VERIFICATION`, `GET /surcharges/pending-verification`, `POST /surcharges/{id}/verification` |
+| Reincidencia y recargo extra | `domain.ReincidenceReached`, `customers.recidivist_at`, `POST /customers/{id}/recidivism-charge` |
+| Cobro simulado y registro de intentos | `PaymentGateway`, adaptador `payments.Simulated`, tabla `payment_attempts` |
+| Bloqueo por saldo vencido | `BlockOverdueBalances` (barrido), `domain.BalanceOverdue` |
+| Pago del saldo y desbloqueo | `POST /customers/me/balance/payment` (Gateway), `BalanceRepository.SettleBalance` |
+| El cliente ve su saldo | `GET /customers/me/balance`; `pendingSurcharge` en la respuesta de crear pedido |
+
+Los contratos están en `contracts/openapi/openapi.yaml` (etiqueta `surcharges`) y el detalle de
+tareas, decisiones y pruebas en `odd/tasks/penalty-engine.md`.
+
+**Apartados de la letra de este ADR (decididos):** el monto se fija al ocurrir y no con el siguiente
+pedido (D6'); el saldo se paga desde la app y no se cobra automáticamente con el siguiente pedido;
+crear un pedido con la cuenta bloqueada por saldo se rechaza.
+
+**Pendiente o fuera de alcance:**
+
+- Cobro adicional por reasignación (sección 1, dirección incorrecta): falta definir la fórmula de
+  distancia, el precio de la gasolina de referencia y dónde guarda el administrador su ajuste.
+- Pausa del reloj por disputa abierta y apelación (ADR 0007, sección 6): las disputas aún no existen.
+- Aviso en la app al confirmarse la penalización (la notificación de recargo no existe).
+- "Pago sin cuenta", que el ADR 0005 atribuye a este documento y que aquí no está definido.
+- Tope al monto del recargo extra (hoy solo lo limita la columna `NUMERIC(12,2)`) y forma de
+  quitar la marca de reincidente (hoy es permanente, por lo que se aplica un solo recargo extra
+  por cliente).
+- Un operador puede aplicar el recargo extra pero no listar clientes (`GET /customers` es solo ADMIN).
+- Pantallas del frontend (línea de recargo, saldo, pago, etiqueta "simulado").
+- Reconciliación: si falla el registro de una incidencia después de cerrar la parada, solo queda
+  un log de error; no hay un barrido que la recupere.
+- Las incidencias de pedidos sin productos (anteriores al catálogo) se registran sin monto y no
+  suman al saldo ni pueden bloquear la cuenta.
 
 ## Consecuencias
 
