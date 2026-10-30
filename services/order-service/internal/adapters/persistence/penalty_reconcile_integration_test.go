@@ -5,6 +5,7 @@ package persistence_test
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,6 +21,9 @@ import (
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/domain"
 )
 
+// nextStop gives every order its own sequence: stops are unique within a route, and one test places several orders on it.
+var nextStop atomic.Int32
+
 // placeInTransit deja un pedido con productos en una ruta y en transito, listo para cerrar su parada.
 func placeInTransit(t *testing.T, store *persistence.Store, pool *pgxpool.Pool, customer string, p domain.Product, quantity int64) domain.Order {
 	t.Helper()
@@ -27,7 +31,7 @@ func placeInTransit(t *testing.T, store *persistence.Store, pool *pgxpool.Pool, 
 	placed, err := store.PlaceOrder(ctx, newOrder(t, customer), []domain.OrderLine{lineFor(t, p, quantity)}, nil, nil)
 	require.NoError(t, err)
 	_, err = persistence.NewOrderRepository(pool).AssignToRoute(ctx, []string{placed.ID}, func(o domain.Order) (domain.Order, error) {
-		return o.AssignToRoute(testRoute, 1)
+		return o.AssignToRoute(testRoute, int(nextStop.Add(1)))
 	})
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, `UPDATE orders SET status = 'IN_TRANSIT' WHERE id = $1`, uuid.MustParse(placed.ID))
