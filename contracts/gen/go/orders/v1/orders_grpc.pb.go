@@ -19,21 +19,23 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	OrderService_CreateOrder_FullMethodName            = "/orders.v1.OrderService/CreateOrder"
-	OrderService_GetOrder_FullMethodName               = "/orders.v1.OrderService/GetOrder"
-	OrderService_ListOrders_FullMethodName             = "/orders.v1.OrderService/ListOrders"
-	OrderService_GetPendingOrders_FullMethodName       = "/orders.v1.OrderService/GetPendingOrders"
-	OrderService_ListOrderExceptions_FullMethodName    = "/orders.v1.OrderService/ListOrderExceptions"
-	OrderService_ReviewOrder_FullMethodName            = "/orders.v1.OrderService/ReviewOrder"
-	OrderService_ListMyOrders_FullMethodName           = "/orders.v1.OrderService/ListMyOrders"
-	OrderService_ListMyNotifications_FullMethodName    = "/orders.v1.OrderService/ListMyNotifications"
-	OrderService_CancelOrder_FullMethodName            = "/orders.v1.OrderService/CancelOrder"
-	OrderService_GetMyOrder_FullMethodName             = "/orders.v1.OrderService/GetMyOrder"
-	OrderService_AssignOrdersToRoute_FullMethodName    = "/orders.v1.OrderService/AssignOrdersToRoute"
-	OrderService_AdvanceRouteStop_FullMethodName       = "/orders.v1.OrderService/AdvanceRouteStop"
-	OrderService_RecordRouteStopOutcome_FullMethodName = "/orders.v1.OrderService/RecordRouteStopOutcome"
-	OrderService_StopsBeforeForOrder_FullMethodName    = "/orders.v1.OrderService/StopsBeforeForOrder"
-	OrderService_ListDriverRouteStops_FullMethodName   = "/orders.v1.OrderService/ListDriverRouteStops"
+	OrderService_CreateOrder_FullMethodName                       = "/orders.v1.OrderService/CreateOrder"
+	OrderService_GetOrder_FullMethodName                          = "/orders.v1.OrderService/GetOrder"
+	OrderService_ListOrders_FullMethodName                        = "/orders.v1.OrderService/ListOrders"
+	OrderService_GetPendingOrders_FullMethodName                  = "/orders.v1.OrderService/GetPendingOrders"
+	OrderService_ListOrderExceptions_FullMethodName               = "/orders.v1.OrderService/ListOrderExceptions"
+	OrderService_ListSurchargesPendingVerification_FullMethodName = "/orders.v1.OrderService/ListSurchargesPendingVerification"
+	OrderService_ResolveSurchargeVerification_FullMethodName      = "/orders.v1.OrderService/ResolveSurchargeVerification"
+	OrderService_ReviewOrder_FullMethodName                       = "/orders.v1.OrderService/ReviewOrder"
+	OrderService_ListMyOrders_FullMethodName                      = "/orders.v1.OrderService/ListMyOrders"
+	OrderService_ListMyNotifications_FullMethodName               = "/orders.v1.OrderService/ListMyNotifications"
+	OrderService_CancelOrder_FullMethodName                       = "/orders.v1.OrderService/CancelOrder"
+	OrderService_GetMyOrder_FullMethodName                        = "/orders.v1.OrderService/GetMyOrder"
+	OrderService_AssignOrdersToRoute_FullMethodName               = "/orders.v1.OrderService/AssignOrdersToRoute"
+	OrderService_AdvanceRouteStop_FullMethodName                  = "/orders.v1.OrderService/AdvanceRouteStop"
+	OrderService_RecordRouteStopOutcome_FullMethodName            = "/orders.v1.OrderService/RecordRouteStopOutcome"
+	OrderService_StopsBeforeForOrder_FullMethodName               = "/orders.v1.OrderService/StopsBeforeForOrder"
+	OrderService_ListDriverRouteStops_FullMethodName              = "/orders.v1.OrderService/ListDriverRouteStops"
 )
 
 // OrderServiceClient is the client API for OrderService service.
@@ -55,6 +57,12 @@ type OrderServiceClient interface {
 	GetPendingOrders(ctx context.Context, in *GetPendingOrdersRequest, opts ...grpc.CallOption) (*GetPendingOrdersResponse, error)
 	// Operations already published in OpenAPI; implemented in a later sprint.
 	ListOrderExceptions(ctx context.Context, in *ListOrderExceptionsRequest, opts ...grpc.CallOption) (*ListOrderExceptionsResponse, error)
+	// ListSurchargesPendingVerification is the operator's queue of surcharges waiting for verification
+	// (WRONG_ADDRESS, ADR 0006 amendment), oldest first. Only ADMIN and OPERATOR.
+	ListSurchargesPendingVerification(ctx context.Context, in *ListSurchargesPendingVerificationRequest, opts ...grpc.CallOption) (*ListSurchargesPendingVerificationResponse, error)
+	// ResolveSurchargeVerification confirms or waives one surcharge with an audited reason. Only ADMIN and
+	// OPERATOR. An unknown id returns NOT_FOUND; one that is not waiting returns ABORTED (HTTP 409).
+	ResolveSurchargeVerification(ctx context.Context, in *ResolveSurchargeVerificationRequest, opts ...grpc.CallOption) (*ResolveSurchargeVerificationResponse, error)
 	// ReviewOrder only accepts PENDING_REVIEW; another state returns
 	// ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
 	ReviewOrder(ctx context.Context, in *ReviewOrderRequest, opts ...grpc.CallOption) (*ReviewOrderResponse, error)
@@ -149,6 +157,26 @@ func (c *orderServiceClient) ListOrderExceptions(ctx context.Context, in *ListOr
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListOrderExceptionsResponse)
 	err := c.cc.Invoke(ctx, OrderService_ListOrderExceptions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *orderServiceClient) ListSurchargesPendingVerification(ctx context.Context, in *ListSurchargesPendingVerificationRequest, opts ...grpc.CallOption) (*ListSurchargesPendingVerificationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSurchargesPendingVerificationResponse)
+	err := c.cc.Invoke(ctx, OrderService_ListSurchargesPendingVerification_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *orderServiceClient) ResolveSurchargeVerification(ctx context.Context, in *ResolveSurchargeVerificationRequest, opts ...grpc.CallOption) (*ResolveSurchargeVerificationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveSurchargeVerificationResponse)
+	err := c.cc.Invoke(ctx, OrderService_ResolveSurchargeVerification_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -274,6 +302,12 @@ type OrderServiceServer interface {
 	GetPendingOrders(context.Context, *GetPendingOrdersRequest) (*GetPendingOrdersResponse, error)
 	// Operations already published in OpenAPI; implemented in a later sprint.
 	ListOrderExceptions(context.Context, *ListOrderExceptionsRequest) (*ListOrderExceptionsResponse, error)
+	// ListSurchargesPendingVerification is the operator's queue of surcharges waiting for verification
+	// (WRONG_ADDRESS, ADR 0006 amendment), oldest first. Only ADMIN and OPERATOR.
+	ListSurchargesPendingVerification(context.Context, *ListSurchargesPendingVerificationRequest) (*ListSurchargesPendingVerificationResponse, error)
+	// ResolveSurchargeVerification confirms or waives one surcharge with an audited reason. Only ADMIN and
+	// OPERATOR. An unknown id returns NOT_FOUND; one that is not waiting returns ABORTED (HTTP 409).
+	ResolveSurchargeVerification(context.Context, *ResolveSurchargeVerificationRequest) (*ResolveSurchargeVerificationResponse, error)
 	// ReviewOrder only accepts PENDING_REVIEW; another state returns
 	// ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
 	ReviewOrder(context.Context, *ReviewOrderRequest) (*ReviewOrderResponse, error)
@@ -338,6 +372,12 @@ func (UnimplementedOrderServiceServer) GetPendingOrders(context.Context, *GetPen
 }
 func (UnimplementedOrderServiceServer) ListOrderExceptions(context.Context, *ListOrderExceptionsRequest) (*ListOrderExceptionsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListOrderExceptions not implemented")
+}
+func (UnimplementedOrderServiceServer) ListSurchargesPendingVerification(context.Context, *ListSurchargesPendingVerificationRequest) (*ListSurchargesPendingVerificationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListSurchargesPendingVerification not implemented")
+}
+func (UnimplementedOrderServiceServer) ResolveSurchargeVerification(context.Context, *ResolveSurchargeVerificationRequest) (*ResolveSurchargeVerificationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResolveSurchargeVerification not implemented")
 }
 func (UnimplementedOrderServiceServer) ReviewOrder(context.Context, *ReviewOrderRequest) (*ReviewOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReviewOrder not implemented")
@@ -476,6 +516,42 @@ func _OrderService_ListOrderExceptions_Handler(srv interface{}, ctx context.Cont
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(OrderServiceServer).ListOrderExceptions(ctx, req.(*ListOrderExceptionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OrderService_ListSurchargesPendingVerification_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSurchargesPendingVerificationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).ListSurchargesPendingVerification(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_ListSurchargesPendingVerification_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).ListSurchargesPendingVerification(ctx, req.(*ListSurchargesPendingVerificationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OrderService_ResolveSurchargeVerification_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveSurchargeVerificationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).ResolveSurchargeVerification(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_ResolveSurchargeVerification_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).ResolveSurchargeVerification(ctx, req.(*ResolveSurchargeVerificationRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -686,6 +762,14 @@ var OrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListOrderExceptions",
 			Handler:    _OrderService_ListOrderExceptions_Handler,
+		},
+		{
+			MethodName: "ListSurchargesPendingVerification",
+			Handler:    _OrderService_ListSurchargesPendingVerification_Handler,
+		},
+		{
+			MethodName: "ResolveSurchargeVerification",
+			Handler:    _OrderService_ResolveSurchargeVerification_Handler,
 		},
 		{
 			MethodName: "ReviewOrder",

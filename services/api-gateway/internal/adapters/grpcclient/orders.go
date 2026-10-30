@@ -71,6 +71,20 @@ func (o *Orders) ReviewOrder(ctx context.Context, m CallMeta, req *ordersv1.Revi
 	return o.client.ReviewOrder(ctx, req)
 }
 
+// ListSurchargesPendingVerification devuelve la cola de recargos por verificar (ADMIN y OPERATOR).
+func (o *Orders) ListSurchargesPendingVerification(ctx context.Context, m CallMeta, req *ordersv1.ListSurchargesPendingVerificationRequest) (*ordersv1.ListSurchargesPendingVerificationResponse, error) {
+	ctx, cancel := o.outgoing(ctx, m)
+	defer cancel()
+	return o.client.ListSurchargesPendingVerification(ctx, req)
+}
+
+// ResolveSurchargeVerification confirma o dispensa un recargo en verificacion.
+func (o *Orders) ResolveSurchargeVerification(ctx context.Context, m CallMeta, req *ordersv1.ResolveSurchargeVerificationRequest) (*ordersv1.ResolveSurchargeVerificationResponse, error) {
+	ctx, cancel := o.outgoing(ctx, m)
+	defer cancel()
+	return o.client.ResolveSurchargeVerification(ctx, req)
+}
+
 // CancelOrder cancela un pedido del cliente autenticado.
 func (o *Orders) CancelOrder(ctx context.Context, m CallMeta, req *ordersv1.CancelOrderRequest) (*ordersv1.CancelOrderResponse, error) {
 	ctx, cancel := o.outgoing(ctx, m)

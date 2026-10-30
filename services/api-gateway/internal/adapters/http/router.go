@@ -33,6 +33,8 @@ type Options struct {
 	CustomerQueries CustomerQueryClient
 	// Orders, si no es nil, habilita POST /orders y GET /orders/mine para clientes.
 	Orders OrderClient
+	// Surcharges, si no es nil, habilita la verificacion de recargos por el personal (ADR 0006 enmienda).
+	Surcharges SurchargeClient
 	// Catalog, si no es nil, habilita /products (ADR 0009). Los roles los aplica el middleware y el servicio.
 	Catalog CatalogClient
 	// Drivers, si no es nil, habilita las rutas de repartidor (rol DRIVER). Hoy responden 501.
@@ -162,6 +164,14 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 		authed.POST("/orders/:id/review", o.review)
 		authed.POST("/orders/:id/cancel", o.cancel)
 		authed.GET("/notifications/mine", o.notifications)
+	}
+
+	// Verificacion de recargos por direccion incorrecta: solo ADMIN y OPERATOR (ADR 0006 enmienda).
+	if opts.Surcharges != nil {
+		sh := &surchargeHandlers{surcharges: opts.Surcharges}
+		surchargeStaff := authed.Group("", StaffOnly())
+		surchargeStaff.GET("/surcharges/pending-verification", sh.listPendingVerification)
+		surchargeStaff.POST("/surcharges/:id/verification", sh.resolve)
 	}
 
 	// Catálogo de productos (ADR 0009). Cualquier usuario autenticado lee lo activo; el personal

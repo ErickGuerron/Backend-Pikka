@@ -128,6 +128,7 @@ func run(log *slog.Logger) error {
 		StopsBefore:      stopsBefore,
 		DriverRouteStops: driverRouteStops,
 		RecordOutcome:    recordStopOutcome,
+		Surcharges:       orderapp.NewResolveSurchargeVerification(persistence.NewSurchargeRepository(pool)),
 	}).WithRouteCapacity(zoneClassifier))
 	// Catálogo de productos (ADR 0009): el operador administra, el cliente lee lo activo.
 	catalogv1.RegisterCatalogServiceServer(grpcServer, grpcadapter.NewCatalogServer(

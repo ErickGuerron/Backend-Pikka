@@ -19,6 +19,12 @@ service OrderService {
   rpc GetPendingOrders(GetPendingOrdersRequest) returns (GetPendingOrdersResponse);
   // Operations already published in OpenAPI; implemented in a later sprint.
   rpc ListOrderExceptions(ListOrderExceptionsRequest) returns (ListOrderExceptionsResponse);
+  // ListSurchargesPendingVerification is the operator's queue of surcharges waiting for verification
+  // (WRONG_ADDRESS, ADR 0006 amendment), oldest first. Only ADMIN and OPERATOR.
+  rpc ListSurchargesPendingVerification(ListSurchargesPendingVerificationRequest) returns (ListSurchargesPendingVerificationResponse);
+  // ResolveSurchargeVerification confirms or waives one surcharge with an audited reason. Only ADMIN and
+  // OPERATOR. An unknown id returns NOT_FOUND; one that is not waiting returns ABORTED (HTTP 409).
+  rpc ResolveSurchargeVerification(ResolveSurchargeVerificationRequest) returns (ResolveSurchargeVerificationResponse);
   // ReviewOrder only accepts PENDING_REVIEW; another state returns
   // ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
   rpc ReviewOrder(ReviewOrderRequest) returns (ReviewOrderResponse);
@@ -355,4 +361,43 @@ message DriverRouteStop {
   OrderStatus status = 8;
   // Planned delivery day, YYYY-MM-DD. The window above applies to this day.
   string delivery_date = 9;
+}
+
+// Surcharge is one penalty incident (ADR 0006).
+message Surcharge {
+  string id = 1;
+  string customer_id = 2;
+  // The order that was not delivered. One surcharge per order.
+  string order_id = 3;
+  // Closed NOT_DELIVERED reason, for example WRONG_ADDRESS.
+  string reason = 4;
+  // PENDING, PENDING_VERIFICATION, APPLIED, PAID or WAIVED.
+  string status = 5;
+  // Decimal string with two digits. Empty until the next order exists to price it.
+  string amount = 6;
+  // RFC 3339, UTC.
+  string created_at = 7;
+  // Operator audit. Empty until the verification is resolved.
+  string resolved_by = 8;
+  string resolution_reason = 9;
+  string resolved_at = 10;
+}
+
+message ListSurchargesPendingVerificationRequest {}
+
+message ListSurchargesPendingVerificationResponse {
+  repeated Surcharge surcharges = 1;
+}
+
+message ResolveSurchargeVerificationRequest {
+  // Required UUID of the surcharge.
+  string id = 1;
+  // Required: CONFIRM (the customer is responsible) or WAIVE (no surcharge).
+  string decision = 2;
+  // Required, 5 to 300 characters. Stored with the operator and the time.
+  string reason = 3;
+}
+
+message ResolveSurchargeVerificationResponse {
+  Surcharge surcharge = 1;
 }

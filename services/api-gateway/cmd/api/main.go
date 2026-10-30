@@ -107,6 +107,7 @@ func run(log *slog.Logger) error {
 		Customers:            customers,
 		CustomerQueries:      customers,
 		Orders:               orders,
+		Surcharges:           orders,
 		Catalog:              catalog,
 		Drivers:              drivers,
 		Tracking:             tracking,

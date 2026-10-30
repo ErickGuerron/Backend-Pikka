@@ -24,6 +24,8 @@ tags:
     description: Consulta de clientes (solo ADMIN)
   - name: orders
     description: Registro y consulta de pedidos
+  - name: surcharges
+    description: Recargos por no entrega del cliente y su verificacion por el operador
   - name: zones
     description: Zonas de reparto y clasificación de coordenadas
   - name: coverage
@@ -489,6 +491,52 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Order" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/surcharges/pending-verification:
+    get:
+      tags: [surcharges]
+      operationId: listSurchargesPendingVerification
+      summary: Recargos por direccion incorrecta que esperan verificacion (ADMIN u OPERATOR)
+      description: Cola del operador, del mas antiguo al mas reciente (ADR 0006, enmienda). Un recargo WRONG_ADDRESS no se cobra hasta que el operador lo confirme.
+      responses:
+        "200":
+          description: Recargos en estado PENDING_VERIFICATION
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Surcharge" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/surcharges/{id}/verification:
+    post:
+      tags: [surcharges]
+      operationId: resolveSurchargeVerification
+      summary: Confirma o dispensa un recargo en verificacion (ADMIN u OPERATOR)
+      description: |
+        CONFIRM: el cliente es responsable y el recargo sigue el flujo normal (15 % del siguiente pedido).
+        WAIVE: el cliente no es responsable y no se cobra. La decision queda registrada con el operador, el motivo y la hora.
+        Solo aplica a recargos en PENDING_VERIFICATION; uno ya resuelto responde 409.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SurchargeVerificationRequest" }
+      responses:
+        "200":
+          description: Recargo con la decision registrada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Surcharge" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -1288,6 +1336,26 @@ components:
     OrderReviewAction:
       type: string
       enum: [CONFIRM, CORRECT, REJECT]
+    Surcharge:
+      type: object
+      required: [id, customerId, orderId, reason, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        customerId: { type: string, format: uuid }
+        orderId: { type: string, format: uuid, description: Pedido que no se entrego. Hay un recargo por pedido. }
+        reason: { type: string, description: "Motivo cerrado de la no entrega, por ejemplo WRONG_ADDRESS" }
+        status: { type: string, enum: [PENDING, PENDING_VERIFICATION, APPLIED, PAID, WAIVED] }
+        amount: { type: string, description: Decimal con dos digitos. Ausente hasta que exista el siguiente pedido sobre el que se calcula el 15 %. }
+        createdAt: { type: string, format: date-time }
+        resolvedBy: { type: string, format: uuid, description: Operador que decidio la verificacion }
+        resolutionReason: { type: string }
+        resolvedAt: { type: string, format: date-time }
+    SurchargeVerificationRequest:
+      type: object
+      required: [decision, reason]
+      properties:
+        decision: { type: string, enum: [CONFIRM, WAIVE] }
+        reason: { type: string, minLength: 5, maxLength: 300, description: "Motivo de la decision, se guarda como auditoria" }
     Order:
       type: object
       required: [id, address, latitude, longitude, deliveryDate, windowStart, windowEnd, status, reviewReasons, createdAt]
