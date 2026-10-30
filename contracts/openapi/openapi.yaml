@@ -367,6 +367,9 @@ paths:
         La fecha de entrega debe ser hoy o posterior en la zona horaria de operación.
         La ventana no cruza medianoche: windowEnd debe ser posterior a windowStart.
         Si Zone Service no responde, no se registra el pedido y se devuelve 503.
+        Una cuenta bloqueada por saldo pendiente (BLOQUEADO_POR_SALDO, ADR 0006 sección 5) no puede crear pedidos:
+        se rechaza con 403 antes de geocodificar, reservar stock o guardar nada. Una cuenta bloqueada por
+        incidencias sí registra el pedido, que entra a la cola de excepciones con CUSTOMER_BLOCKED.
         ADMIN, OPERATOR y DRIVER reciben 403 antes de que se valide el cuerpo: el personal revisa
         los pedidos de los clientes pero no los registra.
       requestBody:

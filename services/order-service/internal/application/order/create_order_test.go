@@ -163,7 +163,15 @@ func activeCustomer() domain.Customer {
 	return domain.Customer{ID: customerID, UserID: customerUser, Status: domain.StatusActive, PendingSurcharge: decimal.Zero}
 }
 
+// blockedCustomer is blocked for incidents: its orders still reach the operator's review queue.
 func blockedCustomer() domain.Customer {
+	c := activeCustomer()
+	c.Status = domain.StatusBlockedIncidents
+	return c
+}
+
+// balanceBlockedCustomer is blocked for an unpaid balance: it cannot create orders (ADR 0006, section 5).
+func balanceBlockedCustomer() domain.Customer {
 	c := activeCustomer()
 	c.Status = domain.StatusBlockedSurcharge
 	return c
@@ -414,4 +422,29 @@ func (f *fakeOrders) CancelForCustomer(_ context.Context, _ string, _ uuid.UUID,
 
 func (f *fakeOrders) GetForCustomer(_ context.Context, _ string, _ uuid.UUID) (domain.Order, error) {
 	return domain.Order{}, domain.ErrOrderNotFound
+}
+
+// ADR 0006 sección 5: la cuenta bloqueada por saldo no puede crear pedidos. Se rechaza antes de tocar
+// nada: ni geocodificacion, ni zona, ni pedido guardado.
+func TestCreateOrderBalanceBlockedCustomerIsRejectedWithoutSideEffects(t *testing.T) {
+	for name, zones := range map[string]*fakeZones{
+		"inside the zone":  {zoneID: zoneUUID},
+		"outside the zone": {err: domain.ErrZoneNotCovered},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newCreate(balanceBlockedCustomer(), zones, &fakeGeocoder{found: true})
+
+			_, err := f.uc.Run(context.Background(), knownPoint())
+
+			if !errors.Is(err, domain.ErrCustomerBlockedBySurcharge) {
+				t.Fatalf("err = %v, want ErrCustomerBlockedBySurcharge", err)
+			}
+			if len(f.orders.saved) != 0 {
+				t.Fatalf("saved %d orders, want none", len(f.orders.saved))
+			}
+			if f.geocoder.calls != 0 || zones.calls != 0 {
+				t.Fatalf("geocoder calls = %d, zone calls = %d, want none", f.geocoder.calls, zones.calls)
+			}
+		})
+	}
 }
