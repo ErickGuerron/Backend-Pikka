@@ -65,6 +65,43 @@ func (r *BalanceRepository) ListActiveObligations(ctx context.Context) ([]domain
 	return out, nil
 }
 
+// ListOwedLines returns what the customer owes, oldest first. A recidivism charge shows the fixed code
+// RECIDIVISM and never the operator's justification, which is an internal audit note.
+func (r *BalanceRepository) ListOwedLines(ctx context.Context, customerID string) ([]domain.BalanceLine, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT 'SURCHARGE', s.id::text, s.order_id::text, s.reason, s.amount, COALESCE(s.resolved_at, s.created_at) AS started_at
+		  FROM surcharges s
+		 WHERE s.customer_id = $1 AND s.status = 'PENDING' AND s.amount IS NOT NULL
+		UNION ALL
+		SELECT 'RECIDIVISM', rc.id::text, '', 'RECIDIVISM', rc.amount, rc.created_at
+		  FROM recidivism_charges rc
+		 WHERE rc.customer_id = $1 AND rc.paid_at IS NULL
+		 ORDER BY started_at ASC, 2 ASC`, customerID)
+	if err != nil {
+		return nil, fmt.Errorf("list owed lines: %w", err)
+	}
+	defer rows.Close()
+
+	out := []domain.BalanceLine{}
+	for rows.Next() {
+		var (
+			l    domain.BalanceLine
+			kind string
+			at   time.Time
+		)
+		if err := rows.Scan(&kind, &l.ID, &l.OrderID, &l.Reason, &l.Amount, &at); err != nil {
+			return nil, fmt.Errorf("list owed lines: %w", err)
+		}
+		l.Kind = domain.BalanceLineKind(kind)
+		l.StartedAt = at.UTC()
+		out = append(out, l)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list owed lines: %w", err)
+	}
+	return out, nil
+}
+
 // SettleBalance applies a full payment atomically. The customer row is locked first, so a payment and a
 // new surcharge cannot interleave: the balance is compared with what was charged under the lock.
 func (r *BalanceRepository) SettleBalance(ctx context.Context, customerID string, amount decimal.Decimal, at time.Time) (bool, error) {

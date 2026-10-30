@@ -99,6 +99,13 @@ func (o *Orders) PayMyBalance(ctx context.Context, m CallMeta, req *ordersv1.Pay
 	return o.client.PayMyBalance(ctx, req)
 }
 
+// GetMyBalance muestra al cliente autenticado lo que debe, linea por linea.
+func (o *Orders) GetMyBalance(ctx context.Context, m CallMeta, req *ordersv1.GetMyBalanceRequest) (*ordersv1.GetMyBalanceResponse, error) {
+	ctx, cancel := o.outgoing(ctx, m)
+	defer cancel()
+	return o.client.GetMyBalance(ctx, req)
+}
+
 // CancelOrder cancela un pedido del cliente autenticado.
 func (o *Orders) CancelOrder(ctx context.Context, m CallMeta, req *ordersv1.CancelOrderRequest) (*ordersv1.CancelOrderResponse, error) {
 	ctx, cancel := o.outgoing(ctx, m)

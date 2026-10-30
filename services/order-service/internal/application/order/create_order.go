@@ -151,7 +151,7 @@ func (uc *CreateOrder) Place(ctx context.Context, cmd Command) (Placed, error) {
 	if err != nil {
 		return Placed{}, err
 	}
-	return Placed{Order: saved, Lines: lines, Total: total}, nil
+	return Placed{Order: saved, Lines: lines, Total: total, PendingSurcharge: customer.PendingSurcharge}, nil
 }
 
 // Run registra el pedido y devuelve solo el pedido guardado. Place devuelve además sus productos y total.
@@ -165,6 +165,9 @@ type Placed struct {
 	Order domain.Order
 	Lines []domain.OrderLine
 	Total decimal.Decimal
+	// PendingSurcharge is what the customer owes when the order is confirmed (ADR 0006, section 4). It is a
+	// separate line: it is never added to Total.
+	PendingSurcharge decimal.Decimal
 }
 
 // resolveLines toma cada producto del catálogo y valida la cantidad y que esté activo. Un pedido
