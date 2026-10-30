@@ -36,6 +36,13 @@ de tarjeta.
   repartidor, calculado por distancia con el precio de la gasolina como
   referencia y ajustable por un administrador. Ese cobro se incluye también en el
   caso de dirección errónea.
+  **Resolución del operador (decisión D4):** el operador decide una de dos
+  cosas, siempre con un motivo de 5 a 300 caracteres que queda auditado junto
+  con su identidad y la hora. `CONFIRM`: el cliente es responsable, el recargo
+  sale de verificación y sigue el flujo normal (15 % del siguiente pedido).
+  `WAIVE`: el cliente no es responsable y el recargo se dispensa, sin cobro. Solo
+  se resuelve una vez. Mientras espera no se cobra ni se notifica como
+  definitivo. El cobro adicional por reasignación se define aparte (tarea T5).
 - **Reincidencia**: la primera no entrega causada por el cliente inicia un plazo
   de 2 semanas. Una tercera dentro de ese plazo marca al cliente como reincidente
   y el operador puede aplicar el cobro con justificación, sujeto a auditoría.

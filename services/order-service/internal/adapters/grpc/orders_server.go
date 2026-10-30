@@ -43,6 +43,8 @@ type OrderUseCases struct {
 	DriverRouteStops *orderapp.DriverRouteStops
 	// RecordOutcome cierra una parada de la ruta del conductor: DELIVERED o NOT_DELIVERED (RecordRouteStopOutcome).
 	RecordOutcome *orderapp.RecordStopOutcome
+	// Surcharges lets an operator list and resolve surcharges waiting for verification (ADR 0006).
+	Surcharges *orderapp.ResolveSurchargeVerification
 }
 
 // OrderServer implementa ordersv1.OrderServiceServer. Solo traduce: la regla de
@@ -325,6 +327,12 @@ func mapOrderError(err error) error {
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, domain.ErrOrderNotFound):
 		return status.Error(codes.NotFound, "pedido no encontrado")
+	case errors.Is(err, domain.ErrSurchargeNotFound):
+		return status.Error(codes.NotFound, "recargo no encontrado")
+	case errors.Is(err, domain.ErrSurchargeNotPendingVerification):
+		return status.Error(codes.Aborted, err.Error())
+	case errors.Is(err, domain.ErrUnknownSurchargeDecision):
+		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, domain.ErrOrderNotInReview), errors.Is(err, domain.ErrOrderNotCancellable), errors.Is(err, domain.ErrOrderNotPending):
 		// El contrato responde ABORTED (HTTP 409) cuando el estado del pedido no admite la acción.
 		return status.Error(codes.Aborted, err.Error())
