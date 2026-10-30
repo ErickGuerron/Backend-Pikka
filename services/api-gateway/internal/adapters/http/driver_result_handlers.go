@@ -96,6 +96,7 @@ func (h *driverStopHandlers) result(c echo.Context) error {
 		RouteId: routeID,
 		OrderId: stopID,
 		Outcome: outcome,
+		Reason:  req.Reason,
 	})
 	if err != nil {
 		return err

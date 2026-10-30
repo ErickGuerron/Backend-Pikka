@@ -165,6 +165,7 @@ func (s *OrderServer) RecordRouteStopOutcome(ctx context.Context, req *ordersv1.
 		RouteID: req.GetRouteId(),
 		OrderID: req.GetOrderId(),
 		Outcome: routeStopOutcomeFromProto(req.GetOutcome()),
+		Reason:  req.GetReason(),
 	})
 	if err != nil {
 		return nil, mapOrderError(err)
