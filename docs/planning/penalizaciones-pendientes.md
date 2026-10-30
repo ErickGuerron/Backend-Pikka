@@ -22,6 +22,8 @@ decisión pequeña; al final lo que necesita una especificación.
 | F7 | «Pago sin cuenta» (ADR 0005) | Sí, de producto (D2) | por definir | por definir |
 | F8 | Disputas, pausa del reloj y apelación | Sí, requiere especificación | todo | item 1, 3 y 4 |
 
+**Hechas:** F1.
+
 Cada función se entrega como su propio PR, con pruebas primero y la documentación al día. Las decisiones propuestas
 («Propuesta») son un punto de partida, no están aprobadas hasta que producto las confirme.
 
@@ -29,9 +31,9 @@ Cada función se entrega como su propio PR, con pruebas primero y la documentaci
 
 ## F1. Reconciliación de incidencias perdidas
 
-**Estado:** no implementada. **Decisión requerida:** ninguna.
+**Estado:** implementada (rama `feat/penalty-f1-reconcile`). **Decisión requerida:** ninguna.
 
-**Qué es.** Hoy el recargo se registra *después* de cerrar la parada y, si falla, solo queda un log de error
+**Qué es.** Antes de F1 el recargo se registra *después* de cerrar la parada y, si falla, solo queda un log de error
 (`recordSurchargeNonFatal`). El repartidor no puede reintentar una parada ya cerrada, así que esa penalidad se pierde
 en silencio. Es dinero que no se cobra y un cliente que no suma reincidencia.
 
@@ -60,6 +62,18 @@ el motivo**: ese dato vive solo en Driver Service. Sin el motivo no se puede sab
 
 **Pruebas.** Unitarias del caso de uso (con repositorio simulado) e integración contra PostgreSQL: cierre con fallo
 simulado, reconciliación, idempotencia y migración subir/bajar.
+
+**Qué se hizo.** Migración 000020 (`order_penalty_reasons`); `Order.PenaltyReason` (campo que solo viaja en la escritura
+del cierre); `AdvanceRouteStop` guarda el motivo en la misma transacción; `IncidentRecorder` (el único lugar que fija
+el 15 %, registra la incidencia y evalúa la reincidencia, usado por el cierre y por el barrido); `ReconcileIncidents`
+(lotes de 200, del más antiguo al más reciente) y su llamada al inicio de cada pase del barrido, antes de calcular los vencidos.
+
+**Límites conocidos.**
+- Los pedidos cerrados **antes** de esta función no tienen motivo guardado y no se reconcilian.
+- Un lote se toma del más antiguo: si hubiera 200 incidencias que fallan siempre, las posteriores esperarían. No se
+  espera con el volumen actual; el log de error de cada una permite detectarlo.
+- Una incidencia que no se pudo registrar sigue sin contar para la reincidencia ni para el saldo hasta el siguiente
+  pase (como máximo `BALANCE_SWEEP_MINUTES`, 15 por defecto).
 
 ---
 

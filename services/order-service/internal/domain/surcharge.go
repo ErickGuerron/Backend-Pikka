@@ -87,6 +87,15 @@ func (s Surcharge) Resolve(decision SurchargeDecision, operatorID, reason string
 	return s, nil
 }
 
+// UnrecordedIncident is a penalised not-delivery that has no surcharge row yet: the incident was lost when the
+// stop closed. RecordedAt is when the stop closed, so the recovered incident keeps its original date.
+type UnrecordedIncident struct {
+	OrderID    string
+	CustomerID string
+	Reason     string
+	RecordedAt time.Time
+}
+
 // SurchargeFor returns exactly 15 % of the base price, rounded to cents.
 func SurchargeFor(basePrice decimal.Decimal) (decimal.Decimal, error) {
 	if !basePrice.IsPositive() {

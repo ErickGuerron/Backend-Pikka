@@ -25,3 +25,13 @@ func TestWrongAddressNeedsVerificationNotAutomaticCharge(t *testing.T) {
 	assert.True(t, r.NeedsVerification())
 	assert.False(t, domain.NotDeliveredReason("CLIENT_REFUSED").NeedsVerification())
 }
+
+// F1: solo los motivos que generan una incidencia se guardan para reconciliar.
+func TestCreatesIncidentOnlyForClientReasonsAndWrongAddress(t *testing.T) {
+	for _, reason := range []string{"CLIENT_REFUSED", "CLIENT_ABSENT", "OUT_OF_WINDOW", "WRONG_ADDRESS"} {
+		assert.True(t, domain.NotDeliveredReason(reason).CreatesIncident(), reason)
+	}
+	for _, reason := range []string{"PRODUCT_DAMAGED", "DUPLICATE_ORDER", "", "client_refused", "OTHER"} {
+		assert.False(t, domain.NotDeliveredReason(reason).CreatesIncident(), "%q", reason)
+	}
+}

@@ -14,6 +14,13 @@ func (r NotDeliveredReason) ChargesSurcharge() bool {
 	return false
 }
 
+// CreatesIncident reports whether closing a stop for this reason must leave a surcharge incident: a
+// customer reason (automatic) or a wrong address (waits for the operator). Only these reasons are kept
+// for reconciliation, so the ledger never grows with deliveries that cost nothing.
+func (r NotDeliveredReason) CreatesIncident() bool {
+	return r.ChargesSurcharge() || r.NeedsVerification()
+}
+
 // NeedsVerification reports whether the surcharge waits for an operator instead of being automatic:
 // WRONG_ADDRESS stays PENDING_VERIFICATION (ADR 0006 amendment).
 func (r NotDeliveredReason) NeedsVerification() bool {

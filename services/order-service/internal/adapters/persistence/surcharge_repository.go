@@ -88,6 +88,38 @@ func (r *SurchargeRepository) OrderBasePrice(ctx context.Context, orderID string
 	return base, lines > 0, nil
 }
 
+// ListUnrecordedIncidents returns the penalised not-deliveries without a surcharge, oldest first. The caller
+// decides what to do with each; the reasons stored here already create an incident.
+func (r *SurchargeRepository) ListUnrecordedIncidents(ctx context.Context, limit int) ([]domain.UnrecordedIncident, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT o.id::text, o.customer_id::text, p.reason, p.recorded_at
+		  FROM order_penalty_reasons p
+		  JOIN orders o ON o.id = p.order_id
+		  LEFT JOIN surcharges s ON s.order_id = p.order_id
+		 WHERE s.id IS NULL
+		 ORDER BY p.recorded_at ASC, p.order_id ASC
+		 LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list unrecorded incidents: %w", err)
+	}
+	defer rows.Close()
+
+	out := []domain.UnrecordedIncident{}
+	for rows.Next() {
+		var i domain.UnrecordedIncident
+		var at time.Time
+		if err := rows.Scan(&i.OrderID, &i.CustomerID, &i.Reason, &at); err != nil {
+			return nil, fmt.Errorf("list unrecorded incidents: %w", err)
+		}
+		i.RecordedAt = at.UTC()
+		out = append(out, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list unrecorded incidents: %w", err)
+	}
+	return out, nil
+}
+
 // ResolveSurchargeVerification runs decide on the locked row and stores the audit it returns.
 func (r *SurchargeRepository) ResolveSurchargeVerification(ctx context.Context, id string, decide func(domain.Surcharge) (domain.Surcharge, error)) (domain.Surcharge, error) {
 	tx, err := r.pool.Begin(ctx)
