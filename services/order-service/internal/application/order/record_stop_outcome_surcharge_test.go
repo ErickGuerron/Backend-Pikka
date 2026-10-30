@@ -62,7 +62,6 @@ func TestNoSurchargeWhenNothingChargeable(t *testing.T) {
 		{"delivered with stray reason", domain.StatusDelivered, "CLIENT_REFUSED"},
 		{"business reason", domain.StatusNotDelivered, "PRODUCT_DAMAGED"},
 		{"duplicate order", domain.StatusNotDelivered, "DUPLICATE_ORDER"},
-		{"wrong address waits for verification", domain.StatusNotDelivered, "WRONG_ADDRESS"},
 		{"missing reason from an old caller", domain.StatusNotDelivered, ""},
 	}
 	for _, tc := range cases {
@@ -75,6 +74,22 @@ func TestNoSurchargeWhenNothingChargeable(t *testing.T) {
 				t.Fatalf("incidents = %d, want 0", len(surcharges.recorded))
 			}
 		})
+	}
+}
+
+// ADR 0006 amendment: a wrong address is never charged automatically; it waits for the operator.
+func TestWrongAddressRecordsIncidentPendingVerification(t *testing.T) {
+	surcharges := &surchargeRepoFake{}
+	order, err := runOutcome(t, domain.StatusNotDelivered, "WRONG_ADDRESS", surcharges)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(surcharges.recorded) != 1 {
+		t.Fatalf("incidents = %d, want 1", len(surcharges.recorded))
+	}
+	got := surcharges.recorded[0]
+	if got.Status != domain.SurchargePendingVerification || got.OrderID != order.ID || got.Reason != "WRONG_ADDRESS" {
+		t.Fatalf("incident = %+v", got)
 	}
 }
 

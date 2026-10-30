@@ -44,7 +44,8 @@ func (uc *RecordStopOutcome) WithZoneQueue(queue *ZoneQueue) *RecordStopOutcome 
 	return uc
 }
 
-// WithSurcharges records a penalty incident when a stop closes NOT_DELIVERED for a customer reason.
+// WithSurcharges records a penalty incident when a stop closes NOT_DELIVERED for a customer reason,
+// or a PENDING_VERIFICATION one for a wrong address.
 func (uc *RecordStopOutcome) WithSurcharges(surcharges ports.SurchargeRepository) *RecordStopOutcome {
 	uc.surcharges = surcharges
 	return uc
@@ -53,7 +54,7 @@ func (uc *RecordStopOutcome) WithSurcharges(surcharges ports.SurchargeRepository
 // recordSurchargeNonFatal runs after the stop is already closed. A failure is logged and not
 // returned: the driver cannot retry a closed stop, and the unique order_id keeps a later retry safe.
 func (uc *RecordStopOutcome) recordSurchargeNonFatal(ctx context.Context, closed domain.Order, reason string) {
-	if uc.surcharges == nil || closed.Status != domain.StatusNotDelivered || !domain.NotDeliveredReason(reason).ChargesSurcharge() {
+	if uc.surcharges == nil || closed.Status != domain.StatusNotDelivered || (!domain.NotDeliveredReason(reason).ChargesSurcharge() && !domain.NotDeliveredReason(reason).NeedsVerification()) {
 		return
 	}
 	incident, err := domain.NewSurchargeIncident(closed.CustomerID, closed.ID, reason, time.Now())

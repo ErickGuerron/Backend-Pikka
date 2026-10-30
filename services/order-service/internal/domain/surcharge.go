@@ -49,11 +49,15 @@ func SurchargeFor(basePrice decimal.Decimal) (decimal.Decimal, error) {
 }
 
 // NewSurchargeIncident records that an order was not delivered because of the customer. It starts
-// PENDING and without amount.
+// PENDING and without amount, or PENDING_VERIFICATION when the reason needs an operator (WRONG_ADDRESS).
 func NewSurchargeIncident(customerID, orderID, reason string, at time.Time) (Surcharge, error) {
 	reason = strings.TrimSpace(reason)
 	if customerID == "" || orderID == "" || reason == "" {
 		return Surcharge{}, ErrInvalidSurchargeIncident
 	}
-	return Surcharge{CustomerID: customerID, OrderID: orderID, Reason: reason, Status: SurchargePending, CreatedAt: at.UTC()}, nil
+	status := SurchargePending
+	if NotDeliveredReason(reason).NeedsVerification() {
+		status = SurchargePendingVerification
+	}
+	return Surcharge{CustomerID: customerID, OrderID: orderID, Reason: reason, Status: status, CreatedAt: at.UTC()}, nil
 }

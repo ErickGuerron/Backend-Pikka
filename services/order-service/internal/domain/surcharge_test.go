@@ -52,3 +52,11 @@ func TestNewSurchargeIncidentRequiresCustomerOrderAndReason(t *testing.T) {
 	_, err = domain.NewSurchargeIncident("c1", "o1", "  ", time.Now())
 	assert.ErrorIs(t, err, domain.ErrInvalidSurchargeIncident)
 }
+
+// ADR 0006 enmienda: WRONG_ADDRESS nace en verificación y sin monto; "ningún cobro" hasta que el operador valide.
+func TestNewSurchargeIncidentForWrongAddressStartsPendingVerification(t *testing.T) {
+	s, err := domain.NewSurchargeIncident("c1", "o1", "WRONG_ADDRESS", time.Now())
+	require.NoError(t, err)
+	assert.Equal(t, domain.SurchargePendingVerification, s.Status)
+	assert.False(t, s.Amount.Valid)
+}
