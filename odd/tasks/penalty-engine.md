@@ -36,7 +36,7 @@ S11. Pruebas obligatorias: "el recargo es exactamente 15 % del precio base y se 
 |---|---|---|---|---|---|
 | T0 | D2, D5 + estado del ADR | inline | pendiente | decision de producto | ninguno (docs) |
 | T1 | S1, S2, S3 | inline | hecho (integracion sin ejecutar: Docker apagado) | - | item 1 (migracion nueva, tabla nueva; no toca datos existentes) |
-| T2 | S4 | inline | pendiente | T1 | item 1 (tabla `surcharges`) |
+| T2 | S4 | inline | hecho (integracion sin ejecutar) | T1 | item 1 (tabla `surcharges`) |
 | T3 | S4, S8 | inline | pendiente | T2, D1 | item 3 si cambia el contrato de rechazo |
 | T4 | S5 | inline | pendiente | T2, D4 | item 3 (endpoint nuevo de operador) |
 | T5 | S6 | inline | pendiente | T2, D3 | item 1 si guarda parametros |
@@ -53,3 +53,4 @@ Orden: T1 -> T2 -> (T3, T4) -> T6 -> T5 -> T7 -> T8 -> T9 -> T10 -> T11. T0 se r
 L1: "hagamos un plan en pasos para implementar cada una de estas cosas que faltan y de alli empecemos" (tras revisar el ADR 0006 contra el codigo).
 L2: se crea la rama `feat/penalty-engine` y este documento. Se empieza por T1 porque no depende de ninguna decision abierta.
 L3: T1 implementada. RED observado (indefinidos en domain y payments), GREEN con `go test ./...` en verde. `go vet -tags integration` limpio. Las pruebas de integracion de `payment_attempts` estan escritas pero NO se ejecutaron: el daemon de Docker no estaba activo y no hay `ORDER_TEST_DATABASE_URL`. Pendiente correrlas (postgis/postgis:16-3.4) antes del PR.
+L4: T2 implementada. Decision D6: el ADR dice "15 % del precio base del siguiente pedido", que no existe cuando ocurre la incidencia; por eso `surcharges` guarda la incidencia PENDING sin monto (`order_id` UNICO = una sola vez por incidencia) y `SurchargeFor` calcula el 15 % cuando haya siguiente pedido (T9). Hallazgo: `Customer.AddSurcharge/PaySurcharge/BlockBySurcharge/Unblock` ya existen en `domain/customer.go`; T7 y T8 deben reutilizarlos. Integracion de `surcharges` escrita y NO ejecutada (Docker apagado).
