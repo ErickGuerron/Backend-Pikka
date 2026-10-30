@@ -13,6 +13,13 @@ const BalanceDeadlineDays = 14
 // (ADR 0006, section 5). The customer can still sign in and see the balance.
 var ErrCustomerBlockedBySurcharge = errors.New("account is blocked for an unpaid balance")
 
+var (
+	// ErrNothingToPay: the customer owes nothing, so there is no charge to make.
+	ErrNothingToPay = errors.New("there is no pending balance to pay")
+	// ErrBalanceChanged: the balance moved while the payment was being made; the charge is refunded.
+	ErrBalanceChanged = errors.New("the balance changed while paying; try again")
+)
+
 // BalanceObligation is one unpaid amount that started a customer's two-week clock. StartedAt is when
 // the system confirmed the penalty; the driver never starts the clock.
 type BalanceObligation struct {

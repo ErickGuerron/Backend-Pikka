@@ -2,6 +2,9 @@ package ports
 
 import (
 	"context"
+	"time"
+
+	"github.com/shopspring/decimal"
 
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/domain"
 )
@@ -16,4 +19,10 @@ type BalanceRepository interface {
 	// how many changed. A customer in any other status is left alone, so a block for incidents is never
 	// overwritten.
 	BlockCustomersForBalance(ctx context.Context, customerIDs []string) (int, error)
+	// SettleBalance records the full payment in one transaction: it locks the customer, checks that the
+	// balance is still exactly amount (else ErrBalanceChanged), stamps the priced PENDING or APPLIED
+	// surcharges as PAID and the unpaid recidivism charges as paid, zeroes the balance and, if the account
+	// was BLOQUEADO_POR_SALDO, returns it to ACTIVO. It reports whether it unblocked the account. A block
+	// for incidents is never lifted by a payment.
+	SettleBalance(ctx context.Context, customerID string, amount decimal.Decimal, at time.Time) (unblocked bool, err error)
 }
