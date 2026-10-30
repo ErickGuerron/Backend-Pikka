@@ -173,6 +173,8 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 		surchargeStaff.GET("/surcharges/pending-verification", sh.listPendingVerification)
 		surchargeStaff.POST("/surcharges/:id/verification", sh.resolve)
 		surchargeStaff.POST("/customers/:id/recidivism-charge", sh.applyRecidivismCharge)
+		// The customer pays their own balance (ADR 0006, section 5). The role is applied here and by Order Service.
+		authed.POST("/customers/me/balance/payment", sh.payMyBalance, CustomerOnly())
 	}
 
 	// Catálogo de productos (ADR 0009). Cualquier usuario autenticado lee lo activo; el personal

@@ -30,6 +30,12 @@ service OrderService {
   // that is not a recidivist returns FAILED_PRECONDITION, a second charge for the same reincidence ABORTED
   // (HTTP 409), an unknown customer NOT_FOUND.
   rpc ApplyRecidivismCharge(ApplyRecidivismChargeRequest) returns (ApplyRecidivismChargeResponse);
+  // PayMyBalance pays the whole pending balance of the authenticated CUSTOMER with the simulated card
+  // (ADR 0006, section 5). There is no amount to send: only the full balance can be paid. An approved
+  // payment returns a balance-blocked account to ACTIVO at once. A declined charge is a result, not an
+  // error. Nothing owed returns FAILED_PRECONDITION; a balance that changed while paying ABORTED (the
+  // charge is refunded). Any role other than CUSTOMER returns PERMISSION_DENIED.
+  rpc PayMyBalance(PayMyBalanceRequest) returns (PayMyBalanceResponse);
   // ReviewOrder only accepts PENDING_REVIEW; another state returns
   // ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
   rpc ReviewOrder(ReviewOrderRequest) returns (ReviewOrderResponse);
@@ -431,4 +437,19 @@ message RecidivismCharge {
 
 message ApplyRecidivismChargeResponse {
   RecidivismCharge charge = 1;
+}
+
+message PayMyBalanceRequest {}
+
+message PayMyBalanceResponse {
+  // SIMULATED_APPROVED or SIMULATED_DECLINED. There is no real gateway, so a payment is never real.
+  string status = 1;
+  // Decimal string with two digits: the balance that was charged.
+  string amount = 2;
+  // Internal reference of the attempt (payment_attempts).
+  string reference = 3;
+  // True when this payment returned the account from BLOQUEADO_POR_SALDO to ACTIVO.
+  bool unblocked = 4;
+  // RFC 3339, UTC.
+  string created_at = 5;
 }

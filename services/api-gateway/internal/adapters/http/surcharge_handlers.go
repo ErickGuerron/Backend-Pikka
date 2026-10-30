@@ -16,6 +16,7 @@ type SurchargeClient interface {
 	ListSurchargesPendingVerification(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ListSurchargesPendingVerificationRequest) (*ordersv1.ListSurchargesPendingVerificationResponse, error)
 	ResolveSurchargeVerification(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ResolveSurchargeVerificationRequest) (*ordersv1.ResolveSurchargeVerificationResponse, error)
 	ApplyRecidivismCharge(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ApplyRecidivismChargeRequest) (*ordersv1.ApplyRecidivismChargeResponse, error)
+	PayMyBalance(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.PayMyBalanceRequest) (*ordersv1.PayMyBalanceResponse, error)
 }
 
 type surchargeHandlers struct {
@@ -116,5 +117,29 @@ func (h *surchargeHandlers) applyRecidivismCharge(c echo.Context) error {
 	return c.JSON(http.StatusCreated, recidivismChargeDTO{
 		ID: ch.GetId(), CustomerID: ch.GetCustomerId(), RecidivistAt: ch.GetRecidivistAt(), Amount: ch.GetAmount(),
 		Reason: ch.GetReason(), AppliedBy: ch.GetAppliedBy(), CreatedAt: ch.GetCreatedAt(),
+	})
+}
+
+type balancePaymentDTO struct {
+	Status string `json:"status"`
+	// Simulated is always true: there is no real gateway, so the interface can never show a real charge
+	// (ADR 0006, section 4).
+	Simulated bool   `json:"simulated"`
+	Amount    string `json:"amount"`
+	Reference string `json:"reference"`
+	Unblocked bool   `json:"unblocked"`
+	CreatedAt string `json:"createdAt"`
+}
+
+// payMyBalance pays the whole balance of the authenticated customer. It reads no body: nothing the
+// client sends can change the amount. A declined simulated card answers 200 with its status.
+func (h *surchargeHandlers) payMyBalance(c echo.Context) error {
+	res, err := h.surcharges.PayMyBalance(c.Request().Context(), callMeta(c), &ordersv1.PayMyBalanceRequest{})
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, balancePaymentDTO{
+		Status: res.GetStatus(), Simulated: true, Amount: res.GetAmount(), Reference: res.GetReference(),
+		Unblocked: res.GetUnblocked(), CreatedAt: res.GetCreatedAt(),
 	})
 }
