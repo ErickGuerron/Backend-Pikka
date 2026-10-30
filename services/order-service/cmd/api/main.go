@@ -153,6 +153,10 @@ func run(log *slog.Logger) error {
 		Handler:           httpx.Handler(pool.Ping),
 	}
 
+	// ADR 0006, section 5: block the accounts whose unpaid balance is older than two weeks. The first pass
+	// runs at start so a restart never leaves a late account open; a failure is logged and the next pass retries.
+	go runBalanceSweep(ctx, log, orderapp.NewBlockOverdueBalances(persistence.NewBalanceRepository(pool)), cfg.BalanceSweepInterval)
+
 	errCh := make(chan error, 2)
 	go func() {
 		lis, err := (&net.ListenConfig{}).Listen(ctx, "tcp", fmt.Sprintf(":%d", cfg.GRPCPort))
@@ -189,4 +193,28 @@ func run(log *slog.Logger) error {
 		grpcServer.Stop()
 	}
 	return nil
+}
+
+// runBalanceSweep blocks overdue balances now and then on every tick until ctx ends.
+func runBalanceSweep(ctx context.Context, log *slog.Logger, sweep *orderapp.BlockOverdueBalances, every time.Duration) {
+	run := func() {
+		blocked, err := sweep.Run(ctx)
+		switch {
+		case err != nil:
+			log.Error("balance sweep failed; the next pass retries", "error", err)
+		case blocked > 0:
+			log.Warn("accounts blocked for an unpaid balance", "count", blocked)
+		}
+	}
+	run()
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			run()
+		}
+	}
 }

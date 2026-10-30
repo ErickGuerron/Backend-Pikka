@@ -41,7 +41,8 @@ Al crear un pedido, el sistema valida solo:
 - la dirección cae en una zona atendida (`ClassifyPoint`);
 - la fecha y la ventana son válidas;
 - la capacidad de la fecha lo permite (`MAX_ORDERS_PER_ROUTE`);
-- el cliente no está bloqueado.
+- el cliente no está bloqueado por incidencias. Un cliente bloqueado por saldo (`BLOQUEADO_POR_SALDO`,
+  ADR 0006, sección 5) no llega a la cola: su pedido se rechaza con 403.
 
 Si todo cumple, el pedido queda confirmado y es planificable. Si algo no cumple,
 el pedido queda en una **cola de excepciones** para el operador. El operador

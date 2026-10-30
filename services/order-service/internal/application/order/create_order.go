@@ -83,6 +83,12 @@ func (uc *CreateOrder) Place(ctx context.Context, cmd Command) (Placed, error) {
 	if err != nil {
 		return Placed{}, err
 	}
+	// ADR 0006, section 5: an account blocked for an unpaid balance cannot create orders. It is rejected
+	// before anything else, so nothing is geocoded, reserved or stored. A block for incidents still goes
+	// to the operator's review queue (ADR 0007, section 3).
+	if customer.Status == domain.StatusBlockedSurcharge {
+		return Placed{}, domain.ErrCustomerBlockedBySurcharge
+	}
 	lines, err := uc.resolveLines(ctx, cmd.Items)
 	if err != nil {
 		return Placed{}, err

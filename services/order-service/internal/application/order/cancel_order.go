@@ -44,6 +44,10 @@ func (uc *CancelOrder) Run(ctx context.Context, cmd CancelCommand) (domain.Order
 	if err != nil {
 		return domain.Order{}, err
 	}
+	// ADR 0006, section 5: the account blocked for an unpaid balance can sign in and see it, but not cancel.
+	if customer.Status == domain.StatusBlockedSurcharge {
+		return domain.Order{}, domain.ErrCustomerBlockedBySurcharge
+	}
 	cancelled, err := uc.orders.CancelForCustomer(ctx, cmd.OrderID, customer.ID, func(current domain.Order) (domain.Order, error) {
 		return current.CancelByCustomer()
 	})
