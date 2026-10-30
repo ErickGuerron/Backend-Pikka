@@ -172,6 +172,7 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 		surchargeStaff := authed.Group("", StaffOnly())
 		surchargeStaff.GET("/surcharges/pending-verification", sh.listPendingVerification)
 		surchargeStaff.POST("/surcharges/:id/verification", sh.resolve)
+		surchargeStaff.POST("/customers/:id/recidivism-charge", sh.applyRecidivismCharge)
 	}
 
 	// Catálogo de productos (ADR 0009). Cualquier usuario autenticado lee lo activo; el personal

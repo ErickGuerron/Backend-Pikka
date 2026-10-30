@@ -26,6 +26,7 @@ const (
 	OrderService_ListOrderExceptions_FullMethodName               = "/orders.v1.OrderService/ListOrderExceptions"
 	OrderService_ListSurchargesPendingVerification_FullMethodName = "/orders.v1.OrderService/ListSurchargesPendingVerification"
 	OrderService_ResolveSurchargeVerification_FullMethodName      = "/orders.v1.OrderService/ResolveSurchargeVerification"
+	OrderService_ApplyRecidivismCharge_FullMethodName             = "/orders.v1.OrderService/ApplyRecidivismCharge"
 	OrderService_ReviewOrder_FullMethodName                       = "/orders.v1.OrderService/ReviewOrder"
 	OrderService_ListMyOrders_FullMethodName                      = "/orders.v1.OrderService/ListMyOrders"
 	OrderService_ListMyNotifications_FullMethodName               = "/orders.v1.OrderService/ListMyNotifications"
@@ -63,6 +64,11 @@ type OrderServiceClient interface {
 	// ResolveSurchargeVerification confirms or waives one surcharge with an audited reason. Only ADMIN and
 	// OPERATOR. An unknown id returns NOT_FOUND; one that is not waiting returns ABORTED (HTTP 409).
 	ResolveSurchargeVerification(ctx context.Context, in *ResolveSurchargeVerificationRequest, opts ...grpc.CallOption) (*ResolveSurchargeVerificationResponse, error)
+	// ApplyRecidivismCharge applies an extra charge to a customer marked as recidivist (ADR 0006). Only
+	// ADMIN and OPERATOR. The amount and the reason are the operator's decision and are audited. A customer
+	// that is not a recidivist returns FAILED_PRECONDITION, a second charge for the same reincidence ABORTED
+	// (HTTP 409), an unknown customer NOT_FOUND.
+	ApplyRecidivismCharge(ctx context.Context, in *ApplyRecidivismChargeRequest, opts ...grpc.CallOption) (*ApplyRecidivismChargeResponse, error)
 	// ReviewOrder only accepts PENDING_REVIEW; another state returns
 	// ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
 	ReviewOrder(ctx context.Context, in *ReviewOrderRequest, opts ...grpc.CallOption) (*ReviewOrderResponse, error)
@@ -177,6 +183,16 @@ func (c *orderServiceClient) ResolveSurchargeVerification(ctx context.Context, i
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ResolveSurchargeVerificationResponse)
 	err := c.cc.Invoke(ctx, OrderService_ResolveSurchargeVerification_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *orderServiceClient) ApplyRecidivismCharge(ctx context.Context, in *ApplyRecidivismChargeRequest, opts ...grpc.CallOption) (*ApplyRecidivismChargeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ApplyRecidivismChargeResponse)
+	err := c.cc.Invoke(ctx, OrderService_ApplyRecidivismCharge_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -308,6 +324,11 @@ type OrderServiceServer interface {
 	// ResolveSurchargeVerification confirms or waives one surcharge with an audited reason. Only ADMIN and
 	// OPERATOR. An unknown id returns NOT_FOUND; one that is not waiting returns ABORTED (HTTP 409).
 	ResolveSurchargeVerification(context.Context, *ResolveSurchargeVerificationRequest) (*ResolveSurchargeVerificationResponse, error)
+	// ApplyRecidivismCharge applies an extra charge to a customer marked as recidivist (ADR 0006). Only
+	// ADMIN and OPERATOR. The amount and the reason are the operator's decision and are audited. A customer
+	// that is not a recidivist returns FAILED_PRECONDITION, a second charge for the same reincidence ABORTED
+	// (HTTP 409), an unknown customer NOT_FOUND.
+	ApplyRecidivismCharge(context.Context, *ApplyRecidivismChargeRequest) (*ApplyRecidivismChargeResponse, error)
 	// ReviewOrder only accepts PENDING_REVIEW; another state returns
 	// ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
 	ReviewOrder(context.Context, *ReviewOrderRequest) (*ReviewOrderResponse, error)
@@ -378,6 +399,9 @@ func (UnimplementedOrderServiceServer) ListSurchargesPendingVerification(context
 }
 func (UnimplementedOrderServiceServer) ResolveSurchargeVerification(context.Context, *ResolveSurchargeVerificationRequest) (*ResolveSurchargeVerificationResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ResolveSurchargeVerification not implemented")
+}
+func (UnimplementedOrderServiceServer) ApplyRecidivismCharge(context.Context, *ApplyRecidivismChargeRequest) (*ApplyRecidivismChargeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ApplyRecidivismCharge not implemented")
 }
 func (UnimplementedOrderServiceServer) ReviewOrder(context.Context, *ReviewOrderRequest) (*ReviewOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReviewOrder not implemented")
@@ -552,6 +576,24 @@ func _OrderService_ResolveSurchargeVerification_Handler(srv interface{}, ctx con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(OrderServiceServer).ResolveSurchargeVerification(ctx, req.(*ResolveSurchargeVerificationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OrderService_ApplyRecidivismCharge_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ApplyRecidivismChargeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).ApplyRecidivismCharge(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_ApplyRecidivismCharge_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).ApplyRecidivismCharge(ctx, req.(*ApplyRecidivismChargeRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -770,6 +812,10 @@ var OrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResolveSurchargeVerification",
 			Handler:    _OrderService_ResolveSurchargeVerification_Handler,
+		},
+		{
+			MethodName: "ApplyRecidivismCharge",
+			Handler:    _OrderService_ApplyRecidivismCharge_Handler,
 		},
 		{
 			MethodName: "ReviewOrder",

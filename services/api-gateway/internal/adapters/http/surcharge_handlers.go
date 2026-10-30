@@ -15,6 +15,7 @@ import (
 type SurchargeClient interface {
 	ListSurchargesPendingVerification(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ListSurchargesPendingVerificationRequest) (*ordersv1.ListSurchargesPendingVerificationResponse, error)
 	ResolveSurchargeVerification(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ResolveSurchargeVerificationRequest) (*ordersv1.ResolveSurchargeVerificationResponse, error)
+	ApplyRecidivismCharge(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ApplyRecidivismChargeRequest) (*ordersv1.ApplyRecidivismChargeResponse, error)
 }
 
 type surchargeHandlers struct {
@@ -76,4 +77,44 @@ func (h *surchargeHandlers) resolve(c echo.Context) error {
 		return err
 	}
 	return c.JSON(http.StatusOK, toSurchargeDTO(res.GetSurcharge()))
+}
+
+// applyRecidivismChargeRequest carries the amount as a decimal string, like pendingSurcharge, so a
+// JSON number (a float) is rejected as a bad body.
+type applyRecidivismChargeRequest struct {
+	Amount string `json:"amount"`
+	Reason string `json:"reason"`
+}
+
+type recidivismChargeDTO struct {
+	ID           string `json:"id"`
+	CustomerID   string `json:"customerId"`
+	RecidivistAt string `json:"recidivistAt"`
+	Amount       string `json:"amount"`
+	Reason       string `json:"reason"`
+	AppliedBy    string `json:"appliedBy"`
+	CreatedAt    string `json:"createdAt"`
+}
+
+// applyRecidivismCharge forwards the operator's extra charge. Order Service checks the role, that the
+// customer is a recidivist and that the reincidence was not charged yet; the audited operator is the
+// JWT's, never the body's.
+func (h *surchargeHandlers) applyRecidivismCharge(c echo.Context) error {
+	var req applyRecidivismChargeRequest
+	if err := bindJSON(c, &req); err != nil {
+		return err
+	}
+	res, err := h.surcharges.ApplyRecidivismCharge(c.Request().Context(), callMeta(c), &ordersv1.ApplyRecidivismChargeRequest{
+		CustomerId: c.Param("id"),
+		Amount:     req.Amount,
+		Reason:     req.Reason,
+	})
+	if err != nil {
+		return err
+	}
+	ch := res.GetCharge()
+	return c.JSON(http.StatusCreated, recidivismChargeDTO{
+		ID: ch.GetId(), CustomerID: ch.GetCustomerId(), RecidivistAt: ch.GetRecidivistAt(), Amount: ch.GetAmount(),
+		Reason: ch.GetReason(), AppliedBy: ch.GetAppliedBy(), CreatedAt: ch.GetCreatedAt(),
+	})
 }

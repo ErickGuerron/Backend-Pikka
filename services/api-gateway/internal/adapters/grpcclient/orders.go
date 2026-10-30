@@ -85,6 +85,13 @@ func (o *Orders) ResolveSurchargeVerification(ctx context.Context, m CallMeta, r
 	return o.client.ResolveSurchargeVerification(ctx, req)
 }
 
+// ApplyRecidivismCharge aplica el recargo extra del operador a un cliente reincidente.
+func (o *Orders) ApplyRecidivismCharge(ctx context.Context, m CallMeta, req *ordersv1.ApplyRecidivismChargeRequest) (*ordersv1.ApplyRecidivismChargeResponse, error) {
+	ctx, cancel := o.outgoing(ctx, m)
+	defer cancel()
+	return o.client.ApplyRecidivismCharge(ctx, req)
+}
+
 // CancelOrder cancela un pedido del cliente autenticado.
 func (o *Orders) CancelOrder(ctx context.Context, m CallMeta, req *ordersv1.CancelOrderRequest) (*ordersv1.CancelOrderResponse, error) {
 	ctx, cancel := o.outgoing(ctx, m)

@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	ordersv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/orders/v1"
 	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/grpcclient"
@@ -16,6 +18,7 @@ import (
 type fakeSurchargeClient struct {
 	listCalls  int
 	resolveReq *ordersv1.ResolveSurchargeVerificationRequest
+	chargeReq  *ordersv1.ApplyRecidivismChargeRequest
 	meta       grpcclient.CallMeta
 	err        error
 }
@@ -39,6 +42,17 @@ func (f *fakeSurchargeClient) ResolveSurchargeVerification(_ context.Context, m 
 	return &ordersv1.ResolveSurchargeVerificationResponse{Surcharge: &ordersv1.Surcharge{
 		Id: req.GetId(), CustomerId: "c-1", OrderId: "o-1", Reason: "WRONG_ADDRESS", Status: "WAIVED",
 		ResolvedBy: "u-1", ResolutionReason: req.GetReason(), ResolvedAt: "2026-10-29T11:00:00Z", CreatedAt: "2026-10-29T10:00:00Z",
+	}}, nil
+}
+
+func (f *fakeSurchargeClient) ApplyRecidivismCharge(_ context.Context, m grpcclient.CallMeta, req *ordersv1.ApplyRecidivismChargeRequest) (*ordersv1.ApplyRecidivismChargeResponse, error) {
+	f.chargeReq, f.meta = req, m
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &ordersv1.ApplyRecidivismChargeResponse{Charge: &ordersv1.RecidivismCharge{
+		Id: "r-1", CustomerId: req.GetCustomerId(), RecidivistAt: "2026-10-10T09:00:00Z", Amount: req.GetAmount(),
+		Reason: req.GetReason(), AppliedBy: "u-1", CreatedAt: "2026-10-11T09:00:00Z",
 	}}, nil
 }
 
@@ -101,4 +115,62 @@ func TestResolveSurchargeVerification_BadBodyIs400(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.Nil(t, fake.resolveReq)
+}
+
+const chargePath = "/api/v1/customers/c-1/recidivism-charge"
+
+func TestApplyRecidivismCharge_StaffForwardsAmountAndReason(t *testing.T) {
+	for _, role := range []string{"OPERATOR", "ADMIN"} {
+		fake := &fakeSurchargeClient{}
+		body := `{"amount":"12.50","reason":"Tres no entregas en dos semanas"}`
+
+		rec := do(surchargeRouter(fake), http.MethodPost, chargePath, body, authHdr(t, role))
+
+		require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+		assert.Equal(t, "c-1", fake.chargeReq.GetCustomerId())
+		assert.Equal(t, "12.50", fake.chargeReq.GetAmount())
+		assert.Equal(t, "Tres no entregas en dos semanas", fake.chargeReq.GetReason())
+		assert.Equal(t, role, fake.meta.Role)
+		assert.JSONEq(t, `{"id":"r-1","customerId":"c-1","recidivistAt":"2026-10-10T09:00:00Z","amount":"12.50","reason":"Tres no entregas en dos semanas","appliedBy":"u-1","createdAt":"2026-10-11T09:00:00Z"}`, rec.Body.String())
+	}
+}
+
+func TestApplyRecidivismCharge_CustomerAndDriverAre403BeforeTheService(t *testing.T) {
+	for _, role := range []string{"CUSTOMER", "DRIVER"} {
+		fake := &fakeSurchargeClient{}
+		rec := do(surchargeRouter(fake), http.MethodPost, chargePath, `{"amount":"5","reason":"motivo valido"}`, authHdr(t, role))
+
+		assert.Equal(t, http.StatusForbidden, rec.Code, role)
+		assert.Nil(t, fake.chargeReq, role)
+	}
+}
+
+func TestApplyRecidivismCharge_WithoutToken401(t *testing.T) {
+	rec := do(surchargeRouter(&fakeSurchargeClient{}), http.MethodPost, chargePath, `{"amount":"5","reason":"motivo valido"}`, nil)
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+// El dinero viaja como texto decimal, como pendingSurcharge: un numero JSON es un error de entrada.
+func TestApplyRecidivismCharge_NumericAmountOrBrokenBodyIs400(t *testing.T) {
+	for _, body := range []string{`{"amount":12.5,"reason":"motivo valido"}`, `{"amount":`} {
+		fake := &fakeSurchargeClient{}
+		rec := do(surchargeRouter(fake), http.MethodPost, chargePath, body, authHdr(t, "OPERATOR"))
+
+		assert.Equal(t, http.StatusBadRequest, rec.Code, body)
+		assert.Nil(t, fake.chargeReq, body)
+	}
+}
+
+func TestApplyRecidivismCharge_ServiceDecisionsKeepTheirStatus(t *testing.T) {
+	cases := map[codes.Code]int{
+		codes.FailedPrecondition: http.StatusUnprocessableEntity,
+		codes.Aborted:            http.StatusConflict,
+		codes.NotFound:           http.StatusNotFound,
+		codes.InvalidArgument:    http.StatusBadRequest,
+	}
+	for code, want := range cases {
+		fake := &fakeSurchargeClient{err: status.Error(code, "x")}
+		rec := do(surchargeRouter(fake), http.MethodPost, chargePath, `{"amount":"5","reason":"motivo valido"}`, authHdr(t, "OPERATOR"))
+		assert.Equal(t, want, rec.Code, code.String())
+	}
 }
