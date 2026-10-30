@@ -179,7 +179,7 @@ func TestListarVerificacionesPendientesSoloDevuelveLasEnEspera(t *testing.T) {
 func insertAt(t *testing.T, pool *pgxpool.Pool, customer string, status domain.SurchargeStatus, at time.Time) {
 	t.Helper()
 	_, err := pool.Exec(context.Background(),
-		`INSERT INTO surcharges (customer_id, order_id, reason, status, created_at) VALUES ($1, gen_random_uuid(), 'CLIENT_REFUSED', $2, $3)`,
+		`INSERT INTO surcharges (customer_id, order_id, reason, status, amount, created_at) VALUES ($1, gen_random_uuid(), 'CLIENT_REFUSED', $2, 3.00, $3)`,
 		customer, string(status), at)
 	require.NoError(t, err)
 }
