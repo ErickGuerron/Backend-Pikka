@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -220,4 +221,127 @@ func TestMarcarReincidenteConservaLaPrimeraFecha(t *testing.T) {
 	var stored time.Time
 	require.NoError(t, pool.QueryRow(context.Background(), `SELECT recidivist_at FROM customers WHERE id = $1`, customer).Scan(&stored))
 	assert.True(t, stored.Equal(first))
+}
+
+// pricedIncident arma una incidencia ya con monto (el 15 % se fija al ocurrir, decision D6').
+func pricedIncident(t *testing.T, customer, order, reason, base string) domain.Surcharge {
+	t.Helper()
+	s, err := domain.NewSurchargeIncident(customer, order, reason, time.Now())
+	require.NoError(t, err)
+	s, err = s.Price(decimal.RequireFromString(base))
+	require.NoError(t, err)
+	return s
+}
+
+func TestIncidenciaConMontoSumaAlSaldoUnaSolaVez(t *testing.T) {
+	_, pool := setup(t)
+	repo := persistence.NewSurchargeRepository(pool)
+	customer := newCustomer(t, pool)
+	order := uuid.NewString()
+	ctx := context.Background()
+
+	saved, created, err := repo.RecordSurchargeIncident(ctx, pricedIncident(t, customer, order, "CLIENT_REFUSED", "20.00"))
+	require.NoError(t, err)
+	require.True(t, created)
+	assert.True(t, saved.Amount.Decimal.Equal(decimal.RequireFromString("3.00")))
+	assert.True(t, balanceOf(t, pool, customer).Equal(decimal.RequireFromString("3.00")))
+
+	_, created, err = repo.RecordSurchargeIncident(ctx, pricedIncident(t, customer, order, "CLIENT_REFUSED", "20.00"))
+	require.NoError(t, err)
+	assert.False(t, created)
+	assert.True(t, balanceOf(t, pool, customer).Equal(decimal.RequireFromString("3.00")), "reintentar no suma dos veces")
+}
+
+func TestIncidenciaConcurrenteSumaAlSaldoUnaSolaVez(t *testing.T) {
+	_, pool := setup(t)
+	repo := persistence.NewSurchargeRepository(pool)
+	customer := newCustomer(t, pool)
+	order := uuid.NewString()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _, err := repo.RecordSurchargeIncident(context.Background(), pricedIncident(t, customer, order, "CLIENT_ABSENT", "20.00"))
+			assert.NoError(t, err)
+		}()
+	}
+	wg.Wait()
+
+	assert.True(t, balanceOf(t, pool, customer).Equal(decimal.RequireFromString("3.00")))
+}
+
+func TestVariasIncidenciasSeAcumulanEnElSaldo(t *testing.T) {
+	_, pool := setup(t)
+	repo := persistence.NewSurchargeRepository(pool)
+	customer := newCustomer(t, pool)
+	for _, base := range []string{"20.00", "10.00"} {
+		_, _, err := repo.RecordSurchargeIncident(context.Background(), pricedIncident(t, customer, uuid.NewString(), "CLIENT_REFUSED", base))
+		require.NoError(t, err)
+	}
+
+	assert.True(t, balanceOf(t, pool, customer).Equal(decimal.RequireFromString("4.50")))
+}
+
+func TestIncidenciaSinMontoNoTocaElSaldo(t *testing.T) {
+	_, pool := setup(t)
+	repo := persistence.NewSurchargeRepository(pool)
+	customer := newCustomer(t, pool)
+
+	_, created, err := repo.RecordSurchargeIncident(context.Background(), newIncident(t, customer, uuid.NewString()))
+
+	require.NoError(t, err)
+	require.True(t, created)
+	assert.True(t, balanceOf(t, pool, customer).IsZero())
+}
+
+// WRONG_ADDRESS: con monto pero sin cobro hasta que el operador lo confirma; si lo dispensa, nunca se cobra.
+func TestDireccionIncorrectaSoloSumaAlSaldoSiElOperadorConfirma(t *testing.T) {
+	_, pool := setup(t)
+	repo := persistence.NewSurchargeRepository(pool)
+	confirmed, waived := newCustomer(t, pool), newCustomer(t, pool)
+	ctx := context.Background()
+	decide := func(d domain.SurchargeDecision) func(domain.Surcharge) (domain.Surcharge, error) {
+		return func(s domain.Surcharge) (domain.Surcharge, error) {
+			return s.Resolve(d, uuid.NewString(), "Verificado con el cliente", time.Now())
+		}
+	}
+	var ids [2]string
+	for i, c := range []string{confirmed, waived} {
+		saved, _, err := repo.RecordSurchargeIncident(ctx, pricedIncident(t, c, uuid.NewString(), "WRONG_ADDRESS", "10.00"))
+		require.NoError(t, err)
+		require.Equal(t, domain.SurchargePendingVerification, saved.Status)
+		assert.True(t, balanceOf(t, pool, c).IsZero(), "en verificacion no se cobra")
+		ids[i] = saved.ID
+	}
+
+	_, err := repo.ResolveSurchargeVerification(ctx, ids[0], decide(domain.DecisionConfirm))
+	require.NoError(t, err)
+	_, err = repo.ResolveSurchargeVerification(ctx, ids[1], decide(domain.DecisionWaive))
+	require.NoError(t, err)
+
+	assert.True(t, balanceOf(t, pool, confirmed).Equal(decimal.RequireFromString("1.50")))
+	assert.True(t, balanceOf(t, pool, waived).IsZero())
+}
+
+func TestPrecioBaseDelPedidoSumaSusLineas(t *testing.T) {
+	store, pool := setup(t)
+	repo := persistence.NewSurchargeRepository(pool)
+	customer := newCustomer(t, pool)
+	p := newProduct(t, store, "Manzana", stock(10))
+	placed := placeInReview(t, store, customer, p, 3, "ZONE_NOT_COVERED")
+
+	base, found, err := repo.OrderBasePrice(context.Background(), placed.ID)
+
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.True(t, base.Equal(p.UnitPrice.Mul(decimal.NewFromInt(3))), "got %s, want %s", base, p.UnitPrice.Mul(decimal.NewFromInt(3)))
+}
+
+func TestPrecioBaseDePedidoSinLineasNoSeEncuentra(t *testing.T) {
+	_, pool := setup(t)
+	_, found, err := persistence.NewSurchargeRepository(pool).OrderBasePrice(context.Background(), uuid.NewString())
+	require.NoError(t, err)
+	assert.False(t, found)
 }

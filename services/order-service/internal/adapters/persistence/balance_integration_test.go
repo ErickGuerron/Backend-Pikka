@@ -78,20 +78,20 @@ func TestObligacionDeDireccionConfirmadaEmpiezaAlConfirmar(t *testing.T) {
 	assert.True(t, got[0].StartedAt.Equal(confirmed))
 }
 
-func TestRecargoExtraEsObligacionMientrasHayaSaldo(t *testing.T) {
+func TestRecargoExtraEsObligacionHastaQueSeMarcaPagado(t *testing.T) {
 	_, pool := setup(t)
 	repo := persistence.NewBalanceRepository(pool)
-	withBalance, paid := newCustomer(t, pool), newCustomer(t, pool)
-	for _, c := range []string{withBalance, paid} {
+	unpaid, paid := newCustomer(t, pool), newCustomer(t, pool)
+	for _, c := range []string{unpaid, paid} {
 		markRecidivist(t, pool, c)
 		_, err := persistence.NewRecidivismRepository(pool).ApplyRecidivismCharge(context.Background(), c, buildCharge(c, "12.50"))
 		require.NoError(t, err)
 	}
-	_, err := pool.Exec(context.Background(), `UPDATE customers SET pending_surcharge = 0 WHERE id = $1`, paid)
+	_, err := pool.Exec(context.Background(), `UPDATE recidivism_charges SET paid_at = now() WHERE customer_id = $1`, paid)
 	require.NoError(t, err)
 
-	assert.Len(t, obligationsOf(t, repo, withBalance), 1)
-	assert.Empty(t, obligationsOf(t, repo, paid), "saldo en cero: ya no debe nada")
+	assert.Len(t, obligationsOf(t, repo, unpaid), 1)
+	assert.Empty(t, obligationsOf(t, repo, paid), "ya pagado: no es una obligacion")
 }
 
 func TestClientesYaBloqueadosNoTienenObligacionesActivas(t *testing.T) {

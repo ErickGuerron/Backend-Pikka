@@ -23,11 +23,12 @@ func NewBalanceRepository(pool *pgxpool.Pool) *BalanceRepository {
 }
 
 // ListActiveObligations lists what still counts against an ACTIVO customer:
-//   - a surcharge incident still PENDING (not yet priced into the next order). Its clock started when
+//   - a surcharge incident still PENDING (owed, not paid). Its clock started when
 //     the system confirmed it: the operator's verification time for a WRONG_ADDRESS, else its creation.
-//   - a recidivism charge, while the customer's balance is above zero (its clock starts when applied).
+//   - a recidivism charge not yet paid (its clock starts when applied).
 //
 // WAIVED incidents, those waiting for verification and APPLIED or PAID ones are not obligations.
+// A recidivism charge stops being one when it is stamped paid.
 func (r *BalanceRepository) ListActiveObligations(ctx context.Context) ([]domain.BalanceObligation, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT s.customer_id::text, COALESCE(s.resolved_at, s.created_at)
@@ -38,7 +39,7 @@ func (r *BalanceRepository) ListActiveObligations(ctx context.Context) ([]domain
 		SELECT rc.customer_id::text, rc.created_at
 		  FROM recidivism_charges rc
 		  JOIN customers c ON c.id = rc.customer_id
-		 WHERE c.status = 'ACTIVO' AND c.pending_surcharge > 0`)
+		 WHERE c.status = 'ACTIVO' AND rc.paid_at IS NULL`)
 	if err != nil {
 		return nil, fmt.Errorf("list active obligations: %w", err)
 	}

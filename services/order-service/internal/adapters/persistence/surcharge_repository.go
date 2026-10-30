@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/shopspring/decimal"
 
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/application/ports"
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/domain"
@@ -28,24 +29,63 @@ const surchargeColumns = `id::text, customer_id::text, order_id::text, reason, s
 	COALESCE(resolved_by::text, ''), COALESCE(resolution_reason, ''), resolved_at`
 
 func (r *SurchargeRepository) RecordSurchargeIncident(ctx context.Context, s domain.Surcharge) (domain.Surcharge, bool, error) {
-	saved, err := scanSurcharge(r.pool.QueryRow(ctx, `
-		INSERT INTO surcharges (customer_id, order_id, reason, status, created_at)
-		VALUES ($1, $2, $3, $4, $5)
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return domain.Surcharge{}, false, fmt.Errorf("record surcharge incident: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	saved, err := scanSurcharge(tx.QueryRow(ctx, `
+		INSERT INTO surcharges (customer_id, order_id, reason, status, amount, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (order_id) DO NOTHING
 		RETURNING `+surchargeColumns,
-		s.CustomerID, s.OrderID, s.Reason, string(s.Status), s.CreatedAt).Scan)
+		s.CustomerID, s.OrderID, s.Reason, string(s.Status), s.Amount, s.CreatedAt).Scan)
 	if err == nil {
+		// A priced PENDING incident is owed from this moment, in the same transaction as its row. One that
+		// waits for verification is added when the operator confirms it.
+		if err := addToBalance(ctx, tx, saved); err != nil {
+			return domain.Surcharge{}, false, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return domain.Surcharge{}, false, fmt.Errorf("record surcharge incident: commit: %w", err)
+		}
 		return saved, true, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return domain.Surcharge{}, false, fmt.Errorf("record surcharge incident: %w", err)
 	}
-	existing, err := scanSurcharge(r.pool.QueryRow(ctx,
+	existing, err := scanSurcharge(tx.QueryRow(ctx,
 		`SELECT `+surchargeColumns+` FROM surcharges WHERE order_id = $1`, s.OrderID).Scan)
 	if err != nil {
 		return domain.Surcharge{}, false, fmt.Errorf("record surcharge incident: load existing: %w", err)
 	}
 	return existing, false, nil
+}
+
+// addToBalance raises customers.pending_surcharge by the surcharge's amount when it is owed: PENDING and
+// priced. Anything else (waiting for verification, waived, unpriced) changes nothing.
+func addToBalance(ctx context.Context, tx pgx.Tx, s domain.Surcharge) error {
+	if s.Status != domain.SurchargePending || !s.Amount.Valid {
+		return nil
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE customers SET pending_surcharge = pending_surcharge + $2, updated_at = now() WHERE id = $1`,
+		s.CustomerID, s.Amount.Decimal); err != nil {
+		return fmt.Errorf("add surcharge to balance: %w", err)
+	}
+	return nil
+}
+
+// OrderBasePrice sums the order's lines. found is false for an order without lines.
+func (r *SurchargeRepository) OrderBasePrice(ctx context.Context, orderID string) (decimal.Decimal, bool, error) {
+	var base decimal.Decimal
+	var lines int
+	if err := r.pool.QueryRow(ctx,
+		`SELECT COALESCE(SUM(unit_price * quantity), 0), COUNT(*) FROM order_items WHERE order_id = $1`, orderID).Scan(&base, &lines); err != nil {
+		return decimal.Zero, false, fmt.Errorf("order base price: %w", err)
+	}
+	return base, lines > 0, nil
 }
 
 // ResolveSurchargeVerification runs decide on the locked row and stores the audit it returns.
@@ -74,6 +114,12 @@ func (r *SurchargeRepository) ResolveSurchargeVerification(ctx context.Context, 
 		 WHERE id = $1`,
 		id, string(next.Status), next.ResolvedBy, next.ResolutionReason, next.ResolvedAt); err != nil {
 		return domain.Surcharge{}, fmt.Errorf("resolve surcharge: update: %w", err)
+	}
+	// Confirming a priced incident makes it owed now, in the same transaction as the decision.
+	if current.Status == domain.SurchargePendingVerification {
+		if err := addToBalance(ctx, tx, next); err != nil {
+			return domain.Surcharge{}, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return domain.Surcharge{}, fmt.Errorf("resolve surcharge: commit: %w", err)

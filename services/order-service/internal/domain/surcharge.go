@@ -12,6 +12,7 @@ var (
 	ErrInvalidSurchargeBase     = errors.New("surcharge base price must be greater than zero")
 	ErrInvalidSurchargeIncident = errors.New("surcharge needs a customer, an order and a reason")
 
+	ErrSurchargeAlreadyPriced          = errors.New("surcharge already has an amount")
 	ErrSurchargeNotFound               = errors.New("surcharge not found")
 	ErrSurchargeNotPendingVerification = errors.New("surcharge is not waiting for verification")
 	ErrUnknownSurchargeDecision        = errors.New("surcharge decision must be CONFIRM or WAIVE")
@@ -20,8 +21,9 @@ var (
 // SurchargeRate is the penalty over the base price of the customer's next order (ADR 0006, section 1).
 var SurchargeRate = decimal.RequireFromString("0.15")
 
-// SurchargeStatus is where an incidence is in its life. PENDING and PENDING_VERIFICATION have no
-// amount yet: the 15 % is computed over an order that does not exist when the incidence happens.
+// SurchargeStatus is where an incidence is in its life. The 15 % is computed when the incidence happens,
+// over the base price of the order that was not delivered (decision D6'); an order without lines has no
+// base price and its incident stays without amount.
 type SurchargeStatus string
 
 const (
@@ -91,6 +93,23 @@ func SurchargeFor(basePrice decimal.Decimal) (decimal.Decimal, error) {
 		return decimal.Zero, ErrInvalidSurchargeBase
 	}
 	return basePrice.Mul(SurchargeRate).Round(2), nil
+}
+
+// Price sets the amount: exactly 15 % of the base price of the undelivered order, in cents. It can be
+// done once, and a base so small that 15 % rounds to zero cannot be priced.
+func (s Surcharge) Price(basePrice decimal.Decimal) (Surcharge, error) {
+	if s.Amount.Valid {
+		return s, ErrSurchargeAlreadyPriced
+	}
+	amount, err := SurchargeFor(basePrice)
+	if err != nil {
+		return s, err
+	}
+	if !amount.IsPositive() {
+		return s, ErrInvalidSurchargeBase
+	}
+	s.Amount = decimal.NewNullDecimal(amount)
+	return s, nil
 }
 
 // NewSurchargeIncident records that an order was not delivered because of the customer. It starts

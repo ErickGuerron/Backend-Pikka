@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/application/ports"
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/domain"
@@ -15,9 +16,17 @@ type surchargeRepoFake struct {
 	ports.SurchargeRepository
 	recorded []domain.Surcharge
 	err      error
+	// base is what OrderBasePrice answers; baseFound false means the order has no lines.
+	base      decimal.Decimal
+	baseFound bool
+	baseErr   error
 }
 
 var _ ports.SurchargeRepository = (*surchargeRepoFake)(nil)
+
+func (f *surchargeRepoFake) OrderBasePrice(context.Context, string) (decimal.Decimal, bool, error) {
+	return f.base, f.baseFound, f.baseErr
+}
 
 func (f *surchargeRepoFake) RecordSurchargeIncident(_ context.Context, s domain.Surcharge) (domain.Surcharge, bool, error) {
 	if f.err != nil {
@@ -116,5 +125,54 @@ func TestRecordStopOutcomeWithoutSurchargesStillCloses(t *testing.T) {
 	})
 	if err != nil || got.Status != domain.StatusNotDelivered {
 		t.Fatalf("got %v, %v", got.Status, err)
+	}
+}
+
+func priced(t *testing.T, s domain.Surcharge) string {
+	t.Helper()
+	if !s.Amount.Valid {
+		return "<unpriced>"
+	}
+	return s.Amount.Decimal.StringFixed(2)
+}
+
+// D6': the amount exists from the moment of the incident, so the balance is real from day one.
+func TestIncidentIsPricedAtFifteenPercentOfTheUndeliveredOrder(t *testing.T) {
+	cases := []struct {
+		reason string
+		base   string
+		amount string
+		status domain.SurchargeStatus
+	}{
+		{"CLIENT_REFUSED", "20.00", "3.00", domain.SurchargePending},
+		{"CLIENT_ABSENT", "33.33", "5.00", domain.SurchargePending},
+		{"WRONG_ADDRESS", "10.00", "1.50", domain.SurchargePendingVerification},
+	}
+	for _, tc := range cases {
+		surcharges := &surchargeRepoFake{base: decimal.RequireFromString(tc.base), baseFound: true}
+		if _, err := runOutcome(t, domain.StatusNotDelivered, tc.reason, surcharges); err != nil {
+			t.Fatalf("%s: %v", tc.reason, err)
+		}
+		got := surcharges.recorded[0]
+		if priced(t, got) != tc.amount || got.Status != tc.status {
+			t.Fatalf("%s: amount = %s status = %s, want %s %s", tc.reason, priced(t, got), got.Status, tc.amount, tc.status)
+		}
+	}
+}
+
+// An order without lines (created before the catalog) has no base price: the incident is still
+// recorded, unpriced, and the stop still closes.
+func TestIncidentWithoutABasePriceIsRecordedUnpriced(t *testing.T) {
+	for name, surcharges := range map[string]*surchargeRepoFake{
+		"order has no lines": {baseFound: false},
+		"lookup fails":       {baseErr: errors.New("db down")},
+	} {
+		order, err := runOutcome(t, domain.StatusNotDelivered, "CLIENT_REFUSED", surcharges)
+		if err != nil || order.Status != domain.StatusNotDelivered {
+			t.Fatalf("%s: status = %s err = %v", name, order.Status, err)
+		}
+		if len(surcharges.recorded) != 1 || surcharges.recorded[0].Amount.Valid {
+			t.Fatalf("%s: recorded = %+v, want one unpriced incident", name, surcharges.recorded)
+		}
 	}
 }
