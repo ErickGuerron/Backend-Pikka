@@ -74,3 +74,32 @@ func (s *OrderServer) ListRecidivists(ctx context.Context, _ *ordersv1.ListRecid
 	}
 	return &ordersv1.ListRecidivistsResponse{Recidivists: out}, nil
 }
+
+// ClearRecidivist removes the reincidence mark. The administrator stored as audit comes from the verified
+// metadata, never from the request.
+func (s *OrderServer) ClearRecidivist(ctx context.Context, req *ordersv1.ClearRecidivistRequest) (*ordersv1.ClearRecidivistResponse, error) {
+	if s.useCases.ClearRecidivist == nil {
+		return nil, status.Error(codes.Unimplemented, "clearing the recidivist mark is not wired")
+	}
+	userID, role, err := identityFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cleared, err := s.useCases.ClearRecidivist.Run(ctx, orderapp.ClearRecidivistMarkCommand{
+		Role:       role,
+		AdminID:    userID.String(),
+		CustomerID: req.GetCustomerId(),
+		Reason:     req.GetReason(),
+	})
+	if err != nil {
+		return nil, mapOrderError(err)
+	}
+	return &ordersv1.ClearRecidivistResponse{Clear: &ordersv1.RecidivistClear{
+		Id:           cleared.ID,
+		CustomerId:   cleared.CustomerID,
+		RecidivistAt: cleared.RecidivistAt.UTC().Format(time.RFC3339),
+		Reason:       cleared.Reason,
+		ClearedBy:    cleared.ClearedBy,
+		CreatedAt:    cleared.CreatedAt.UTC().Format(time.RFC3339),
+	}}, nil
+}

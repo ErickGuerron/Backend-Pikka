@@ -16,6 +16,7 @@ type SurchargeClient interface {
 	ListSurchargesPendingVerification(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ListSurchargesPendingVerificationRequest) (*ordersv1.ListSurchargesPendingVerificationResponse, error)
 	ResolveSurchargeVerification(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ResolveSurchargeVerificationRequest) (*ordersv1.ResolveSurchargeVerificationResponse, error)
 	ApplyRecidivismCharge(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ApplyRecidivismChargeRequest) (*ordersv1.ApplyRecidivismChargeResponse, error)
+	ClearRecidivist(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ClearRecidivistRequest) (*ordersv1.ClearRecidivistResponse, error)
 	ListRecidivists(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ListRecidivistsRequest) (*ordersv1.ListRecidivistsResponse, error)
 }
 
@@ -144,4 +145,38 @@ func (h *surchargeHandlers) listRecidivists(c echo.Context) error {
 		})
 	}
 	return c.JSON(http.StatusOK, out)
+}
+
+type clearRecidivistRequest struct {
+	Reason string `json:"reason"`
+}
+
+type recidivistClearDTO struct {
+	ID           string `json:"id"`
+	CustomerID   string `json:"customerId"`
+	RecidivistAt string `json:"recidivistAt"`
+	Reason       string `json:"reason"`
+	ClearedBy    string `json:"clearedBy"`
+	CreatedAt    string `json:"createdAt"`
+}
+
+// clearRecidivist removes the customer's reincidence mark. The route is ADMIN only and Order Service checks the
+// role again; the audited administrator is the JWT's, never the body's.
+func (h *surchargeHandlers) clearRecidivist(c echo.Context) error {
+	var req clearRecidivistRequest
+	if err := bindJSON(c, &req); err != nil {
+		return err
+	}
+	res, err := h.surcharges.ClearRecidivist(c.Request().Context(), callMeta(c), &ordersv1.ClearRecidivistRequest{
+		CustomerId: c.Param("id"),
+		Reason:     req.Reason,
+	})
+	if err != nil {
+		return err
+	}
+	k := res.GetClear()
+	return c.JSON(http.StatusOK, recidivistClearDTO{
+		ID: k.GetId(), CustomerID: k.GetCustomerId(), RecidivistAt: k.GetRecidivistAt(), Reason: k.GetReason(),
+		ClearedBy: k.GetClearedBy(), CreatedAt: k.GetCreatedAt(),
+	})
 }

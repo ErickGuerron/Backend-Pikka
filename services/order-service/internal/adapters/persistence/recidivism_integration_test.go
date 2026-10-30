@@ -206,3 +206,77 @@ func indexOf(list []string, want string) int {
 	}
 	return -1
 }
+
+func buildClear(customer string) func(time.Time) (domain.RecidivistClear, error) {
+	return func(markedAt time.Time) (domain.RecidivistClear, error) {
+		return domain.NewRecidivistClear(customer, markedAt, "6f9619ff-8b86-d011-b42d-00c04fc964ff", "Pagó todo y se acordó con él", time.Now())
+	}
+}
+
+func TestQuitarLaMarcaLimpiaLaFechaYDejaAuditoriaSinTocarElSaldoNiLosRecargos(t *testing.T) {
+	_, pool := setup(t)
+	repo := persistence.NewRecidivismRepository(pool)
+	customer := newCustomer(t, pool)
+	markedAt := markRecidivist(t, pool, customer)
+	_, err := repo.ApplyRecidivismCharge(context.Background(), customer, buildCharge(customer, "12.50"))
+	require.NoError(t, err)
+
+	saved, err := repo.ClearRecidivistMark(context.Background(), customer, buildClear(customer))
+
+	require.NoError(t, err)
+	assert.NotEmpty(t, saved.ID)
+	assert.True(t, saved.RecidivistAt.Equal(markedAt))
+	assert.Equal(t, 0, countRows(t, pool, `SELECT count(*) FROM customers WHERE id = $1 AND recidivist_at IS NOT NULL`, customer))
+	assert.Equal(t, 1, countRows(t, pool, `SELECT count(*) FROM recidivist_clears WHERE customer_id = $1 AND cleared_by = '6f9619ff-8b86-d011-b42d-00c04fc964ff'`, customer))
+	assert.True(t, balanceOf(t, pool, customer).Equal(decimal.RequireFromString("12.50")))
+	assert.Equal(t, 1, countRows(t, pool, `SELECT count(*) FROM recidivism_charges WHERE customer_id = $1`, customer))
+}
+
+func TestQuitarLaMarcaDeUnClienteSinMarcaOInexistenteNoDejaRastro(t *testing.T) {
+	_, pool := setup(t)
+	repo := persistence.NewRecidivismRepository(pool)
+	customer := newCustomer(t, pool)
+
+	_, err := repo.ClearRecidivistMark(context.Background(), customer, buildClear(customer))
+	assert.ErrorIs(t, err, domain.ErrCustomerNotRecidivist)
+
+	ghost := uuid.NewString()
+	_, err = repo.ClearRecidivistMark(context.Background(), ghost, buildClear(ghost))
+	assert.ErrorIs(t, err, domain.ErrCustomerNotFound)
+
+	assert.Equal(t, 0, countRows(t, pool, `SELECT count(*) FROM recidivist_clears`))
+}
+
+func TestQuitarLaMarcaDosVecesSoloLaPrimeraTieneEfecto(t *testing.T) {
+	_, pool := setup(t)
+	repo := persistence.NewRecidivismRepository(pool)
+	customer := newCustomer(t, pool)
+	markRecidivist(t, pool, customer)
+
+	_, err := repo.ClearRecidivistMark(context.Background(), customer, buildClear(customer))
+	require.NoError(t, err)
+	_, err = repo.ClearRecidivistMark(context.Background(), customer, buildClear(customer))
+
+	assert.ErrorIs(t, err, domain.ErrCustomerNotRecidivist)
+	assert.Equal(t, 1, countRows(t, pool, `SELECT count(*) FROM recidivist_clears WHERE customer_id = $1`, customer))
+}
+
+func TestTrasQuitarLaMarcaUnaNuevaReincidenciaPermiteOtroRecargoExtra(t *testing.T) {
+	_, pool := setup(t)
+	repo := persistence.NewRecidivismRepository(pool)
+	customer := newCustomer(t, pool)
+	markRecidivist(t, pool, customer)
+	_, err := repo.ApplyRecidivismCharge(context.Background(), customer, buildCharge(customer, "10"))
+	require.NoError(t, err)
+	_, err = repo.ClearRecidivistMark(context.Background(), customer, buildClear(customer))
+	require.NoError(t, err)
+	// A new reincidence marks the customer again, at a later moment.
+	_, err = pool.Exec(context.Background(), `UPDATE customers SET recidivist_at = $2 WHERE id = $1`, customer, time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+
+	_, err = repo.ApplyRecidivismCharge(context.Background(), customer, buildCharge(customer, "5"))
+
+	require.NoError(t, err)
+	assert.True(t, balanceOf(t, pool, customer).Equal(decimal.RequireFromString("15.00")))
+	assert.Equal(t, 2, countRows(t, pool, `SELECT count(*) FROM recidivism_charges WHERE customer_id = $1`, customer))
+}

@@ -33,6 +33,10 @@ service OrderService {
   // ListRecidivists lists the customers marked as recidivist, oldest mark first, with only what an operator
   // needs to decide an extra charge and reach the customer (ADR 0006). Only ADMIN and OPERATOR.
   rpc ListRecidivists(ListRecidivistsRequest) returns (ListRecidivistsResponse);
+  // ClearRecidivist removes the reincidence mark with an audited reason (ADR 0006, F5). Only ADMIN: an
+  // operator gets PERMISSION_DENIED. A customer without the mark returns FAILED_PRECONDITION, an unknown
+  // customer NOT_FOUND. The charges already collected and the balance are not touched.
+  rpc ClearRecidivist(ClearRecidivistRequest) returns (ClearRecidivistResponse);
   // ReviewOrder only accepts PENDING_REVIEW; another state returns
   // ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
   rpc ReviewOrder(ReviewOrderRequest) returns (ReviewOrderResponse);
@@ -437,6 +441,27 @@ message ApplyRecidivismChargeResponse {
 }
 
 message ListRecidivistsRequest {}
+
+message ClearRecidivistRequest {
+  string customer_id = 1;
+  // The administrator's justification, 5 to 300 characters. It is audited.
+  string reason = 2;
+}
+
+// RecidivistClear is the audit row of a removed mark.
+message RecidivistClear {
+  string id = 1;
+  string customer_id = 2;
+  // The mark that was removed (RFC 3339).
+  string recidivist_at = 3;
+  string reason = 4;
+  string cleared_by = 5;
+  string created_at = 6;
+}
+
+message ClearRecidivistResponse {
+  RecidivistClear clear = 1;
+}
 
 // Recidivist is a customer with the reincidence mark. It carries no email: the contact is the phone.
 message Recidivist {

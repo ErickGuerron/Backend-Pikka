@@ -70,6 +70,49 @@ func (r *RecidivismRepository) ApplyRecidivismCharge(ctx context.Context, custom
 	return saved, nil
 }
 
+// ClearRecidivistMark removes the mark and stores who did it and why, in one transaction. The customer row is
+// locked first, so two administrators cannot both clear it, and the balance and the charges already collected
+// are not touched.
+func (r *RecidivismRepository) ClearRecidivistMark(ctx context.Context, customerID string, build func(time.Time) (domain.RecidivistClear, error)) (domain.RecidivistClear, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return domain.RecidivistClear{}, fmt.Errorf("clear recidivist mark: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var markedAt *time.Time
+	err = tx.QueryRow(ctx, `SELECT recidivist_at FROM customers WHERE id = $1 FOR UPDATE`, customerID).Scan(&markedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.RecidivistClear{}, domain.ErrCustomerNotFound
+	}
+	if err != nil {
+		return domain.RecidivistClear{}, fmt.Errorf("clear recidivist mark: load customer: %w", err)
+	}
+	if markedAt == nil {
+		return domain.RecidivistClear{}, domain.ErrCustomerNotRecidivist
+	}
+
+	clear, err := build(markedAt.UTC())
+	if err != nil {
+		return domain.RecidivistClear{}, err
+	}
+	saved := clear
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO recidivist_clears (customer_id, recidivist_at, reason, cleared_by, created_at)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id::text`,
+		clear.CustomerID, clear.RecidivistAt, clear.Reason, clear.ClearedBy, clear.CreatedAt).Scan(&saved.ID); err != nil {
+		return domain.RecidivistClear{}, fmt.Errorf("clear recidivist mark: insert: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE customers SET recidivist_at = NULL, updated_at = now() WHERE id = $1`, customerID); err != nil {
+		return domain.RecidivistClear{}, fmt.Errorf("clear recidivist mark: update customer: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return domain.RecidivistClear{}, fmt.Errorf("clear recidivist mark: commit: %w", err)
+	}
+	return saved, nil
+}
+
 // ListRecidivists returns the marked customers, oldest mark first. The contact is the phone of the latest
 // order that has one, else the customer's own. Nothing else about the customer leaves the database.
 func (r *RecidivismRepository) ListRecidivists(ctx context.Context) ([]domain.Recidivist, error) {

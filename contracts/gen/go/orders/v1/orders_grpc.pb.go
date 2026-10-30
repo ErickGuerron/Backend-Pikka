@@ -28,6 +28,7 @@ const (
 	OrderService_ResolveSurchargeVerification_FullMethodName      = "/orders.v1.OrderService/ResolveSurchargeVerification"
 	OrderService_ApplyRecidivismCharge_FullMethodName             = "/orders.v1.OrderService/ApplyRecidivismCharge"
 	OrderService_ListRecidivists_FullMethodName                   = "/orders.v1.OrderService/ListRecidivists"
+	OrderService_ClearRecidivist_FullMethodName                   = "/orders.v1.OrderService/ClearRecidivist"
 	OrderService_ReviewOrder_FullMethodName                       = "/orders.v1.OrderService/ReviewOrder"
 	OrderService_ListMyOrders_FullMethodName                      = "/orders.v1.OrderService/ListMyOrders"
 	OrderService_ListMyNotifications_FullMethodName               = "/orders.v1.OrderService/ListMyNotifications"
@@ -73,6 +74,10 @@ type OrderServiceClient interface {
 	// ListRecidivists lists the customers marked as recidivist, oldest mark first, with only what an operator
 	// needs to decide an extra charge and reach the customer (ADR 0006). Only ADMIN and OPERATOR.
 	ListRecidivists(ctx context.Context, in *ListRecidivistsRequest, opts ...grpc.CallOption) (*ListRecidivistsResponse, error)
+	// ClearRecidivist removes the reincidence mark with an audited reason (ADR 0006, F5). Only ADMIN: an
+	// operator gets PERMISSION_DENIED. A customer without the mark returns FAILED_PRECONDITION, an unknown
+	// customer NOT_FOUND. The charges already collected and the balance are not touched.
+	ClearRecidivist(ctx context.Context, in *ClearRecidivistRequest, opts ...grpc.CallOption) (*ClearRecidivistResponse, error)
 	// ReviewOrder only accepts PENDING_REVIEW; another state returns
 	// ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
 	ReviewOrder(ctx context.Context, in *ReviewOrderRequest, opts ...grpc.CallOption) (*ReviewOrderResponse, error)
@@ -213,6 +218,16 @@ func (c *orderServiceClient) ListRecidivists(ctx context.Context, in *ListRecidi
 	return out, nil
 }
 
+func (c *orderServiceClient) ClearRecidivist(ctx context.Context, in *ClearRecidivistRequest, opts ...grpc.CallOption) (*ClearRecidivistResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClearRecidivistResponse)
+	err := c.cc.Invoke(ctx, OrderService_ClearRecidivist_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *orderServiceClient) ReviewOrder(ctx context.Context, in *ReviewOrderRequest, opts ...grpc.CallOption) (*ReviewOrderResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReviewOrderResponse)
@@ -346,6 +361,10 @@ type OrderServiceServer interface {
 	// ListRecidivists lists the customers marked as recidivist, oldest mark first, with only what an operator
 	// needs to decide an extra charge and reach the customer (ADR 0006). Only ADMIN and OPERATOR.
 	ListRecidivists(context.Context, *ListRecidivistsRequest) (*ListRecidivistsResponse, error)
+	// ClearRecidivist removes the reincidence mark with an audited reason (ADR 0006, F5). Only ADMIN: an
+	// operator gets PERMISSION_DENIED. A customer without the mark returns FAILED_PRECONDITION, an unknown
+	// customer NOT_FOUND. The charges already collected and the balance are not touched.
+	ClearRecidivist(context.Context, *ClearRecidivistRequest) (*ClearRecidivistResponse, error)
 	// ReviewOrder only accepts PENDING_REVIEW; another state returns
 	// ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
 	ReviewOrder(context.Context, *ReviewOrderRequest) (*ReviewOrderResponse, error)
@@ -422,6 +441,9 @@ func (UnimplementedOrderServiceServer) ApplyRecidivismCharge(context.Context, *A
 }
 func (UnimplementedOrderServiceServer) ListRecidivists(context.Context, *ListRecidivistsRequest) (*ListRecidivistsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListRecidivists not implemented")
+}
+func (UnimplementedOrderServiceServer) ClearRecidivist(context.Context, *ClearRecidivistRequest) (*ClearRecidivistResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ClearRecidivist not implemented")
 }
 func (UnimplementedOrderServiceServer) ReviewOrder(context.Context, *ReviewOrderRequest) (*ReviewOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReviewOrder not implemented")
@@ -632,6 +654,24 @@ func _OrderService_ListRecidivists_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(OrderServiceServer).ListRecidivists(ctx, req.(*ListRecidivistsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OrderService_ClearRecidivist_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClearRecidivistRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).ClearRecidivist(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_ClearRecidivist_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).ClearRecidivist(ctx, req.(*ClearRecidivistRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -858,6 +898,10 @@ var OrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListRecidivists",
 			Handler:    _OrderService_ListRecidivists_Handler,
+		},
+		{
+			MethodName: "ClearRecidivist",
+			Handler:    _OrderService_ClearRecidivist_Handler,
 		},
 		{
 			MethodName: "ReviewOrder",

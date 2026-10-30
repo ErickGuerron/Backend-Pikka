@@ -132,8 +132,9 @@ func run(log *slog.Logger) error {
 		DriverRouteStops: driverRouteStops,
 		RecordOutcome:    recordStopOutcome,
 		Surcharges:       orderapp.NewResolveSurchargeVerification(surchargeRepo).WithReincidence(reincidence),
-		Recidivism:       orderapp.NewApplyRecidivismCharge(persistence.NewRecidivismRepository(pool)),
+		Recidivism:       orderapp.NewApplyRecidivismCharge(persistence.NewRecidivismRepository(pool), cfg.RecidivismChargeMax),
 		ListRecidivists:  orderapp.NewListRecidivists(persistence.NewRecidivismRepository(pool)),
+		ClearRecidivist:  orderapp.NewClearRecidivistMark(persistence.NewRecidivismRepository(pool)),
 	}).WithRouteCapacity(zoneClassifier))
 	// Catálogo de productos (ADR 0009): el operador administra, el cliente lee lo activo.
 	catalogv1.RegisterCatalogServiceServer(grpcServer, grpcadapter.NewCatalogServer(

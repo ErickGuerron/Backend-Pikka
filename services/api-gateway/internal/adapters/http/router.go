@@ -174,6 +174,8 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 		surchargeStaff.POST("/surcharges/:id/verification", sh.resolve)
 		surchargeStaff.POST("/customers/:id/recidivism-charge", sh.applyRecidivismCharge)
 		surchargeStaff.GET("/customers/recidivists", sh.listRecidivists)
+		// Quitar la marca solo la hace ADMIN (ADR 0006, F5): 403 antes de llegar al servicio.
+		adminOnly.POST("/customers/:id/recidivist/clear", sh.clearRecidivist)
 	}
 
 	// Catálogo de productos (ADR 0009). Cualquier usuario autenticado lee lo activo; el personal

@@ -19,6 +19,8 @@ type fakeSurchargeClient struct {
 	listCalls       int
 	resolveReq      *ordersv1.ResolveSurchargeVerificationRequest
 	chargeReq       *ordersv1.ApplyRecidivismChargeRequest
+	clearReq        *ordersv1.ClearRecidivistRequest
+	clearCalls      int
 	recidivistCalls int
 	meta            grpcclient.CallMeta
 	err             error
@@ -232,4 +234,53 @@ type emptyRecidivists struct{ fakeSurchargeClient }
 
 func (emptyRecidivists) ListRecidivists(context.Context, grpcclient.CallMeta, *ordersv1.ListRecidivistsRequest) (*ordersv1.ListRecidivistsResponse, error) {
 	return &ordersv1.ListRecidivistsResponse{}, nil
+}
+
+func (f *fakeSurchargeClient) ClearRecidivist(_ context.Context, m grpcclient.CallMeta, req *ordersv1.ClearRecidivistRequest) (*ordersv1.ClearRecidivistResponse, error) {
+	f.clearCalls++
+	f.clearReq, f.meta = req, m
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &ordersv1.ClearRecidivistResponse{Clear: &ordersv1.RecidivistClear{
+		Id: "k-1", CustomerId: req.GetCustomerId(), RecidivistAt: "2026-10-10T09:00:00Z", Reason: req.GetReason(),
+		ClearedBy: "u-1", CreatedAt: "2026-10-30T09:00:00Z",
+	}}, nil
+}
+
+const clearPath = "/api/v1/customers/c-1/recidivist/clear"
+
+func TestClearRecidivist_AdminForwardsTheReason(t *testing.T) {
+	fake := &fakeSurchargeClient{}
+
+	rec := do(surchargeRouter(fake), http.MethodPost, clearPath, `{"reason":"Pagó todo y se acordó con él"}`, authHdr(t, "ADMIN"))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, "c-1", fake.clearReq.GetCustomerId())
+	assert.Equal(t, "Pagó todo y se acordó con él", fake.clearReq.GetReason())
+	assert.Equal(t, "ADMIN", fake.meta.Role)
+	assert.JSONEq(t, `{"id":"k-1","customerId":"c-1","recidivistAt":"2026-10-10T09:00:00Z","reason":"Pagó todo y se acordó con él","clearedBy":"u-1","createdAt":"2026-10-30T09:00:00Z"}`, rec.Body.String())
+}
+
+func TestClearRecidivist_OperatorCustomerAndDriverAre403BeforeTheService(t *testing.T) {
+	for _, role := range []string{"OPERATOR", "CUSTOMER", "DRIVER"} {
+		fake := &fakeSurchargeClient{}
+		rec := do(surchargeRouter(fake), http.MethodPost, clearPath, `{"reason":"Pagó todo y se acordó con él"}`, authHdr(t, role))
+		assert.Equal(t, http.StatusForbidden, rec.Code, role)
+		assert.Equal(t, 0, fake.clearCalls, role)
+	}
+}
+
+func TestClearRecidivist_WithoutToken401(t *testing.T) {
+	rec := do(surchargeRouter(&fakeSurchargeClient{}), http.MethodPost, clearPath, `{"reason":"Pagó todo y se acordó con él"}`, nil)
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestClearRecidivist_ServiceErrorsKeepTheirStatus(t *testing.T) {
+	cases := map[codes.Code]int{codes.FailedPrecondition: http.StatusUnprocessableEntity, codes.NotFound: http.StatusNotFound, codes.InvalidArgument: http.StatusBadRequest}
+	for code, want := range cases {
+		fake := &fakeSurchargeClient{err: status.Error(code, "x")}
+		rec := do(surchargeRouter(fake), http.MethodPost, clearPath, `{"reason":"Pagó todo y se acordó con él"}`, authHdr(t, "ADMIN"))
+		assert.Equal(t, want, rec.Code, code.String())
+	}
 }

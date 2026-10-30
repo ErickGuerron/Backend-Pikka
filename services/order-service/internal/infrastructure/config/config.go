@@ -7,6 +7,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/shopspring/decimal"
 )
 
 // Config agrupa la configuración del proceso.
@@ -28,7 +30,10 @@ type Config struct {
 	GeocoderTimeout time.Duration
 	// BalanceSweepInterval is how often accounts with an unpaid balance older than two weeks are blocked.
 	BalanceSweepInterval time.Duration
-	Postgres             PostgresConfig
+	// RecidivismChargeMax is the most an operator may charge a recidivist in one extra charge (ADR 0006).
+	// The business sets it; 50.00 is the starting value, never "no limit".
+	RecidivismChargeMax decimal.Decimal
+	Postgres            PostgresConfig
 }
 
 // PostgresConfig describe la conexión del usuario del servicio a su esquema.
@@ -71,6 +76,11 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	chargeMax, err := amountEnv("RECIDIVISM_CHARGE_MAX", "50.00")
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
 		HTTPPort:          httpPort,
 		GRPCPort:          grpcPort,
@@ -82,6 +92,7 @@ func Load() (Config, error) {
 		PhotonBBox:           getEnv("PHOTON_BBOX", "-92.1,-5.1,-75.1,1.7"),
 		GeocoderTimeout:      time.Duration(geocoderTimeoutMs) * time.Millisecond,
 		BalanceSweepInterval: time.Duration(balanceSweepMin) * time.Minute,
+		RecidivismChargeMax:  chargeMax,
 		Postgres: PostgresConfig{
 			Host:     getEnv("POSTGRES_HOST", "localhost"),
 			Port:     getEnv("POSTGRES_PORT", "5432"),
@@ -126,4 +137,17 @@ func intEnv(key string, fallback int) (int, error) {
 		return 0, fmt.Errorf("%s must be a positive integer", key)
 	}
 	return n, nil
+}
+
+// amountEnv reads a money amount as a decimal string, never a float. It must be greater than zero.
+func amountEnv(key, fallback string) (decimal.Decimal, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		v = fallback
+	}
+	d, err := decimal.NewFromString(v)
+	if err != nil || !d.IsPositive() {
+		return decimal.Decimal{}, fmt.Errorf("%s must be an amount greater than zero", key)
+	}
+	return d, nil
 }
