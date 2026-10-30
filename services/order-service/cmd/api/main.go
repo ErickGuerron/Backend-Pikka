@@ -25,6 +25,7 @@ import (
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/adapters/geocoding"
 	grpcadapter "github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/adapters/grpc"
 	httpx "github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/adapters/http"
+	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/adapters/payments"
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/adapters/persistence"
 	zonesclient "github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/adapters/zones"
 	catalogcase "github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/application/catalog"
@@ -134,6 +135,8 @@ func run(log *slog.Logger) error {
 		Surcharges:       orderapp.NewResolveSurchargeVerification(surchargeRepo).WithReincidence(reincidence),
 		Recidivism:       orderapp.NewApplyRecidivismCharge(persistence.NewRecidivismRepository(pool)),
 		ListRecidivists:  orderapp.NewListRecidivists(persistence.NewRecidivismRepository(pool)),
+		Pay: orderapp.NewPayBalance(customerRepo, payments.NewSimulated(time.Now),
+			persistence.NewPaymentAttemptRepository(pool), persistence.NewBalanceRepository(pool)),
 	}).WithRouteCapacity(zoneClassifier))
 	// Catálogo de productos (ADR 0009): el operador administra, el cliente lee lo activo.
 	catalogv1.RegisterCatalogServiceServer(grpcServer, grpcadapter.NewCatalogServer(

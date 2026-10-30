@@ -49,6 +49,8 @@ type OrderUseCases struct {
 	Recidivism *orderapp.ApplyRecidivismCharge
 	// ListRecidivists lets an operator find the customers an extra charge can be applied to (ADR 0006).
 	ListRecidivists *orderapp.ListRecidivists
+	// Pay lets a customer pay the whole balance with the simulated card (ADR 0006, section 5).
+	Pay *orderapp.PayBalance
 }
 
 // OrderServer implementa ordersv1.OrderServiceServer. Solo traduce: la regla de
@@ -331,6 +333,10 @@ func mapOrderError(err error) error {
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, domain.ErrOrderNotFound):
 		return status.Error(codes.NotFound, "pedido no encontrado")
+	case errors.Is(err, domain.ErrNothingToPay):
+		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, domain.ErrBalanceChanged):
+		return status.Error(codes.Aborted, err.Error())
 	case errors.Is(err, domain.ErrCustomerBlockedBySurcharge):
 		return status.Error(codes.PermissionDenied, err.Error())
 	case errors.Is(err, domain.ErrSurchargeNotFound):
