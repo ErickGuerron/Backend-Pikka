@@ -43,6 +43,7 @@ message Customer {
   string updated_at = 8;               // RFC 3339
   string phone = 9;                    // normalizado (solo dígitos y "+" inicial); vacío en clientes antiguos
   string city = 10;                    // 2 a 80 caracteres; vacío en clientes antiguos
+  string recidivist_at = 11;           // RFC 3339; vacío si el cliente no es reincidente (ADR 0006)
 }
 
 message CreateCustomerRequest {

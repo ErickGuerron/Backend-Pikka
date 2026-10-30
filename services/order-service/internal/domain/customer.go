@@ -53,6 +53,8 @@ type Customer struct {
 
 	Status           CustomerStatus
 	PendingSurcharge decimal.Decimal
+	// RecidivistAt is when the customer was marked as recidivist (ADR 0006). Zero means not marked.
+	RecidivistAt time.Time
 
 	CreatedAt time.Time
 	UpdatedAt time.Time

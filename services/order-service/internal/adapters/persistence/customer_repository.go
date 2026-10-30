@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -21,7 +22,7 @@ import (
 // customerColumns es la lista canónica en orden en que se escanea la fila.
 // Mantenerla en una constante evita errores tontos entre SELECT, INSERT/UPDATE
 // RETURNING y la firma de scanCustomer.
-const customerColumns = `id, user_id, email, full_name, status, pending_surcharge, created_at, updated_at, phone, city`
+const customerColumns = `id, user_id, email, full_name, status, pending_surcharge, created_at, updated_at, phone, city, recidivist_at`
 
 // CustomerRepository es la implementación PostgreSQL de
 // ports.CustomerRepository.
@@ -107,8 +108,9 @@ func scanCustomer(row pgx.Row) (domain.Customer, error) {
 		c         domain.Customer
 		status    string
 		surcharge decimal.Decimal
+		markedAt  *time.Time
 	)
-	err := row.Scan(&c.ID, &c.UserID, &c.Email, &c.FullName, &status, &surcharge, &c.CreatedAt, &c.UpdatedAt, &c.Phone, &c.City)
+	err := row.Scan(&c.ID, &c.UserID, &c.Email, &c.FullName, &status, &surcharge, &c.CreatedAt, &c.UpdatedAt, &c.Phone, &c.City, &markedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Customer{}, domain.ErrCustomerNotFound
@@ -117,6 +119,9 @@ func scanCustomer(row pgx.Row) (domain.Customer, error) {
 	}
 	c.Status = domain.CustomerStatus(status)
 	c.PendingSurcharge = surcharge
+	if markedAt != nil {
+		c.RecidivistAt = markedAt.UTC()
+	}
 	return c, nil
 }
 

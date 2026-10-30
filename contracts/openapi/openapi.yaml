@@ -1320,6 +1320,7 @@ components:
         pendingSurcharge: { type: string, example: "0.00", description: "Decimal con 2 decimales, como string" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+        recidivistAt: { type: string, format: date-time, description: "Cuando se marco al cliente como reincidente (tres no entregas suyas en 14 dias, ADR 0006). Ausente si no lo es" }
     CustomerList:
       type: object
       required: [customers, total, limit, offset]

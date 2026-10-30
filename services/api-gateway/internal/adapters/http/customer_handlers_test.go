@@ -21,6 +21,8 @@ type fakeCustomerQueries struct {
 	statusReq *customerv1.UpdateStatusRequest
 	err       error
 	meta      grpcclient.CallMeta
+	// recidivistAt, when set, is returned in GetByID like Order Service does for a recidivist.
+	recidivistAt string
 }
 
 func (f *fakeCustomerQueries) UpdateStatus(_ context.Context, m grpcclient.CallMeta, req *customerv1.UpdateStatusRequest) (*customerv1.UpdateStatusResponse, error) {
@@ -41,6 +43,7 @@ func (f *fakeCustomerQueries) GetByID(_ context.Context, m grpcclient.CallMeta, 
 	return &customerv1.GetByIDResponse{Customer: &customerv1.Customer{
 		Id: req.GetId(), UserId: "u-1", FullName: "Ada", Email: "ada@example.com",
 		Status: "ACTIVO", PendingSurcharge: "0.00", CreatedAt: "2026-01-02T03:04:05Z", UpdatedAt: "2026-01-02T03:04:05Z",
+		RecidivistAt: f.recidivistAt,
 	}}, nil
 }
 
@@ -142,4 +145,16 @@ func TestSetCustomerStatus_InvalidStatus_Returns400(t *testing.T) {
 func TestGetCustomer_AsCustomer_Returns403(t *testing.T) {
 	rec := do(customersRouter(&fakeCustomerQueries{}), http.MethodGet, "/api/v1/customers/abc", "", authHdr(t, "CUSTOMER"))
 	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestGetCustomer_ShowsTheRecidivistMarkOnlyWhenSet(t *testing.T) {
+	marked := &fakeCustomerQueries{recidivistAt: "2026-10-10T09:00:00Z"}
+	rec := do(customersRouter(marked), http.MethodGet, "/api/v1/customers/c-1", "", authHdr(t, "ADMIN"))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"recidivistAt":"2026-10-10T09:00:00Z"`)
+
+	ordinary := &fakeCustomerQueries{}
+	rec = do(customersRouter(ordinary), http.MethodGet, "/api/v1/customers/c-1", "", authHdr(t, "ADMIN"))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.NotContains(t, rec.Body.String(), "recidivistAt", "un cliente normal no lleva la marca")
 }
