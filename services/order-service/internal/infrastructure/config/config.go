@@ -26,7 +26,9 @@ type Config struct {
 	PhotonBBox string
 	// GeocoderTimeout acota cada geocodificación.
 	GeocoderTimeout time.Duration
-	Postgres        PostgresConfig
+	// BalanceSweepInterval is how often accounts with an unpaid balance older than two weeks are blocked.
+	BalanceSweepInterval time.Duration
+	Postgres             PostgresConfig
 }
 
 // PostgresConfig describe la conexión del usuario del servicio a su esquema.
@@ -64,6 +66,11 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("POSTGRES_PASSWORD is required")
 	}
 
+	balanceSweepMin, err := intEnv("BALANCE_SWEEP_MINUTES", 15)
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
 		HTTPPort:          httpPort,
 		GRPCPort:          grpcPort,
@@ -72,8 +79,9 @@ func Load() (Config, error) {
 		OperatingTimezone: getEnv("OPERATING_TIMEZONE", "America/Guayaquil"),
 		PhotonURL:         getEnv("PHOTON_URL", "https://photon.komoot.io"),
 		// Caja aproximada de Ecuador continental y Galápagos; ajustar con datos reales.
-		PhotonBBox:      getEnv("PHOTON_BBOX", "-92.1,-5.1,-75.1,1.7"),
-		GeocoderTimeout: time.Duration(geocoderTimeoutMs) * time.Millisecond,
+		PhotonBBox:           getEnv("PHOTON_BBOX", "-92.1,-5.1,-75.1,1.7"),
+		GeocoderTimeout:      time.Duration(geocoderTimeoutMs) * time.Millisecond,
+		BalanceSweepInterval: time.Duration(balanceSweepMin) * time.Minute,
 		Postgres: PostgresConfig{
 			Host:     getEnv("POSTGRES_HOST", "localhost"),
 			Port:     getEnv("POSTGRES_PORT", "5432"),

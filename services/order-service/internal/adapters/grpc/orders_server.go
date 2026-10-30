@@ -329,6 +329,8 @@ func mapOrderError(err error) error {
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, domain.ErrOrderNotFound):
 		return status.Error(codes.NotFound, "pedido no encontrado")
+	case errors.Is(err, domain.ErrCustomerBlockedBySurcharge):
+		return status.Error(codes.PermissionDenied, err.Error())
 	case errors.Is(err, domain.ErrSurchargeNotFound):
 		return status.Error(codes.NotFound, "recargo no encontrado")
 	case errors.Is(err, domain.ErrCustomerNotFound):
