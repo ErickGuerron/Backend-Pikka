@@ -307,6 +307,9 @@ message RecordRouteStopOutcomeRequest {
   string order_id = 2;
   // DELIVERED or NOT_DELIVERED. Any other value returns INVALID_ARGUMENT.
   OrderStatus outcome = 3;
+  // Optional NOT_DELIVERED reason already validated by Driver Service (CLIENT_REFUSED, CLIENT_ABSENT,
+  // OUT_OF_WINDOW, ...). A customer reason records a surcharge incident (ADR 0006). Empty is accepted.
+  string reason = 4;
 }
 
 message RecordRouteStopOutcomeResponse {

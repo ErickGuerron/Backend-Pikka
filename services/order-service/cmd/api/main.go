@@ -107,7 +107,8 @@ func run(log *slog.Logger) error {
 	advanceRouteStop := orderapp.NewAdvanceRouteStop(orderRepo)
 	stopsBefore := orderapp.NewStopsBeforeForOrder(customerRepo, orderRepo)
 	driverRouteStops := orderapp.NewDriverRouteStops(orderRepo)
-	recordStopOutcome := orderapp.NewRecordStopOutcome(orderRepo).WithZoneQueue(zoneQueue)
+	recordStopOutcome := orderapp.NewRecordStopOutcome(orderRepo).WithZoneQueue(zoneQueue).
+		WithSurcharges(persistence.NewSurchargeRepository(pool))
 	log.Info("order use cases wired", "create", createOrder != nil, "review", reviewOrder != nil)
 
 	// gRPC server para Customer y Order. La autorización por rol se aplica en

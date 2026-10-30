@@ -93,6 +93,7 @@ func TestDriverResult_NotDeliveredForwardsClosedReason(t *testing.T) {
 	assert.Equal(t, "NOT_DELIVERED", drivers.registerReq.GetOutcome())
 	assert.Equal(t, "CLIENT_ABSENT", drivers.registerReq.GetReason())
 	assert.Equal(t, ordersv1.OrderStatus_ORDER_STATUS_NOT_DELIVERED, orders.outcomeReq.GetOutcome())
+	assert.Equal(t, "CLIENT_ABSENT", orders.outcomeReq.GetReason(), "order-service needs the reason to decide the surcharge")
 }
 
 // Solo DELIVERED y NOT_DELIVERED. Cualquier otro valor se rechaza antes de tocar un servicio.
