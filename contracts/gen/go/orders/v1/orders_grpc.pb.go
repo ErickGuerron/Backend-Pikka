@@ -29,6 +29,9 @@ const (
 	OrderService_ApplyRecidivismCharge_FullMethodName             = "/orders.v1.OrderService/ApplyRecidivismCharge"
 	OrderService_ListRecidivists_FullMethodName                   = "/orders.v1.OrderService/ListRecidivists"
 	OrderService_ClearRecidivist_FullMethodName                   = "/orders.v1.OrderService/ClearRecidivist"
+	OrderService_SetReassignmentFee_FullMethodName                = "/orders.v1.OrderService/SetReassignmentFee"
+	OrderService_GetReassignmentFee_FullMethodName                = "/orders.v1.OrderService/GetReassignmentFee"
+	OrderService_ApplyReassignmentCharge_FullMethodName           = "/orders.v1.OrderService/ApplyReassignmentCharge"
 	OrderService_PayMyBalance_FullMethodName                      = "/orders.v1.OrderService/PayMyBalance"
 	OrderService_ReviewOrder_FullMethodName                       = "/orders.v1.OrderService/ReviewOrder"
 	OrderService_ListMyOrders_FullMethodName                      = "/orders.v1.OrderService/ListMyOrders"
@@ -79,6 +82,15 @@ type OrderServiceClient interface {
 	// operator gets PERMISSION_DENIED. A customer without the mark returns FAILED_PRECONDITION, an unknown
 	// customer NOT_FOUND. The charges already collected and the balance are not touched.
 	ClearRecidivist(ctx context.Context, in *ClearRecidivistRequest, opts ...grpc.CallOption) (*ClearRecidivistResponse, error)
+	// SetReassignmentFee defines or changes the fixed fee charged when an order is reassigned at the customer's
+	// request (ADR 0006). Only ADMIN; the amount and the reason are audited. Every change is a new row.
+	SetReassignmentFee(ctx context.Context, in *SetReassignmentFeeRequest, opts ...grpc.CallOption) (*SetReassignmentFeeResponse, error)
+	// GetReassignmentFee returns the current fee to ADMIN and OPERATOR. With none set it returns
+	// FAILED_PRECONDITION: an amount is never invented.
+	GetReassignmentFee(ctx context.Context, in *GetReassignmentFeeRequest, opts ...grpc.CallOption) (*GetReassignmentFeeResponse, error)
+	// ApplyReassignmentCharge charges the current fixed fee to the customer of an order, once per order (a
+	// second charge returns ABORTED, HTTP 409). Only ADMIN and OPERATOR. The amount is never sent: it is the fee.
+	ApplyReassignmentCharge(ctx context.Context, in *ApplyReassignmentChargeRequest, opts ...grpc.CallOption) (*ApplyReassignmentChargeResponse, error)
 	// PayMyBalance pays the whole pending balance of the authenticated CUSTOMER with the simulated card
 	// (ADR 0006, section 5). There is no amount to send: only the full balance can be paid. An approved
 	// payment returns a balance-blocked account to ACTIVO at once. A declined charge is a result, not an
@@ -235,6 +247,36 @@ func (c *orderServiceClient) ClearRecidivist(ctx context.Context, in *ClearRecid
 	return out, nil
 }
 
+func (c *orderServiceClient) SetReassignmentFee(ctx context.Context, in *SetReassignmentFeeRequest, opts ...grpc.CallOption) (*SetReassignmentFeeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetReassignmentFeeResponse)
+	err := c.cc.Invoke(ctx, OrderService_SetReassignmentFee_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *orderServiceClient) GetReassignmentFee(ctx context.Context, in *GetReassignmentFeeRequest, opts ...grpc.CallOption) (*GetReassignmentFeeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetReassignmentFeeResponse)
+	err := c.cc.Invoke(ctx, OrderService_GetReassignmentFee_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *orderServiceClient) ApplyReassignmentCharge(ctx context.Context, in *ApplyReassignmentChargeRequest, opts ...grpc.CallOption) (*ApplyReassignmentChargeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ApplyReassignmentChargeResponse)
+	err := c.cc.Invoke(ctx, OrderService_ApplyReassignmentCharge_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *orderServiceClient) PayMyBalance(ctx context.Context, in *PayMyBalanceRequest, opts ...grpc.CallOption) (*PayMyBalanceResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PayMyBalanceResponse)
@@ -382,6 +424,15 @@ type OrderServiceServer interface {
 	// operator gets PERMISSION_DENIED. A customer without the mark returns FAILED_PRECONDITION, an unknown
 	// customer NOT_FOUND. The charges already collected and the balance are not touched.
 	ClearRecidivist(context.Context, *ClearRecidivistRequest) (*ClearRecidivistResponse, error)
+	// SetReassignmentFee defines or changes the fixed fee charged when an order is reassigned at the customer's
+	// request (ADR 0006). Only ADMIN; the amount and the reason are audited. Every change is a new row.
+	SetReassignmentFee(context.Context, *SetReassignmentFeeRequest) (*SetReassignmentFeeResponse, error)
+	// GetReassignmentFee returns the current fee to ADMIN and OPERATOR. With none set it returns
+	// FAILED_PRECONDITION: an amount is never invented.
+	GetReassignmentFee(context.Context, *GetReassignmentFeeRequest) (*GetReassignmentFeeResponse, error)
+	// ApplyReassignmentCharge charges the current fixed fee to the customer of an order, once per order (a
+	// second charge returns ABORTED, HTTP 409). Only ADMIN and OPERATOR. The amount is never sent: it is the fee.
+	ApplyReassignmentCharge(context.Context, *ApplyReassignmentChargeRequest) (*ApplyReassignmentChargeResponse, error)
 	// PayMyBalance pays the whole pending balance of the authenticated CUSTOMER with the simulated card
 	// (ADR 0006, section 5). There is no amount to send: only the full balance can be paid. An approved
 	// payment returns a balance-blocked account to ACTIVO at once. A declined charge is a result, not an
@@ -467,6 +518,15 @@ func (UnimplementedOrderServiceServer) ListRecidivists(context.Context, *ListRec
 }
 func (UnimplementedOrderServiceServer) ClearRecidivist(context.Context, *ClearRecidivistRequest) (*ClearRecidivistResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ClearRecidivist not implemented")
+}
+func (UnimplementedOrderServiceServer) SetReassignmentFee(context.Context, *SetReassignmentFeeRequest) (*SetReassignmentFeeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetReassignmentFee not implemented")
+}
+func (UnimplementedOrderServiceServer) GetReassignmentFee(context.Context, *GetReassignmentFeeRequest) (*GetReassignmentFeeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetReassignmentFee not implemented")
+}
+func (UnimplementedOrderServiceServer) ApplyReassignmentCharge(context.Context, *ApplyReassignmentChargeRequest) (*ApplyReassignmentChargeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ApplyReassignmentCharge not implemented")
 }
 func (UnimplementedOrderServiceServer) PayMyBalance(context.Context, *PayMyBalanceRequest) (*PayMyBalanceResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PayMyBalance not implemented")
@@ -698,6 +758,60 @@ func _OrderService_ClearRecidivist_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(OrderServiceServer).ClearRecidivist(ctx, req.(*ClearRecidivistRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OrderService_SetReassignmentFee_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetReassignmentFeeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).SetReassignmentFee(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_SetReassignmentFee_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).SetReassignmentFee(ctx, req.(*SetReassignmentFeeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OrderService_GetReassignmentFee_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetReassignmentFeeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).GetReassignmentFee(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_GetReassignmentFee_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).GetReassignmentFee(ctx, req.(*GetReassignmentFeeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OrderService_ApplyReassignmentCharge_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ApplyReassignmentChargeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).ApplyReassignmentCharge(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_ApplyReassignmentCharge_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).ApplyReassignmentCharge(ctx, req.(*ApplyReassignmentChargeRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -946,6 +1060,18 @@ var OrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ClearRecidivist",
 			Handler:    _OrderService_ClearRecidivist_Handler,
+		},
+		{
+			MethodName: "SetReassignmentFee",
+			Handler:    _OrderService_SetReassignmentFee_Handler,
+		},
+		{
+			MethodName: "GetReassignmentFee",
+			Handler:    _OrderService_GetReassignmentFee_Handler,
+		},
+		{
+			MethodName: "ApplyReassignmentCharge",
+			Handler:    _OrderService_ApplyReassignmentCharge_Handler,
 		},
 		{
 			MethodName: "PayMyBalance",

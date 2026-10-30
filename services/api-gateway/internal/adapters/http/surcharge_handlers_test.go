@@ -21,6 +21,9 @@ type fakeSurchargeClient struct {
 	chargeReq       *ordersv1.ApplyRecidivismChargeRequest
 	clearReq        *ordersv1.ClearRecidivistRequest
 	clearCalls      int
+	feeReq          *ordersv1.SetReassignmentFeeRequest
+	reassignReq     *ordersv1.ApplyReassignmentChargeRequest
+	reassignCalls   int
 	recidivistCalls int
 	payCalls        int
 	payRes          *ordersv1.PayMyBalanceResponse

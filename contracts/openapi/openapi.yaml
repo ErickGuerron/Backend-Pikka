@@ -652,6 +652,75 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /api/v1/settings/reassignment-fee:
+    put:
+      tags: [surcharges]
+      operationId: setReassignmentFee
+      summary: Define la tarifa fija de reasignación (solo ADMIN)
+      description: |
+        Monto fijo que se cobra cuando un pedido se reasigna a pedido del cliente con el repartidor en camino
+        (ADR 0006). Solo un administrador lo define o lo cambia; el monto y el motivo (5 a 300 caracteres) quedan
+        auditados y cada cambio es un registro nuevo. Un OPERATOR responde 403.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetReassignmentFeeRequest" }
+      responses:
+        "200":
+          description: Tarifa vigente
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReassignmentFee" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    get:
+      tags: [surcharges]
+      operationId: getReassignmentFee
+      summary: Consulta la tarifa fija de reasignación vigente (ADMIN u OPERATOR)
+      description: "Si nunca se definió una tarifa responde 422: el sistema no inventa un monto."
+      responses:
+        "200":
+          description: Tarifa vigente
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReassignmentFee" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /api/v1/orders/{id}/reassignment-charge:
+    post:
+      tags: [surcharges]
+      operationId: applyReassignmentCharge
+      summary: Cobra la tarifa fija de reasignación al cliente del pedido (ADMIN u OPERATOR)
+      description: |
+        Suma la tarifa vigente al saldo del cliente del pedido y deja el cobro auditado con el operador y el motivo
+        (5 a 300 caracteres). El monto nunca se envía: siempre es la tarifa vigente. Se cobra una sola vez por
+        pedido (un segundo intento responde 409) y, como cualquier saldo, se paga en 14 días o la cuenta se bloquea.
+        Sin tarifa definida responde 422.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApplyReassignmentChargeRequest" }
+      responses:
+        "201":
+          description: Cobro aplicado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReassignmentCharge" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
   /api/v1/orders/{id}/cancel:
     post:
       tags: [orders]
@@ -1464,6 +1533,37 @@ components:
         recidivistAt: { type: string, format: date-time, description: Cuando se marco al cliente }
         pendingSurcharge: { type: string, example: "4.50", description: Saldo pendiente actual como decimal con dos digitos }
         chargeApplied: { type: boolean, description: true si el recargo extra de esta marca ya se aplico }
+    SetReassignmentFeeRequest:
+      type: object
+      required: [amount, reason]
+      properties:
+        amount: { type: string, pattern: '^[0-9]+(\.[0-9]{1,2})?$', description: Monto decimal mayor que cero }
+        reason: { type: string, minLength: 5, maxLength: 300, description: "Justificación del administrador, auditada" }
+    ReassignmentFee:
+      type: object
+      required: [id, amount, reason, setBy, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        amount: { type: string, description: Decimal con dos dígitos }
+        reason: { type: string }
+        setBy: { type: string, format: uuid, description: Administrador que la definió }
+        createdAt: { type: string, format: date-time }
+    ApplyReassignmentChargeRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 5, maxLength: 300, description: "Justificación del operador, auditada" }
+    ReassignmentCharge:
+      type: object
+      required: [id, customerId, orderId, amount, reason, appliedBy, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        customerId: { type: string, format: uuid }
+        orderId: { type: string, format: uuid }
+        amount: { type: string, description: La tarifa vigente al momento del cobro }
+        reason: { type: string }
+        appliedBy: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
     ClearRecidivistRequest:
       type: object
       required: [reason]
