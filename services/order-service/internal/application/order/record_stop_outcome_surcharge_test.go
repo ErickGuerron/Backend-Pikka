@@ -12,6 +12,7 @@ import (
 )
 
 type surchargeRepoFake struct {
+	ports.SurchargeRepository
 	recorded []domain.Surcharge
 	err      error
 }
