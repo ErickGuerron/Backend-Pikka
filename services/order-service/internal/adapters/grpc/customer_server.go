@@ -185,7 +185,7 @@ func mapError(err error) error {
 // Mantenerlo en una función aparte permite cambiar el wire format (p.ej.
 // fechas) en un solo lugar.
 func domainToProto(c domain.Customer) *customerv1.Customer {
-	return &customerv1.Customer{
+	out := &customerv1.Customer{
 		Id:               c.ID.String(),
 		UserId:           c.UserID.String(),
 		FullName:         c.FullName,
@@ -197,4 +197,8 @@ func domainToProto(c domain.Customer) *customerv1.Customer {
 		CreatedAt:        c.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:        c.UpdatedAt.UTC().Format(time.RFC3339),
 	}
+	if !c.RecidivistAt.IsZero() {
+		out.RecidivistAt = c.RecidivistAt.UTC().Format(time.RFC3339)
+	}
+	return out
 }

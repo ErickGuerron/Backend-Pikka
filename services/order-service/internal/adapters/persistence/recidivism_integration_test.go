@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -145,4 +146,19 @@ func TestRecargoExtraConcurrenteCobraUnaSolaVez(t *testing.T) {
 
 	assert.Equal(t, 1, wins)
 	assert.True(t, balanceOf(t, pool, customer).Equal(decimal.RequireFromString("12.50")), "el saldo suma una sola vez")
+}
+
+func TestLeerClienteTraeLaMarcaDeReincidente(t *testing.T) {
+	_, pool := setup(t)
+	customers := persistence.NewCustomerRepository(pool)
+	marked, ordinary := newCustomer(t, pool), newCustomer(t, pool)
+	at := markRecidivist(t, pool, marked)
+
+	got, err := customers.GetByID(context.Background(), uuid.MustParse(marked))
+	require.NoError(t, err)
+	assert.True(t, got.RecidivistAt.Equal(at))
+
+	plain, err := customers.GetByID(context.Background(), uuid.MustParse(ordinary))
+	require.NoError(t, err)
+	assert.True(t, plain.RecidivistAt.IsZero(), "un cliente normal no tiene marca")
 }

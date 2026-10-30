@@ -45,6 +45,8 @@ type OrderUseCases struct {
 	RecordOutcome *orderapp.RecordStopOutcome
 	// Surcharges lets an operator list and resolve surcharges waiting for verification (ADR 0006).
 	Surcharges *orderapp.ResolveSurchargeVerification
+	// Recidivism lets an operator apply an extra charge to a recidivist customer (ADR 0006).
+	Recidivism *orderapp.ApplyRecidivismCharge
 }
 
 // OrderServer implementa ordersv1.OrderServiceServer. Solo traduce: la regla de
@@ -329,6 +331,14 @@ func mapOrderError(err error) error {
 		return status.Error(codes.NotFound, "pedido no encontrado")
 	case errors.Is(err, domain.ErrSurchargeNotFound):
 		return status.Error(codes.NotFound, "recargo no encontrado")
+	case errors.Is(err, domain.ErrCustomerNotFound):
+		return status.Error(codes.NotFound, "cliente no encontrado")
+	case errors.Is(err, domain.ErrCustomerNotRecidivist):
+		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, domain.ErrRecidivismChargeExists):
+		return status.Error(codes.Aborted, err.Error())
+	case errors.Is(err, domain.ErrInvalidRecidivismCharge):
+		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, domain.ErrSurchargeNotPendingVerification):
 		return status.Error(codes.Aborted, err.Error())
 	case errors.Is(err, domain.ErrUnknownSurchargeDecision):

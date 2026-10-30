@@ -25,6 +25,11 @@ service OrderService {
   // ResolveSurchargeVerification confirms or waives one surcharge with an audited reason. Only ADMIN and
   // OPERATOR. An unknown id returns NOT_FOUND; one that is not waiting returns ABORTED (HTTP 409).
   rpc ResolveSurchargeVerification(ResolveSurchargeVerificationRequest) returns (ResolveSurchargeVerificationResponse);
+  // ApplyRecidivismCharge applies an extra charge to a customer marked as recidivist (ADR 0006). Only
+  // ADMIN and OPERATOR. The amount and the reason are the operator's decision and are audited. A customer
+  // that is not a recidivist returns FAILED_PRECONDITION, a second charge for the same reincidence ABORTED
+  // (HTTP 409), an unknown customer NOT_FOUND.
+  rpc ApplyRecidivismCharge(ApplyRecidivismChargeRequest) returns (ApplyRecidivismChargeResponse);
   // ReviewOrder only accepts PENDING_REVIEW; another state returns
   // ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
   rpc ReviewOrder(ReviewOrderRequest) returns (ReviewOrderResponse);
@@ -400,4 +405,30 @@ message ResolveSurchargeVerificationRequest {
 
 message ResolveSurchargeVerificationResponse {
   Surcharge surcharge = 1;
+}
+
+message ApplyRecidivismChargeRequest {
+  // Required UUID of the customer.
+  string customer_id = 1;
+  // Required decimal string greater than zero, for example "12.50". It is rounded to cents.
+  string amount = 2;
+  // Required, 5 to 300 characters. Stored with the operator and the time.
+  string reason = 3;
+}
+
+// RecidivismCharge is one extra charge applied to a recidivist.
+message RecidivismCharge {
+  string id = 1;
+  string customer_id = 2;
+  // The reincidence mark this charge answers (RFC 3339, UTC).
+  string recidivist_at = 3;
+  string amount = 4;
+  string reason = 5;
+  // Operator that applied it.
+  string applied_by = 6;
+  string created_at = 7;
+}
+
+message ApplyRecidivismChargeResponse {
+  RecidivismCharge charge = 1;
 }

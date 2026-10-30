@@ -38,6 +38,8 @@ type customerDTO struct {
 	PendingSurcharge string `json:"pendingSurcharge"`
 	CreatedAt        string `json:"createdAt"`
 	UpdatedAt        string `json:"updatedAt"`
+	// RecidivistAt is present only for a customer marked as recidivist (ADR 0006).
+	RecidivistAt string `json:"recidivistAt,omitempty"`
 }
 
 type listCustomersResponse struct {
@@ -57,6 +59,7 @@ func toCustomerDTO(c *customerv1.Customer) customerDTO {
 		PendingSurcharge: c.GetPendingSurcharge(),
 		CreatedAt:        c.GetCreatedAt(),
 		UpdatedAt:        c.GetUpdatedAt(),
+		RecidivistAt:     c.GetRecidivistAt(),
 	}
 }
 

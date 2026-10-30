@@ -542,6 +542,38 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/customers/{id}/recidivism-charge:
+    post:
+      tags: [surcharges]
+      operationId: applyRecidivismCharge
+      summary: Aplica un recargo extra a un cliente reincidente (ADMIN u OPERATOR)
+      description: |
+        El monto y el motivo los decide el operador (ADR 0006, seccion 1). El monto se suma al saldo pendiente del
+        cliente en la misma operacion y la decision queda auditada con el operador y la hora.
+        Solo aplica a clientes marcados como reincidentes (tres no entregas del cliente en un plazo de 14 dias) y una
+        vez por reincidencia: un segundo intento responde 409; un cliente sin la marca responde 422.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecidivismChargeRequest" }
+      responses:
+        "201":
+          description: Recargo extra aplicado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecidivismCharge" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
   /api/v1/orders/{id}/cancel:
     post:
       tags: [orders]
@@ -1288,6 +1320,7 @@ components:
         pendingSurcharge: { type: string, example: "0.00", description: "Decimal con 2 decimales, como string" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+        recidivistAt: { type: string, format: date-time, description: "Cuando se marco al cliente como reincidente (tres no entregas suyas en 14 dias, ADR 0006). Ausente si no lo es" }
     CustomerList:
       type: object
       required: [customers, total, limit, offset]
@@ -1336,6 +1369,23 @@ components:
     OrderReviewAction:
       type: string
       enum: [CONFIRM, CORRECT, REJECT]
+    RecidivismChargeRequest:
+      type: object
+      required: [amount, reason]
+      properties:
+        amount: { type: string, example: "12.50", description: "Decimal mayor que cero, como string. Se redondea a centavos" }
+        reason: { type: string, minLength: 5, maxLength: 300, description: "Justificacion de la decision, se guarda como auditoria" }
+    RecidivismCharge:
+      type: object
+      required: [id, customerId, recidivistAt, amount, reason, appliedBy, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        customerId: { type: string, format: uuid }
+        recidivistAt: { type: string, format: date-time, description: Marca de reincidencia a la que responde este recargo }
+        amount: { type: string, example: "12.50" }
+        reason: { type: string }
+        appliedBy: { type: string, format: uuid, description: Operador que lo aplico }
+        createdAt: { type: string, format: date-time }
     Surcharge:
       type: object
       required: [id, customerId, orderId, reason, status, createdAt]
