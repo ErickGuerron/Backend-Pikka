@@ -22,7 +22,7 @@ decisión pequeña; al final lo que necesita una especificación.
 | F7 | «Pago sin cuenta» (ADR 0005) | Sí, de producto (D2) | por definir | por definir |
 | F8 | Disputas, pausa del reloj y apelación | Sí, requiere especificación | todo | item 1, 3 y 4 |
 
-**Hechas:** F1 y F2 (web; falta la app móvil).
+**Hechas:** F1, F2 (web; falta la app móvil) y F3.
 
 Cada función se entrega como su propio PR, con pruebas primero y la documentación al día. Las decisiones propuestas
 («Propuesta») son un punto de partida, no están aprobadas hasta que producto las confirme.
@@ -121,7 +121,7 @@ idioma: cada app lo traduce. La web lo muestra en su panel de avisos.
 
 ## F3. Cancelar bloqueado en la interfaz
 
-**Estado:** no implementada. **Decisión requerida:** ninguna.
+**Estado:** implementada en web (Frontend-Pikka#50) y móvil (Frontend-Pikka#51). **Decisión requerida:** ninguna.
 
 **Qué es.** El servidor ya rechaza con 403 cancelar un pedido a una cuenta `BLOQUEADO_POR_SALDO`, pero la interfaz sigue
 mostrando el botón y el cliente ve un error genérico. Hoy solo se deshabilita «Hacer nuevo pedido».
