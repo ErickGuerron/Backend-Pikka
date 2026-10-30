@@ -14,4 +14,6 @@ type RecidivismRepository interface {
 	// An unknown customer returns ErrCustomerNotFound, one without the mark ErrCustomerNotRecidivist,
 	// and a second charge for the same mark ErrRecidivismChargeExists. Nothing is stored on error.
 	ApplyRecidivismCharge(ctx context.Context, customerID string, build func(recidivistAt time.Time) (domain.RecidivismCharge, error)) (domain.RecidivismCharge, error)
+	// ListRecidivists returns the customers with the reincidence mark, oldest mark first.
+	ListRecidivists(ctx context.Context) ([]domain.Recidivist, error)
 }

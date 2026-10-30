@@ -162,3 +162,47 @@ func TestLeerClienteTraeLaMarcaDeReincidente(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, plain.RecidivistAt.IsZero(), "un cliente normal no tiene marca")
 }
+
+func TestListarReincidentesSoloMarcadosLosMasAntiguosPrimeroYSinMasDatosQueLosNecesarios(t *testing.T) {
+	store, pool := setup(t)
+	repo := persistence.NewRecidivismRepository(pool)
+	ctx := context.Background()
+	older, newer, unmarked := newCustomer(t, pool), newCustomer(t, pool), newCustomer(t, pool)
+	_, err := pool.Exec(ctx, `UPDATE customers SET recidivist_at = $2, phone = '0980000000' WHERE id = $1`, older, time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `UPDATE customers SET recidivist_at = $2, pending_surcharge = 4.50 WHERE id = $1`, newer, time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	// newer has an order (phone 0991234567); older has none, so its own phone is the contact.
+	product := newProduct(t, store, "Manzana "+uuid.NewString()[:8], stock(50))
+	_, err = store.PlaceOrder(ctx, newOrder(t, newer), []domain.OrderLine{lineFor(t, product, 1)}, nil, nil)
+	require.NoError(t, err)
+	_, err = repo.ApplyRecidivismCharge(ctx, newer, buildCharge(newer, "12.50"))
+	require.NoError(t, err)
+
+	got, err := repo.ListRecidivists(ctx)
+
+	require.NoError(t, err)
+	var ids []string
+	byID := map[string]domain.Recidivist{}
+	for _, r := range got {
+		ids = append(ids, r.CustomerID)
+		byID[r.CustomerID] = r
+	}
+	assert.NotContains(t, ids, unmarked, "a customer without the mark is not listed")
+	assert.Less(t, indexOf(ids, older), indexOf(ids, newer), "oldest mark first")
+	assert.Equal(t, "0980000000", byID[older].ContactPhone)
+	assert.False(t, byID[older].ChargeApplied)
+	assert.Equal(t, "0991234567", byID[newer].ContactPhone, "the latest order's phone wins")
+	assert.True(t, byID[newer].ChargeApplied)
+	assert.True(t, byID[newer].PendingSurcharge.Equal(decimal.RequireFromString("17.00")), "4.50 owed + 12.50 extra charge")
+	assert.True(t, byID[newer].RecidivistAt.Equal(time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)))
+}
+
+func indexOf(list []string, want string) int {
+	for i, v := range list {
+		if v == want {
+			return i
+		}
+	}
+	return -1
+}

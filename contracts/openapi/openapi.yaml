@@ -545,6 +545,26 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/customers/recidivists:
+    get:
+      tags: [surcharges]
+      operationId: listRecidivists
+      summary: Lista los clientes reincidentes (ADMIN u OPERATOR)
+      description: |
+        Los clientes con la marca de reincidente (ADR 0006), la marca mas antigua primero. Trae solo lo necesario para
+        decidir un recargo extra y ubicar al cliente: nombre, telefono de contacto (el del ultimo pedido, o el del
+        cliente si no tiene pedidos), la fecha de la marca, el saldo pendiente y si el recargo extra ya se aplico
+        (solo se aplica una vez por marca). No incluye correo ni direccion. CUSTOMER y DRIVER reciben 403.
+      responses:
+        "200":
+          description: Reincidentes, o un arreglo vacio
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Recidivist" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /api/v1/customers/{id}/recidivism-charge:
     post:
       tags: [surcharges]
@@ -1379,6 +1399,16 @@ components:
       properties:
         amount: { type: string, example: "12.50", description: "Decimal mayor que cero, como string. Se redondea a centavos" }
         reason: { type: string, minLength: 5, maxLength: 300, description: "Justificacion de la decision, se guarda como auditoria" }
+    Recidivist:
+      type: object
+      required: [customerId, fullName, contactPhone, recidivistAt, pendingSurcharge, chargeApplied]
+      properties:
+        customerId: { type: string, format: uuid }
+        fullName: { type: string, description: "Nombre del cliente, quien recibe las entregas" }
+        contactPhone: { type: string, description: Telefono del ultimo pedido o del cliente. Vacio si no hay ninguno. }
+        recidivistAt: { type: string, format: date-time, description: Cuando se marco al cliente }
+        pendingSurcharge: { type: string, example: "4.50", description: Saldo pendiente actual como decimal con dos digitos }
+        chargeApplied: { type: boolean, description: true si el recargo extra de esta marca ya se aplico }
     RecidivismCharge:
       type: object
       required: [id, customerId, recidivistAt, amount, reason, appliedBy, createdAt]

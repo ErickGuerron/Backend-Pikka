@@ -133,6 +133,7 @@ func run(log *slog.Logger) error {
 		RecordOutcome:    recordStopOutcome,
 		Surcharges:       orderapp.NewResolveSurchargeVerification(surchargeRepo).WithReincidence(reincidence),
 		Recidivism:       orderapp.NewApplyRecidivismCharge(persistence.NewRecidivismRepository(pool)),
+		ListRecidivists:  orderapp.NewListRecidivists(persistence.NewRecidivismRepository(pool)),
 	}).WithRouteCapacity(zoneClassifier))
 	// Catálogo de productos (ADR 0009): el operador administra, el cliente lee lo activo.
 	catalogv1.RegisterCatalogServiceServer(grpcServer, grpcadapter.NewCatalogServer(

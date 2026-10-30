@@ -47,6 +47,8 @@ type OrderUseCases struct {
 	Surcharges *orderapp.ResolveSurchargeVerification
 	// Recidivism lets an operator apply an extra charge to a recidivist customer (ADR 0006).
 	Recidivism *orderapp.ApplyRecidivismCharge
+	// ListRecidivists lets an operator find the customers an extra charge can be applied to (ADR 0006).
+	ListRecidivists *orderapp.ListRecidivists
 }
 
 // OrderServer implementa ordersv1.OrderServiceServer. Solo traduce: la regla de

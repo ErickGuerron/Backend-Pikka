@@ -46,3 +46,31 @@ func recidivismChargeToProto(c domain.RecidivismCharge) *ordersv1.RecidivismChar
 		CreatedAt:    c.CreatedAt.UTC().Format(time.RFC3339),
 	}
 }
+
+// ListRecidivists lists the customers with the reincidence mark for the operator. The role comes from the
+// verified metadata.
+func (s *OrderServer) ListRecidivists(ctx context.Context, _ *ordersv1.ListRecidivistsRequest) (*ordersv1.ListRecidivistsResponse, error) {
+	if s.useCases.ListRecidivists == nil {
+		return nil, status.Error(codes.Unimplemented, "recidivist list is not wired")
+	}
+	_, role, err := identityFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	list, err := s.useCases.ListRecidivists.Run(ctx, role)
+	if err != nil {
+		return nil, mapOrderError(err)
+	}
+	out := make([]*ordersv1.Recidivist, 0, len(list))
+	for _, r := range list {
+		out = append(out, &ordersv1.Recidivist{
+			CustomerId:       r.CustomerID,
+			FullName:         r.FullName,
+			ContactPhone:     r.ContactPhone,
+			RecidivistAt:     r.RecidivistAt.UTC().Format(time.RFC3339),
+			PendingSurcharge: r.PendingSurcharge.StringFixed(2),
+			ChargeApplied:    r.ChargeApplied,
+		})
+	}
+	return &ordersv1.ListRecidivistsResponse{Recidivists: out}, nil
+}

@@ -92,6 +92,13 @@ func (o *Orders) ApplyRecidivismCharge(ctx context.Context, m CallMeta, req *ord
 	return o.client.ApplyRecidivismCharge(ctx, req)
 }
 
+// ListRecidivists lista los clientes con la marca de reincidente para el operador.
+func (o *Orders) ListRecidivists(ctx context.Context, m CallMeta, req *ordersv1.ListRecidivistsRequest) (*ordersv1.ListRecidivistsResponse, error) {
+	ctx, cancel := o.outgoing(ctx, m)
+	defer cancel()
+	return o.client.ListRecidivists(ctx, req)
+}
+
 // CancelOrder cancela un pedido del cliente autenticado.
 func (o *Orders) CancelOrder(ctx context.Context, m CallMeta, req *ordersv1.CancelOrderRequest) (*ordersv1.CancelOrderResponse, error) {
 	ctx, cancel := o.outgoing(ctx, m)
