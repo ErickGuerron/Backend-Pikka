@@ -19,6 +19,8 @@ type fakeSurchargeClient struct {
 	listCalls  int
 	resolveReq *ordersv1.ResolveSurchargeVerificationRequest
 	chargeReq  *ordersv1.ApplyRecidivismChargeRequest
+	payCalls   int
+	payRes     *ordersv1.PayMyBalanceResponse
 	meta       grpcclient.CallMeta
 	err        error
 }
@@ -54,6 +56,18 @@ func (f *fakeSurchargeClient) ApplyRecidivismCharge(_ context.Context, m grpccli
 		Id: "r-1", CustomerId: req.GetCustomerId(), RecidivistAt: "2026-10-10T09:00:00Z", Amount: req.GetAmount(),
 		Reason: req.GetReason(), AppliedBy: "u-1", CreatedAt: "2026-10-11T09:00:00Z",
 	}}, nil
+}
+
+func (f *fakeSurchargeClient) PayMyBalance(_ context.Context, m grpcclient.CallMeta, _ *ordersv1.PayMyBalanceRequest) (*ordersv1.PayMyBalanceResponse, error) {
+	f.payCalls++
+	f.meta = m
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.payRes != nil {
+		return f.payRes, nil
+	}
+	return &ordersv1.PayMyBalanceResponse{Status: "SIMULATED_APPROVED", Amount: "7.50", Reference: "SIM-1", Unblocked: true, CreatedAt: "2026-10-29T09:00:00Z"}, nil
 }
 
 func surchargeRouter(c httpapi.SurchargeClient) http.Handler {
@@ -173,4 +187,61 @@ func TestApplyRecidivismCharge_ServiceDecisionsKeepTheirStatus(t *testing.T) {
 		rec := do(surchargeRouter(fake), http.MethodPost, chargePath, `{"amount":"5","reason":"motivo valido"}`, authHdr(t, "OPERATOR"))
 		assert.Equal(t, want, rec.Code, code.String())
 	}
+}
+
+const payPath = "/api/v1/customers/me/balance/payment"
+
+// ADR 0006 seccion 4: el cobro se marca como simulado en la interfaz, para que nadie crea que hubo un cargo real.
+func TestPayMyBalance_CustomerPaysAndTheAnswerSaysItIsSimulated(t *testing.T) {
+	fake := &fakeSurchargeClient{}
+
+	rec := do(surchargeRouter(fake), http.MethodPost, payPath, "", authHdr(t, "CUSTOMER"))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.JSONEq(t, `{"status":"SIMULATED_APPROVED","simulated":true,"amount":"7.50","reference":"SIM-1","unblocked":true,"createdAt":"2026-10-29T09:00:00Z"}`, rec.Body.String())
+	assert.Equal(t, "CUSTOMER", fake.meta.Role)
+	assert.Equal(t, 1, fake.payCalls)
+}
+
+func TestPayMyBalance_DeclinedCardIsAnswered200WithItsStatus(t *testing.T) {
+	fake := &fakeSurchargeClient{payRes: &ordersv1.PayMyBalanceResponse{Status: "SIMULATED_DECLINED", Amount: "7.99", Reference: "SIM-2", CreatedAt: "2026-10-29T09:00:00Z"}}
+
+	rec := do(surchargeRouter(fake), http.MethodPost, payPath, "", authHdr(t, "CUSTOMER"))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"status":"SIMULATED_DECLINED"`)
+	assert.Contains(t, rec.Body.String(), `"unblocked":false`)
+	assert.Contains(t, rec.Body.String(), `"simulated":true`)
+}
+
+func TestPayMyBalance_OnlyTheCustomerRoleReachesTheService(t *testing.T) {
+	for _, role := range []string{"OPERATOR", "ADMIN", "DRIVER"} {
+		fake := &fakeSurchargeClient{}
+		rec := do(surchargeRouter(fake), http.MethodPost, payPath, "", authHdr(t, role))
+
+		assert.Equal(t, http.StatusForbidden, rec.Code, role)
+		assert.Equal(t, 0, fake.payCalls, role)
+	}
+	rec := do(surchargeRouter(&fakeSurchargeClient{}), http.MethodPost, payPath, "", nil)
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestPayMyBalance_ServiceDecisionsKeepTheirStatus(t *testing.T) {
+	cases := map[codes.Code]int{
+		codes.FailedPrecondition: http.StatusUnprocessableEntity,
+		codes.Aborted:            http.StatusConflict,
+	}
+	for code, want := range cases {
+		rec := do(surchargeRouter(&fakeSurchargeClient{err: status.Error(code, "x")}), http.MethodPost, payPath, "", authHdr(t, "CUSTOMER"))
+		assert.Equal(t, want, rec.Code, code.String())
+	}
+}
+
+// El cuerpo no decide nada: el cliente no manda monto, solo se paga el saldo completo.
+func TestPayMyBalance_IgnoresAnyBody(t *testing.T) {
+	fake := &fakeSurchargeClient{}
+	rec := do(surchargeRouter(fake), http.MethodPost, payPath, `{"amount":"0.01"}`, authHdr(t, "CUSTOMER"))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, 1, fake.payCalls)
 }
