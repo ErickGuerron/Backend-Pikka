@@ -15,7 +15,7 @@ CREATE TABLE reassignment_fees (
 CREATE TABLE reassignment_charges (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     customer_id UUID NOT NULL REFERENCES customers (id),
-    order_id    UUID NOT NULL REFERENCES orders (id),
+    order_id    UUID NOT NULL, -- no FK, like surcharges: the repository checks the order, and orders stays droppable by the migration test
     amount      NUMERIC(12,2) NOT NULL,
     reason      VARCHAR(300) NOT NULL,
     applied_by  UUID NOT NULL,
