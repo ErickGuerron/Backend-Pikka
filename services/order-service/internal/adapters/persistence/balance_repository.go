@@ -32,6 +32,7 @@ func NewBalanceRepository(pool *pgxpool.Pool) *BalanceRepository {
 //   - a recidivism charge not yet paid (its clock starts when applied).
 //   - a reassignment charge not yet paid (its clock starts when applied).
 //
+// A surcharge with an open dispute is not counted while the dispute is open: its clock is paused (ADR 0006, section 5).
 // WAIVED incidents, those waiting for verification and APPLIED or PAID ones are not obligations.
 // A recidivism charge stops being one when it is stamped paid.
 func (r *BalanceRepository) ListActiveObligations(ctx context.Context) ([]domain.BalanceObligation, error) {
@@ -40,6 +41,7 @@ func (r *BalanceRepository) ListActiveObligations(ctx context.Context) ([]domain
 		  FROM surcharges s
 		  JOIN customers c ON c.id = s.customer_id
 		 WHERE c.status = 'ACTIVO' AND s.status = 'PENDING' AND s.amount IS NOT NULL
+		   AND NOT EXISTS (SELECT 1 FROM surcharge_disputes d WHERE d.surcharge_id = s.id AND d.status = 'OPEN')
 		UNION ALL
 		SELECT rc.customer_id::text, rc.created_at
 		  FROM recidivism_charges rc
