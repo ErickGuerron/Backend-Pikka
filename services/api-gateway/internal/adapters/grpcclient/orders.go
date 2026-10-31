@@ -92,6 +92,13 @@ func (o *Orders) ApplyRecidivismCharge(ctx context.Context, m CallMeta, req *ord
 	return o.client.ApplyRecidivismCharge(ctx, req)
 }
 
+// ListRecidivists lista los clientes con la marca de reincidente para el operador.
+func (o *Orders) ListRecidivists(ctx context.Context, m CallMeta, req *ordersv1.ListRecidivistsRequest) (*ordersv1.ListRecidivistsResponse, error) {
+	ctx, cancel := o.outgoing(ctx, m)
+	defer cancel()
+	return o.client.ListRecidivists(ctx, req)
+}
+
 // PayMyBalance paga el saldo completo del cliente autenticado con el cobro simulado.
 func (o *Orders) PayMyBalance(ctx context.Context, m CallMeta, req *ordersv1.PayMyBalanceRequest) (*ordersv1.PayMyBalanceResponse, error) {
 	ctx, cancel := o.outgoing(ctx, m)

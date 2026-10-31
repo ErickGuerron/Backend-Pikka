@@ -69,3 +69,39 @@ func (r *RecidivismRepository) ApplyRecidivismCharge(ctx context.Context, custom
 	}
 	return saved, nil
 }
+
+// ListRecidivists returns the marked customers, oldest mark first. The contact is the phone of the latest
+// order that has one, else the customer's own. Nothing else about the customer leaves the database.
+func (r *RecidivismRepository) ListRecidivists(ctx context.Context) ([]domain.Recidivist, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT c.id::text, c.full_name,
+		       COALESCE(
+		         (SELECT o.contact_phone FROM orders o
+		           WHERE o.customer_id = c.id AND o.contact_phone <> ''
+		           ORDER BY o.created_at DESC LIMIT 1),
+		         c.phone, ''),
+		       c.recidivist_at, c.pending_surcharge,
+		       EXISTS (SELECT 1 FROM recidivism_charges rc
+		                WHERE rc.customer_id = c.id AND rc.recidivist_at = c.recidivist_at)
+		  FROM customers c
+		 WHERE c.recidivist_at IS NOT NULL
+		 ORDER BY c.recidivist_at, c.id`)
+	if err != nil {
+		return nil, fmt.Errorf("list recidivists: %w", err)
+	}
+	defer rows.Close()
+
+	var out []domain.Recidivist
+	for rows.Next() {
+		var rec domain.Recidivist
+		if err := rows.Scan(&rec.CustomerID, &rec.FullName, &rec.ContactPhone, &rec.RecidivistAt, &rec.PendingSurcharge, &rec.ChargeApplied); err != nil {
+			return nil, fmt.Errorf("list recidivists: scan: %w", err)
+		}
+		rec.RecidivistAt = rec.RecidivistAt.UTC()
+		out = append(out, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list recidivists: %w", err)
+	}
+	return out, nil
+}

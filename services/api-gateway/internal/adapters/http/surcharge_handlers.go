@@ -16,6 +16,7 @@ type SurchargeClient interface {
 	ListSurchargesPendingVerification(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ListSurchargesPendingVerificationRequest) (*ordersv1.ListSurchargesPendingVerificationResponse, error)
 	ResolveSurchargeVerification(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ResolveSurchargeVerificationRequest) (*ordersv1.ResolveSurchargeVerificationResponse, error)
 	ApplyRecidivismCharge(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ApplyRecidivismChargeRequest) (*ordersv1.ApplyRecidivismChargeResponse, error)
+	ListRecidivists(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ListRecidivistsRequest) (*ordersv1.ListRecidivistsResponse, error)
 	PayMyBalance(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.PayMyBalanceRequest) (*ordersv1.PayMyBalanceResponse, error)
 	GetMyBalance(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.GetMyBalanceRequest) (*ordersv1.GetMyBalanceResponse, error)
 }
@@ -119,6 +120,32 @@ func (h *surchargeHandlers) applyRecidivismCharge(c echo.Context) error {
 		ID: ch.GetId(), CustomerID: ch.GetCustomerId(), RecidivistAt: ch.GetRecidivistAt(), Amount: ch.GetAmount(),
 		Reason: ch.GetReason(), AppliedBy: ch.GetAppliedBy(), CreatedAt: ch.GetCreatedAt(),
 	})
+}
+
+// recidivistDTO is all an operator gets about a recidivist: no email, no address.
+type recidivistDTO struct {
+	CustomerID       string `json:"customerId"`
+	FullName         string `json:"fullName"`
+	ContactPhone     string `json:"contactPhone"`
+	RecidivistAt     string `json:"recidivistAt"`
+	PendingSurcharge string `json:"pendingSurcharge"`
+	ChargeApplied    bool   `json:"chargeApplied"`
+}
+
+// listRecidivists answers a plain array, oldest mark first, like the other operator queues.
+func (h *surchargeHandlers) listRecidivists(c echo.Context) error {
+	res, err := h.surcharges.ListRecidivists(c.Request().Context(), callMeta(c), &ordersv1.ListRecidivistsRequest{})
+	if err != nil {
+		return err
+	}
+	out := make([]recidivistDTO, 0, len(res.GetRecidivists()))
+	for _, r := range res.GetRecidivists() {
+		out = append(out, recidivistDTO{
+			CustomerID: r.GetCustomerId(), FullName: r.GetFullName(), ContactPhone: r.GetContactPhone(),
+			RecidivistAt: r.GetRecidivistAt(), PendingSurcharge: r.GetPendingSurcharge(), ChargeApplied: r.GetChargeApplied(),
+		})
+	}
+	return c.JSON(http.StatusOK, out)
 }
 
 type balancePaymentDTO struct {

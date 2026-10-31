@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"google.golang.org/grpc/codes"
 
 	ordersv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/orders/v1"
@@ -103,5 +104,42 @@ func TestApplyRecidivismChargeInvalidInputNeverReachesTheRepository(t *testing.T
 
 func TestApplyRecidivismChargeNotWired(t *testing.T) {
 	_, err := NewOrderServer(OrderUseCases{}).ApplyRecidivismCharge(asRole("OPERATOR"), recidivismReq())
+	wantCode(t, err, codes.Unimplemented)
+}
+
+type recidivistsStore struct {
+	ports.RecidivismRepository
+	list []domain.Recidivist
+}
+
+func (s *recidivistsStore) ListRecidivists(context.Context) ([]domain.Recidivist, error) {
+	return s.list, nil
+}
+
+func TestListRecidivistsReturnsOnlyWhatTheOperatorNeeds(t *testing.T) {
+	store := &recidivistsStore{list: []domain.Recidivist{{
+		CustomerID: "c-1", FullName: "Ana Pérez", ContactPhone: "0991234567",
+		RecidivistAt: time.Date(2026, 10, 10, 9, 0, 0, 0, time.UTC), PendingSurcharge: decimal.RequireFromString("4.5"), ChargeApplied: true,
+	}}}
+	server := NewOrderServer(OrderUseCases{ListRecidivists: orderapp.NewListRecidivists(store)})
+
+	res, err := server.ListRecidivists(asRole("OPERATOR"), &ordersv1.ListRecidivistsRequest{})
+
+	if err != nil || len(res.GetRecidivists()) != 1 {
+		t.Fatalf("res = %v, err = %v", res, err)
+	}
+	got := res.GetRecidivists()[0]
+	if got.GetCustomerId() != "c-1" || got.GetFullName() != "Ana Pérez" || got.GetContactPhone() != "0991234567" ||
+		got.GetRecidivistAt() != "2026-10-10T09:00:00Z" || got.GetPendingSurcharge() != "4.50" || !got.GetChargeApplied() {
+		t.Fatalf("recidivist = %+v", got)
+	}
+}
+
+func TestListRecidivistsIsForbiddenToCustomersAndNotWiredIsUnimplemented(t *testing.T) {
+	server := NewOrderServer(OrderUseCases{ListRecidivists: orderapp.NewListRecidivists(&recidivistsStore{})})
+	_, err := server.ListRecidivists(asRole("CUSTOMER"), &ordersv1.ListRecidivistsRequest{})
+	wantCode(t, err, codes.PermissionDenied)
+
+	_, err = NewOrderServer(OrderUseCases{}).ListRecidivists(asRole("OPERATOR"), &ordersv1.ListRecidivistsRequest{})
 	wantCode(t, err, codes.Unimplemented)
 }

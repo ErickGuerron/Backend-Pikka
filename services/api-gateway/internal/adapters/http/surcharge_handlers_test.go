@@ -16,15 +16,16 @@ import (
 )
 
 type fakeSurchargeClient struct {
-	listCalls    int
-	resolveReq   *ordersv1.ResolveSurchargeVerificationRequest
-	chargeReq    *ordersv1.ApplyRecidivismChargeRequest
-	payCalls     int
-	balanceRes   *ordersv1.GetMyBalanceResponse
-	balanceCalls int
-	payRes       *ordersv1.PayMyBalanceResponse
-	meta         grpcclient.CallMeta
-	err          error
+	listCalls       int
+	resolveReq      *ordersv1.ResolveSurchargeVerificationRequest
+	chargeReq       *ordersv1.ApplyRecidivismChargeRequest
+	recidivistCalls int
+	payCalls        int
+	balanceRes      *ordersv1.GetMyBalanceResponse
+	balanceCalls    int
+	payRes          *ordersv1.PayMyBalanceResponse
+	meta            grpcclient.CallMeta
+	err             error
 }
 
 func (f *fakeSurchargeClient) ListSurchargesPendingVerification(_ context.Context, m grpcclient.CallMeta, _ *ordersv1.ListSurchargesPendingVerificationRequest) (*ordersv1.ListSurchargesPendingVerificationResponse, error) {
@@ -204,6 +205,64 @@ func TestApplyRecidivismCharge_ServiceDecisionsKeepTheirStatus(t *testing.T) {
 		rec := do(surchargeRouter(fake), http.MethodPost, chargePath, `{"amount":"5","reason":"motivo valido"}`, authHdr(t, "OPERATOR"))
 		assert.Equal(t, want, rec.Code, code.String())
 	}
+}
+
+func (f *fakeSurchargeClient) ListRecidivists(_ context.Context, m grpcclient.CallMeta, _ *ordersv1.ListRecidivistsRequest) (*ordersv1.ListRecidivistsResponse, error) {
+	f.recidivistCalls++
+	f.meta = m
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &ordersv1.ListRecidivistsResponse{Recidivists: []*ordersv1.Recidivist{
+		{CustomerId: "c-1", FullName: "Ana Perez", ContactPhone: "0991234567", RecidivistAt: "2026-10-10T09:00:00Z", PendingSurcharge: "4.50", ChargeApplied: true},
+	}}, nil
+}
+
+const recidivistsPath = "/api/v1/customers/recidivists"
+
+func TestListRecidivists_StaffGetsAnArrayWithOnlyWhatTheyNeed(t *testing.T) {
+	for _, role := range []string{"OPERATOR", "ADMIN"} {
+		fake := &fakeSurchargeClient{}
+		rec := do(surchargeRouter(fake), http.MethodGet, recidivistsPath, "", authHdr(t, role))
+
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		assert.JSONEq(t, `[{"customerId":"c-1","fullName":"Ana Perez","contactPhone":"0991234567","recidivistAt":"2026-10-10T09:00:00Z","pendingSurcharge":"4.50","chargeApplied":true}]`, rec.Body.String())
+		assert.Equal(t, role, fake.meta.Role)
+	}
+}
+
+func TestListRecidivists_NoRecidivistsIsAnEmptyArrayNotNull(t *testing.T) {
+	rec := do(surchargeRouter(&emptyRecidivists{}), http.MethodGet, recidivistsPath, "", authHdr(t, "OPERATOR"))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.JSONEq(t, `[]`, rec.Body.String())
+}
+
+func TestListRecidivists_CustomerAndDriverAre403BeforeTheService(t *testing.T) {
+	for _, role := range []string{"CUSTOMER", "DRIVER"} {
+		fake := &fakeSurchargeClient{}
+		rec := do(surchargeRouter(fake), http.MethodGet, recidivistsPath, "", authHdr(t, role))
+
+		assert.Equal(t, http.StatusForbidden, rec.Code, role)
+		assert.Equal(t, 0, fake.recidivistCalls, role)
+	}
+}
+
+func TestListRecidivists_WithoutToken401(t *testing.T) {
+	rec := do(surchargeRouter(&fakeSurchargeClient{}), http.MethodGet, recidivistsPath, "", nil)
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestListRecidivists_ServiceErrorKeepsItsStatus(t *testing.T) {
+	fake := &fakeSurchargeClient{err: status.Error(codes.PermissionDenied, "no")}
+	rec := do(surchargeRouter(fake), http.MethodGet, recidivistsPath, "", authHdr(t, "OPERATOR"))
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+type emptyRecidivists struct{ fakeSurchargeClient }
+
+func (emptyRecidivists) ListRecidivists(context.Context, grpcclient.CallMeta, *ordersv1.ListRecidivistsRequest) (*ordersv1.ListRecidivistsResponse, error) {
+	return &ordersv1.ListRecidivistsResponse{}, nil
 }
 
 const payPath = "/api/v1/customers/me/balance/payment"

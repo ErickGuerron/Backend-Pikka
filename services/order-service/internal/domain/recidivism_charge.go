@@ -43,3 +43,16 @@ func NewRecidivismCharge(customerID string, recidivistAt time.Time, amount decim
 		Reason: reason, AppliedBy: operatorID, CreatedAt: at.UTC(),
 	}, nil
 }
+
+// Recidivist is what an operator sees about a customer with the reincidence mark: enough to decide an
+// extra charge and to reach the customer, and nothing else (no email, no address).
+type Recidivist struct {
+	CustomerID string
+	FullName   string
+	// ContactPhone is the phone of the latest order, else the customer's own; empty if there is none.
+	ContactPhone     string
+	RecidivistAt     time.Time
+	PendingSurcharge decimal.Decimal
+	// ChargeApplied is true once the extra charge for this mark exists (it can be applied only once).
+	ChargeApplied bool
+}

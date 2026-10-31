@@ -30,6 +30,9 @@ service OrderService {
   // that is not a recidivist returns FAILED_PRECONDITION, a second charge for the same reincidence ABORTED
   // (HTTP 409), an unknown customer NOT_FOUND.
   rpc ApplyRecidivismCharge(ApplyRecidivismChargeRequest) returns (ApplyRecidivismChargeResponse);
+  // ListRecidivists lists the customers marked as recidivist, oldest mark first, with only what an operator
+  // needs to decide an extra charge and reach the customer (ADR 0006). Only ADMIN and OPERATOR.
+  rpc ListRecidivists(ListRecidivistsRequest) returns (ListRecidivistsResponse);
   // PayMyBalance pays the whole pending balance of the authenticated CUSTOMER with the simulated card
   // (ADR 0006, section 5). There is no amount to send: only the full balance can be paid. An approved
   // payment returns a balance-blocked account to ACTIVO at once. A declined charge is a result, not an
@@ -448,6 +451,27 @@ message RecidivismCharge {
 
 message ApplyRecidivismChargeResponse {
   RecidivismCharge charge = 1;
+}
+
+message ListRecidivistsRequest {}
+
+// Recidivist is a customer with the reincidence mark. It carries no email: the contact is the phone.
+message Recidivist {
+  string customer_id = 1;
+  // The customer's full name, who receives the deliveries.
+  string full_name = 2;
+  // Phone of the customer's latest order, else the customer's own phone; empty if there is none.
+  string contact_phone = 3;
+  // When the customer was marked (RFC 3339, UTC).
+  string recidivist_at = 4;
+  // What the customer owes now, a decimal string.
+  string pending_surcharge = 5;
+  // true when the operator already applied the extra charge for this mark (it can be applied once).
+  bool charge_applied = 6;
+}
+
+message ListRecidivistsResponse {
+  repeated Recidivist recidivists = 1;
 }
 
 message PayMyBalanceRequest {}

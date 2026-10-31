@@ -47,6 +47,8 @@ type OrderUseCases struct {
 	Surcharges *orderapp.ResolveSurchargeVerification
 	// Recidivism lets an operator apply an extra charge to a recidivist customer (ADR 0006).
 	Recidivism *orderapp.ApplyRecidivismCharge
+	// ListRecidivists lets an operator find the customers an extra charge can be applied to (ADR 0006).
+	ListRecidivists *orderapp.ListRecidivists
 	// Pay lets a customer pay the whole balance with the simulated card (ADR 0006, section 5).
 	Pay *orderapp.PayBalance
 	// Balance shows a customer what they owe, line by line (ADR 0006, sections 4 and 5).
