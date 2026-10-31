@@ -1534,9 +1534,9 @@ components:
       required: [id, orderId, kind, detail, createdAt, read]
       properties:
         id: { type: string, format: uuid }
-        orderId: { type: string, format: uuid }
-        kind: { type: string, enum: [ORDER_IN_REVIEW, ORDER_CONFIRMED, ORDER_CORRECTED, ORDER_REJECTED] }
-        detail: { type: string, maxLength: 300, description: Motivos del aviso o motivo de auditoría del operador }
+        orderId: { type: string, description: "Pedido al que se refiere el aviso. Vacío en ACCOUNT_BLOCKED_BY_BALANCE: ese aviso es de la cuenta, no de un pedido" }
+        kind: { type: string, enum: [ORDER_IN_REVIEW, ORDER_CONFIRMED, ORDER_CORRECTED, ORDER_REJECTED, SURCHARGE_APPLIED, ACCOUNT_BLOCKED_BY_BALANCE] }
+        detail: { type: string, maxLength: 300, description: "Motivos del aviso (ORDER_IN_REVIEW), motivo de auditoría del operador (ORDER_CONFIRMED, ORDER_CORRECTED y ORDER_REJECTED), MOTIVO,MONTO,FECHA_LIMITE en SURCHARGE_APPLIED (código cerrado, decimal con dos dígitos y fecha RFC 3339) o vacío en ACCOUNT_BLOCKED_BY_BALANCE" }
         createdAt: { type: string, format: date-time }
         read: { type: boolean }
     OrderReviewRequest:

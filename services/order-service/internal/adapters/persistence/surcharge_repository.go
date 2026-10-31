@@ -47,6 +47,10 @@ func (r *SurchargeRepository) RecordSurchargeIncident(ctx context.Context, s dom
 		if err := addToBalance(ctx, tx, saved); err != nil {
 			return domain.Surcharge{}, false, err
 		}
+		// The customer is told in the same transaction that makes the amount owed (ADR 0006, section 5).
+		if err := notifyApplied(ctx, tx, saved); err != nil {
+			return domain.Surcharge{}, false, err
+		}
 		if err := tx.Commit(ctx); err != nil {
 			return domain.Surcharge{}, false, fmt.Errorf("record surcharge incident: commit: %w", err)
 		}
@@ -75,6 +79,16 @@ func addToBalance(ctx context.Context, tx pgx.Tx, s domain.Surcharge) error {
 		return fmt.Errorf("add surcharge to balance: %w", err)
 	}
 	return nil
+}
+
+// notifyApplied stores the "surcharge applied" notice when the surcharge is owed now: PENDING and priced. Anything else
+// (waiting for verification, waived, unpriced) is not notified.
+func notifyApplied(ctx context.Context, tx pgx.Tx, s domain.Surcharge) error {
+	notice, ok := domain.NewSurchargeAppliedNotification(s)
+	if !ok {
+		return nil
+	}
+	return insertNotification(ctx, tx, s.CustomerID, s.OrderID, notice)
 }
 
 // OrderBasePrice sums the order's lines. found is false for an order without lines.
@@ -150,6 +164,9 @@ func (r *SurchargeRepository) ResolveSurchargeVerification(ctx context.Context, 
 	// Confirming a priced incident makes it owed now, in the same transaction as the decision.
 	if current.Status == domain.SurchargePendingVerification {
 		if err := addToBalance(ctx, tx, next); err != nil {
+			return domain.Surcharge{}, err
+		}
+		if err := notifyApplied(ctx, tx, next); err != nil {
 			return domain.Surcharge{}, err
 		}
 	}

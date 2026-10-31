@@ -22,7 +22,7 @@ decisión pequeña; al final lo que necesita una especificación.
 | F7 | «Pago sin cuenta» (ADR 0005) | Sí, de producto (D2) | por definir | por definir |
 | F8 | Disputas, pausa del reloj y apelación | Sí, requiere especificación | todo | item 1, 3 y 4 |
 
-**Hechas:** F1.
+**Hechas:** F1, F2 (web; falta la app móvil) y F3.
 
 Cada función se entrega como su propio PR, con pruebas primero y la documentación al día. Las decisiones propuestas
 («Propuesta») son un punto de partida, no están aprobadas hasta que producto las confirme.
@@ -79,7 +79,7 @@ el 15 %, registra la incidencia y evalúa la reincidencia, usado por el cierre y
 
 ## F2. Aviso en la app al confirmarse la penalización
 
-**Estado:** no implementada. **Decisión requerida:** solo el texto del aviso (propuesto abajo).
+**Estado:** backend y web implementados (rama `feat/penalty-f2-notice`); **la app móvil queda pendiente (F2b)**. **Decisión requerida:** solo el texto del aviso (propuesto abajo).
 
 **Qué es.** El ADR 0006 dice que el reloj de 2 semanas empieza «cuando el sistema confirma la penalización **y notifica
 al cliente en la app**». Hoy el reloj empieza al confirmarse, pero no existe el aviso: el cliente se entera de que debe
@@ -95,6 +95,21 @@ dinero solo si abre la tarjeta de saldo.
 - `ACCOUNT_BLOCKED_BY_BALANCE` lo crea el barrido al bloquear.
 - Las apps los muestran en el panel de avisos que ya existe (`GET /notifications/mine`), con el texto traducido del tipo.
 
+**Qué se hizo.** Migración 000021 (tipos nuevos y `order_id` nulo solo para el aviso de bloqueo, con una restricción que
+exige pedido en todos los demás); `NewSurchargeAppliedNotification` y `NewAccountBlockedNotification`; el aviso del
+recargo se inserta en la misma transacción que lo suma al saldo (incidencia nueva o confirmación del operador) y el de
+bloqueo en la misma que cambia el estado de la cuenta. El detalle de `SURCHARGE_APPLIED` es `MOTIVO,MONTO,FECHA_LIMITE` sin
+idioma: cada app lo traduce. La web lo muestra en su panel de avisos.
+
+**Límites conocidos.**
+- **La app móvil no tiene panel de avisos** (tampoco para los avisos de revisión de pedidos que ya existían): hoy el cliente
+  móvil se entera de lo que debe por la tarjeta de saldo. Mostrar los avisos allí es una función aparte (F2b).
+- Una incidencia recuperada por la reconciliación (F1) también avisa, pero con la fecha original: el aviso puede llegar
+  tarde respecto del plazo.
+- Los recargos creados antes de F2 no tienen aviso.
+- Un cliente con la versión anterior de la web no entiende los tipos nuevos y no muestra su panel de avisos; conviene
+  desplegar la web antes o junto con el backend.
+
 **Criterios de aceptación.**
 - Una incidencia nueva con monto deja un aviso con el monto y la fecha límite; una sin monto, `PENDING_VERIFICATION` o
   dispensada, no.
@@ -106,7 +121,7 @@ dinero solo si abre la tarjeta de saldo.
 
 ## F3. Cancelar bloqueado en la interfaz
 
-**Estado:** no implementada. **Decisión requerida:** ninguna.
+**Estado:** implementada en web (Frontend-Pikka#50) y móvil (Frontend-Pikka#51). **Decisión requerida:** ninguna.
 
 **Qué es.** El servidor ya rechaza con 403 cancelar un pedido a una cuenta `BLOQUEADO_POR_SALDO`, pero la interfaz sigue
 mostrando el botón y el cliente ve un error genérico. Hoy solo se deshabilita «Hacer nuevo pedido».

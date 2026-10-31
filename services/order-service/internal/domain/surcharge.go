@@ -104,6 +104,20 @@ func SurchargeFor(basePrice decimal.Decimal) (decimal.Decimal, error) {
 	return basePrice.Mul(SurchargeRate).Round(2), nil
 }
 
+// ClockStart is when the payment clock started: the operator's confirmation for a WRONG_ADDRESS, else the moment the
+// incident happened. The overdue sweep and the customer's balance use the same rule.
+func (s Surcharge) ClockStart() time.Time {
+	if !s.ResolvedAt.IsZero() {
+		return s.ResolvedAt
+	}
+	return s.CreatedAt
+}
+
+// DueAt is the last moment to pay before the account is blocked (ADR 0006, section 5).
+func (s Surcharge) DueAt() time.Time {
+	return s.ClockStart().AddDate(0, 0, BalanceDeadlineDays)
+}
+
 // Price sets the amount: exactly 15 % of the base price of the undelivered order, in cents. It can be
 // done once, and a base so small that 15 % rounds to zero cannot be priced.
 func (s Surcharge) Price(basePrice decimal.Decimal) (Surcharge, error) {
