@@ -34,6 +34,18 @@ La migración existente `000001_create_customers` se conserva. La creación de
 pedidos usa la versión 2 y el límite de fechas la versión 3, para que las bases
 que ya tienen clientes puedan actualizarse sin colisiones de versión.
 
+## Recargos, saldo y bloqueo (ADR 0006)
+
+Order Service lleva el motor de penalizaciones: recargo del 15 % al no entregar por culpa del cliente,
+verificación del operador para `WRONG_ADDRESS`, reincidencia, cobro simulado (`PaymentGateway`, sin datos de
+tarjeta), bloqueo por saldo vencido y pago del saldo. Las reglas, dónde viven en el código y lo que falta
+están en `docs/adr/0006-recargo-por-rechazo-con-cobro-simulado.md` (sección 7); la correspondencia REST/gRPC en
+`docs/contracts/orders-v1.md`.
+
+`cmd/api/main.go` arranca además un barrido que bloquea las cuentas con un saldo de más de 14 días: corre al
+iniciar y cada `BALANCE_SWEEP_MINUTES` minutos (15 por defecto). Un fallo se registra en el log y el siguiente
+pase reintenta.
+
 ## Reglas del dominio
 
 - `NewOrder` recibe datos de entrega y un instante del reloj del servidor en la
@@ -88,6 +100,7 @@ go test -coverprofile=coverage.out ./...
 go vet ./...
 golangci-lint run --config ../../.golangci.yml ./...
 
+# Con -p 1 los paquetes no corren en paralelo (la prueba de migraciones baja y sube el esquema).
 # Base local inicializada por el compose, usando la contraseña de tu .env.
 export ORDER_TEST_DATABASE_URL="postgres://order_service_user:${ORDER_DB_PASSWORD}@127.0.0.1:5432/last_mile?sslmode=disable&search_path=orders,public"
 go test -race -tags integration -count=1 ./...
@@ -102,5 +115,9 @@ explícita. Con una base disponible verifican aplicación repetida, valores por
 defecto, aislamiento por esquema, restricciones SQL, índices y reversibilidad.
 Las operaciones de prueba se revierten con transacciones, incluidos los scripts
 down y up, para conservar los datos preexistentes.
+
+Las pruebas obligatorias del ADR 0006 (recargo exacto y una sola vez, cobro siempre simulado, sin datos de
+tarjeta en logs, respuestas ni tablas) corren con el resto: busque `ADR0006` en los nombres. Con una base disponible
+se ejecutan también las de integración; sin `ORDER_TEST_DATABASE_URL` se omiten.
 
 Evidencia y flujo de revisión: `docs/planning/sprint-1-anthony.md`.
