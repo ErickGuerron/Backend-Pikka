@@ -96,6 +96,8 @@ type createdOrderDTO struct {
 	orderDTO
 	Items []orderLineDTO `json:"items"`
 	Total string         `json:"total"`
+	// PendingSurcharge is what the customer owes, shown apart from Total (ADR 0006, section 4).
+	PendingSurcharge string `json:"pendingSurcharge"`
 }
 
 type orderLineDTO struct {
@@ -161,9 +163,10 @@ func (h *ordersHandlers) create(c echo.Context) error {
 		})
 	}
 	return c.JSON(http.StatusCreated, createdOrderDTO{
-		orderDTO: toOrderDTO(res.GetOrder()),
-		Items:    lines,
-		Total:    res.GetTotal(),
+		orderDTO:         toOrderDTO(res.GetOrder()),
+		Items:            lines,
+		Total:            res.GetTotal(),
+		PendingSurcharge: res.GetPendingSurcharge(),
 	})
 }
 

@@ -47,6 +47,10 @@ func (r *SurchargeRepository) RecordSurchargeIncident(ctx context.Context, s dom
 		if err := addToBalance(ctx, tx, saved); err != nil {
 			return domain.Surcharge{}, false, err
 		}
+		// The customer is told in the same transaction that makes the amount owed (ADR 0006, section 5).
+		if err := notifyApplied(ctx, tx, saved); err != nil {
+			return domain.Surcharge{}, false, err
+		}
 		if err := tx.Commit(ctx); err != nil {
 			return domain.Surcharge{}, false, fmt.Errorf("record surcharge incident: commit: %w", err)
 		}
@@ -77,6 +81,16 @@ func addToBalance(ctx context.Context, tx pgx.Tx, s domain.Surcharge) error {
 	return nil
 }
 
+// notifyApplied stores the "surcharge applied" notice when the surcharge is owed now: PENDING and priced. Anything else
+// (waiting for verification, waived, unpriced) is not notified.
+func notifyApplied(ctx context.Context, tx pgx.Tx, s domain.Surcharge) error {
+	notice, ok := domain.NewSurchargeAppliedNotification(s)
+	if !ok {
+		return nil
+	}
+	return insertNotification(ctx, tx, s.CustomerID, s.OrderID, notice)
+}
+
 // OrderBasePrice sums the order's lines. found is false for an order without lines.
 func (r *SurchargeRepository) OrderBasePrice(ctx context.Context, orderID string) (decimal.Decimal, bool, error) {
 	var base decimal.Decimal
@@ -86,6 +100,38 @@ func (r *SurchargeRepository) OrderBasePrice(ctx context.Context, orderID string
 		return decimal.Zero, false, fmt.Errorf("order base price: %w", err)
 	}
 	return base, lines > 0, nil
+}
+
+// ListUnrecordedIncidents returns the penalised not-deliveries without a surcharge, oldest first. The caller
+// decides what to do with each; the reasons stored here already create an incident.
+func (r *SurchargeRepository) ListUnrecordedIncidents(ctx context.Context, limit int) ([]domain.UnrecordedIncident, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT o.id::text, o.customer_id::text, p.reason, p.recorded_at
+		  FROM order_penalty_reasons p
+		  JOIN orders o ON o.id = p.order_id
+		  LEFT JOIN surcharges s ON s.order_id = p.order_id
+		 WHERE s.id IS NULL
+		 ORDER BY p.recorded_at ASC, p.order_id ASC
+		 LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list unrecorded incidents: %w", err)
+	}
+	defer rows.Close()
+
+	out := []domain.UnrecordedIncident{}
+	for rows.Next() {
+		var i domain.UnrecordedIncident
+		var at time.Time
+		if err := rows.Scan(&i.OrderID, &i.CustomerID, &i.Reason, &at); err != nil {
+			return nil, fmt.Errorf("list unrecorded incidents: %w", err)
+		}
+		i.RecordedAt = at.UTC()
+		out = append(out, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list unrecorded incidents: %w", err)
+	}
+	return out, nil
 }
 
 // ResolveSurchargeVerification runs decide on the locked row and stores the audit it returns.
@@ -118,6 +164,9 @@ func (r *SurchargeRepository) ResolveSurchargeVerification(ctx context.Context, 
 	// Confirming a priced incident makes it owed now, in the same transaction as the decision.
 	if current.Status == domain.SurchargePendingVerification {
 		if err := addToBalance(ctx, tx, next); err != nil {
+			return domain.Surcharge{}, err
+		}
+		if err := notifyApplied(ctx, tx, next); err != nil {
 			return domain.Surcharge{}, err
 		}
 	}
