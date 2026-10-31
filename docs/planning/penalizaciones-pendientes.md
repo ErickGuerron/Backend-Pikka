@@ -20,9 +20,9 @@ decisión pequeña; al final lo que necesita una especificación.
 | F5 | Tope del recargo extra y quitar la marca de reincidente | Sí (D-F5a, D-F5b) | Order Service y Gateway | item 1 y 3 |
 | F6 | Cobro adicional por reasignación (T5) | Sí (D3) | Order Service y Gateway | item 1 y 3 |
 | F7 | «Pago sin cuenta» (ADR 0005) | Sí, de producto (D2) | por definir | por definir |
-| F8 | Disputas, pausa del reloj y apelación | Sí, requiere especificación | todo | item 1, 3 y 4 |
+| F8 | Disputas, pausa del reloj y apelación | Sí, requiere especificación | hecha (versión mínima) | item 1, 3 y 4 |
 
-**Hechas:** F1, F2 (web y móvil), F3, F4, F5 y F6. **Descartada:** F7. **Especificada, sin programar:** F8 (versión mínima).
+**Hechas:** F1, F2 (web y móvil), F3, F4, F5, F6 y F8 (versión mínima). **Descartada:** F7.
 
 Cada función se entrega como su propio PR, con pruebas primero y la documentación al día. Las decisiones propuestas
 («Propuesta») son un punto de partida, no están aprobadas hasta que producto las confirme.
@@ -205,20 +205,16 @@ qué identifica a esa persona. Mientras no exista esa definición no hay nada qu
 
 ## F8. Disputas, pausa del reloj y apelación
 
-**Estado:** no implementada; **las disputas no existen en el sistema.** **Especificación mínima aprobada (2026-10-30), pendiente de programar:** el cliente abre una disputa con motivo dentro de 2 horas desde el aviso (depende de F2); ADMIN u OPERATOR la resuelve a favor (se dispensa el recargo) o en contra (sigue igual), con motivo auditado; mientras está abierta el barrido no bloquea la cuenta. Fuera de esta versión: cobro reducido, reasignación y pausa de la reincidencia.
+**Estado:** implementada en su versión mínima (backend #104 y #105, frontend #54). El cliente abre una disputa con motivo (5 a 300 caracteres) sobre un recargo; ADMIN u OPERATOR la resuelve a favor (se dispensa el recargo y baja el saldo en la misma transacción) o en contra (no cambia nada), con motivo auditado. Mientras está abierta, el barrido no cuenta ese recargo. Una disputa por recargo, sin reabrir. Fuera de esta versión: cobro reducido, reasignación y pausa de la reincidencia.
+
+**Decisiones tomadas al programarla.** (1) El plazo de 2 horas corre desde el inicio del reloj de pago del recargo (`Surcharge.ClockStart()`), no desde un aviso. (2) Resolver en contra no extiende el reloj: el recargo vuelve a contar con su fecha original. (3) Resolver a favor un recargo que ya está pagado falla con 422 y deja la disputa abierta.
 
 **Qué dice el ADR.** ADR 0006 §5: mientras haya una disputa abierta sobre la penalización, el reloj se pausa y no se
 bloquea la cuenta. ADR 0007 §6: el cliente puede disputar dentro de un plazo (por ejemplo, 2 horas desde el aviso); una
 disputa sobre un recargo sirve de apelación y puede acordarse reasignar el pedido con un cobro reducido; una apelación
 resuelta cuenta para la reincidencia.
 
-**Qué hay que especificar antes de programar:** estados de una disputa (abierta, resuelta a favor, en contra); quién la
-resuelve; si el plazo corre desde el aviso (depende de F2); qué significa «cobro reducido» y cuánto; cómo se reasigna el
-pedido (depende de F6); y si una disputa abierta también pausa la reincidencia.
-
-**Diseño provisional.** Tabla `surcharge_disputes`; `BalanceOverdue` ignora las obligaciones con disputa abierta;
-endpoints del cliente (abrir) y del operador (resolver, con motivo auditado). Es la función más grande: conviene
-dividirla en al menos tres PRs.
+**Qué queda para después:** cobro reducido, reasignación del pedido en una apelación (depende de F6) y pausa de la reincidencia mientras hay una disputa abierta.
 
 ---
 
