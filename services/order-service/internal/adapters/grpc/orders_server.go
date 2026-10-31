@@ -51,6 +51,10 @@ type OrderUseCases struct {
 	ListRecidivists *orderapp.ListRecidivists
 	// ClearRecidivist lets an administrator remove the reincidence mark (ADR 0006).
 	ClearRecidivist *orderapp.ClearRecidivistMark
+	// OpenDispute, ListOpenDisputes and ResolveDispute manage the customers' disputes over surcharges (ADR 0007).
+	OpenDispute      *orderapp.OpenDispute
+	ListOpenDisputes *orderapp.ListOpenDisputes
+	ResolveDispute   *orderapp.ResolveDispute
 	// SetReassignmentFee, GetReassignmentFee and ApplyReassignmentCharge manage the fixed reassignment fee (ADR 0006).
 	SetReassignmentFee      *orderapp.SetReassignmentFee
 	GetReassignmentFee      *orderapp.GetReassignmentFee
@@ -354,6 +358,14 @@ func mapOrderError(err error) error {
 		return status.Error(codes.NotFound, "cliente no encontrado")
 	case errors.Is(err, domain.ErrCustomerNotRecidivist):
 		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, domain.ErrDisputeWindowClosed), errors.Is(err, domain.ErrSurchargeNotDisputable):
+		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, domain.ErrDisputeExists), errors.Is(err, domain.ErrDisputeAlreadyResolved):
+		return status.Error(codes.Aborted, err.Error())
+	case errors.Is(err, domain.ErrDisputeNotFound):
+		return status.Error(codes.NotFound, err.Error())
+	case errors.Is(err, domain.ErrUnknownDisputeDecision):
+		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, domain.ErrReassignmentFeeNotSet):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, domain.ErrReassignmentChargeExists), errors.Is(err, domain.ErrRecidivismChargeExists):

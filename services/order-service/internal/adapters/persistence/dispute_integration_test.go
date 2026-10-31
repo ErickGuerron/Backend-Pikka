@@ -269,3 +269,31 @@ func TestLaColaDelPersonalSoloTieneLasAbiertasLasMasAntiguasPrimero(t *testing.T
 	assert.Equal(t, first, list[0].SurchargeID)
 	assert.Equal(t, second, list[1].SurchargeID)
 }
+
+func TestElDesgloseDelSaldoDiceSiCadaRecargoEstaEnDisputa(t *testing.T) {
+	_, pool := setup(t)
+	disputes := persistence.NewDisputeRepository(pool)
+	balances := persistence.NewBalanceRepository(pool)
+	customer := newCustomer(t, pool)
+	plain := owedSurcharge(t, pool, customer, time.Now().Add(-5*time.Hour))
+	disputed := owedSurcharge(t, pool, customer, time.Now().Add(-10*time.Minute))
+	opened, err := disputes.OpenDispute(context.Background(), disputed, customer, openFor(disputed))
+	require.NoError(t, err)
+	statusByLine := func() map[string]string {
+		lines, err := balances.ListOwedLines(context.Background(), customer)
+		require.NoError(t, err)
+		out := map[string]string{}
+		for _, l := range lines {
+			out[l.ID] = l.DisputeStatus
+		}
+		return out
+	}
+
+	got := statusByLine()
+	assert.Equal(t, "", got[plain], "no dispute")
+	assert.Equal(t, "OPEN", got[disputed])
+
+	_, err = disputes.ResolveDispute(context.Background(), opened.ID, decide(domain.DisputeAgainst))
+	require.NoError(t, err)
+	assert.Equal(t, "AGAINST", statusByLine()[disputed], "ruled against, the surcharge stays owed and says so")
+}

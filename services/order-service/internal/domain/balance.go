@@ -51,6 +51,18 @@ type BalanceLine struct {
 	Reason    string
 	Amount    decimal.Decimal
 	StartedAt time.Time
+	// DisputeStatus is the state of the customer's dispute over this line: empty when there is none, else OPEN, IN_FAVOR or
+	// AGAINST. Only surcharge lines can be disputed.
+	DisputeStatus string
+}
+
+// DisputableUntil is the last moment the customer can still dispute this line (ADR 0007, section 6), or zero when it cannot
+// be disputed: only a surcharge line, and only once.
+func (l BalanceLine) DisputableUntil() time.Time {
+	if l.Kind != BalanceLineSurcharge || l.DisputeStatus != "" {
+		return time.Time{}
+	}
+	return l.StartedAt.Add(DisputeWindow)
 }
 
 // DueAt is the last moment to pay before the account is blocked; it matches BalanceOverdue.

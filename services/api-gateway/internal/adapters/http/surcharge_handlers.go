@@ -17,6 +17,9 @@ type SurchargeClient interface {
 	ResolveSurchargeVerification(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ResolveSurchargeVerificationRequest) (*ordersv1.ResolveSurchargeVerificationResponse, error)
 	ApplyRecidivismCharge(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ApplyRecidivismChargeRequest) (*ordersv1.ApplyRecidivismChargeResponse, error)
 	ClearRecidivist(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ClearRecidivistRequest) (*ordersv1.ClearRecidivistResponse, error)
+	OpenDispute(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.OpenDisputeRequest) (*ordersv1.OpenDisputeResponse, error)
+	ListOpenDisputes(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ListOpenDisputesRequest) (*ordersv1.ListOpenDisputesResponse, error)
+	ResolveDispute(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ResolveDisputeRequest) (*ordersv1.ResolveDisputeResponse, error)
 	SetReassignmentFee(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.SetReassignmentFeeRequest) (*ordersv1.SetReassignmentFeeResponse, error)
 	GetReassignmentFee(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.GetReassignmentFeeRequest) (*ordersv1.GetReassignmentFeeResponse, error)
 	ApplyReassignmentCharge(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ApplyReassignmentChargeRequest) (*ordersv1.ApplyReassignmentChargeResponse, error)
@@ -218,6 +221,9 @@ type balanceLineDTO struct {
 	Amount    string `json:"amount"`
 	StartedAt string `json:"startedAt"`
 	DueAt     string `json:"dueAt"`
+	// DisputeStatus is empty when the line has no dispute; DisputableUntil when it cannot be disputed (any more).
+	DisputeStatus   string `json:"disputeStatus,omitempty"`
+	DisputableUntil string `json:"disputableUntil,omitempty"`
 }
 
 type myBalanceDTO struct {
@@ -242,6 +248,7 @@ func (h *surchargeHandlers) myBalance(c echo.Context) error {
 		lines = append(lines, balanceLineDTO{
 			Kind: l.GetKind(), ID: l.GetId(), OrderID: l.GetOrderId(), Reason: l.GetReason(),
 			Amount: l.GetAmount(), StartedAt: l.GetStartedAt(), DueAt: l.GetDueAt(),
+			DisputeStatus: l.GetDisputeStatus(), DisputableUntil: l.GetDisputableUntil(),
 		})
 	}
 	return c.JSON(http.StatusOK, myBalanceDTO{

@@ -182,6 +182,10 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 		surchargeStaff.POST("/orders/:id/reassignment-charge", sh.applyReassignmentCharge)
 		// The customer pays their own balance (ADR 0006, section 5). The role is applied here and by Order Service.
 		authed.POST("/customers/me/balance/payment", sh.payMyBalance, CustomerOnly())
+		// Disputas (ADR 0007, seccion 6): las abre el cliente; el personal las ve y las resuelve.
+		authed.POST("/surcharges/:id/dispute", sh.openDispute, CustomerOnly())
+		surchargeStaff.GET("/disputes", sh.listOpenDisputes)
+		surchargeStaff.POST("/disputes/:id/resolution", sh.resolveDispute)
 		authed.GET("/customers/me/balance", sh.myBalance, CustomerOnly())
 	}
 

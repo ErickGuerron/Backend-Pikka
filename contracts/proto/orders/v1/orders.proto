@@ -37,6 +37,17 @@ service OrderService {
   // operator gets PERMISSION_DENIED. A customer without the mark returns FAILED_PRECONDITION, an unknown
   // customer NOT_FOUND. The charges already collected and the balance are not touched.
   rpc ClearRecidivist(ClearRecidivistRequest) returns (ClearRecidivistResponse);
+  // OpenDispute lets the authenticated CUSTOMER dispute one of their own surcharges within two hours of it becoming
+  // owed (ADR 0007, section 6). One dispute per surcharge. Another customer's or an unknown surcharge returns NOT_FOUND
+  // (the same answer for both); outside the window or not owed returns FAILED_PRECONDITION; a second dispute ABORTED
+  // (HTTP 409). Any role other than CUSTOMER returns PERMISSION_DENIED.
+  rpc OpenDispute(OpenDisputeRequest) returns (OpenDisputeResponse);
+  // ListOpenDisputes is the staff's queue of disputes waiting for a decision, oldest first. Only ADMIN and OPERATOR.
+  rpc ListOpenDisputes(ListOpenDisputesRequest) returns (ListOpenDisputesResponse);
+  // ResolveDispute decides an open dispute, once, with an audited reason. IN_FAVOR waives the surcharge and takes it off
+  // the balance; AGAINST changes nothing. Only ADMIN and OPERATOR. Already resolved returns ABORTED; a surcharge that
+  // was paid meanwhile returns FAILED_PRECONDITION and the dispute stays open.
+  rpc ResolveDispute(ResolveDisputeRequest) returns (ResolveDisputeResponse);
   // SetReassignmentFee defines or changes the fixed fee charged when an order is reassigned at the customer's
   // request (ADR 0006). Only ADMIN; the amount and the reason are audited. Every change is a new row.
   rpc SetReassignmentFee(SetReassignmentFeeRequest) returns (SetReassignmentFeeResponse);
@@ -586,6 +597,11 @@ message BalanceLine {
   string started_at = 6;
   // Last moment to pay before the account is blocked (RFC 3339, UTC).
   string due_at = 7;
+  // State of the customer's dispute over this line: empty when there is none, else OPEN, IN_FAVOR or AGAINST.
+  string dispute_status = 8;
+  // Last moment the customer can still dispute this line (RFC 3339, UTC). Empty when it cannot be disputed: only a
+  // SURCHARGE line without a dispute, during the two hours after it became owed.
+  string disputable_until = 9;
 }
 
 message GetMyBalanceResponse {
@@ -595,4 +611,48 @@ message GetMyBalanceResponse {
   string account_status = 2;
   // Oldest first. Empty when nothing is owed.
   repeated BalanceLine lines = 3;
+}
+
+message OpenDisputeRequest {
+  string surcharge_id = 1;
+  // The customer's explanation, 5 to 300 characters. It is audited.
+  string reason = 2;
+}
+
+// Dispute is a customer's objection to one surcharge.
+message Dispute {
+  string id = 1;
+  string surcharge_id = 2;
+  string customer_id = 3;
+  string reason = 4;
+  // OPEN, IN_FAVOR or AGAINST.
+  string status = 5;
+  // RFC 3339, UTC.
+  string opened_at = 6;
+  // Empty while the dispute is open.
+  string resolved_by = 7;
+  string resolution_reason = 8;
+  string resolved_at = 9;
+}
+
+message OpenDisputeResponse {
+  Dispute dispute = 1;
+}
+
+message ListOpenDisputesRequest {}
+
+message ListOpenDisputesResponse {
+  repeated Dispute disputes = 1;
+}
+
+message ResolveDisputeRequest {
+  string id = 1;
+  // IN_FAVOR or AGAINST.
+  string decision = 2;
+  // The staff's justification, 5 to 300 characters. It is audited.
+  string reason = 3;
+}
+
+message ResolveDisputeResponse {
+  Dispute dispute = 1;
 }
