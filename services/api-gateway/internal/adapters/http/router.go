@@ -178,6 +178,7 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 		adminOnly.POST("/customers/:id/recidivist/clear", sh.clearRecidivist)
 		// The customer pays their own balance (ADR 0006, section 5). The role is applied here and by Order Service.
 		authed.POST("/customers/me/balance/payment", sh.payMyBalance, CustomerOnly())
+		authed.GET("/customers/me/balance", sh.myBalance, CustomerOnly())
 	}
 
 	// Catálogo de productos (ADR 0009). Cualquier usuario autenticado lee lo activo; el personal

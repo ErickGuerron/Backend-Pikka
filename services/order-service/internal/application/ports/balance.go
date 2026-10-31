@@ -19,6 +19,9 @@ type BalanceRepository interface {
 	// how many changed. A customer in any other status is left alone, so a block for incidents is never
 	// overwritten.
 	BlockCustomersForBalance(ctx context.Context, customerIDs []string) (int, error)
+	// ListOwedLines returns what the customer owes, oldest first: priced PENDING surcharges and unpaid
+	// recidivism charges. Waived, waiting for verification, paid and unpriced ones are not owed.
+	ListOwedLines(ctx context.Context, customerID string) ([]domain.BalanceLine, error)
 	// SettleBalance records the full payment in one transaction: it locks the customer, checks that the
 	// balance is still exactly amount (else ErrBalanceChanged), stamps the priced PENDING or APPLIED
 	// surcharges as PAID and the unpaid recidivism charges as paid, zeroes the balance and, if the account

@@ -331,3 +331,59 @@ func TestVencidoBloqueadoPagaYElBarridoNoLoRebloquea(t *testing.T) {
 	assert.Zero(t, again)
 	assert.Equal(t, "ACTIVO", statusOf(t, pool, customer))
 }
+
+// El cliente ve lo que debe: recargos con monto pendientes y recargos extra sin pagar, del mas antiguo al mas nuevo.
+func TestLineasQueDebeElCliente(t *testing.T) {
+	_, pool := setup(t)
+	repo := persistence.NewBalanceRepository(pool)
+	mine, other := newCustomer(t, pool), newCustomer(t, pool)
+	base := time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
+	insertAt(t, pool, mine, domain.SurchargePending, base.AddDate(0, 0, 5))
+	insertAt(t, pool, mine, domain.SurchargePending, base)
+	insertAt(t, pool, mine, domain.SurchargeWaived, base)
+	insertAt(t, pool, mine, domain.SurchargePendingVerification, base)
+	insertAt(t, pool, mine, domain.SurchargePaid, base)
+	insertAt(t, pool, other, domain.SurchargePending, base)
+	_, err := pool.Exec(context.Background(),
+		`INSERT INTO surcharges (customer_id, order_id, reason, status, created_at) VALUES ($1, gen_random_uuid(), 'CLIENT_REFUSED', 'PENDING', $2)`, mine, base)
+	require.NoError(t, err)
+	markRecidivist(t, pool, mine)
+	_, err = persistence.NewRecidivismRepository(pool).ApplyRecidivismCharge(context.Background(), mine, buildCharge(mine, "4.50"))
+	require.NoError(t, err)
+
+	lines, err := repo.ListOwedLines(context.Background(), mine)
+
+	require.NoError(t, err)
+	require.Len(t, lines, 3, "dos recargos con monto y el recargo extra; no la dispensada, la en verificacion, la pagada ni la sin monto")
+	assert.True(t, lines[0].StartedAt.Equal(base))
+	assert.Equal(t, domain.BalanceLineSurcharge, lines[0].Kind)
+	assert.NotEmpty(t, lines[0].OrderID)
+	assert.Equal(t, "CLIENT_REFUSED", lines[0].Reason)
+	assert.True(t, lines[0].Amount.Equal(decimal.RequireFromString("3.00")))
+	assert.Equal(t, domain.BalanceLineRecidivism, lines[2].Kind, "el recargo extra es el mas reciente")
+	assert.True(t, lines[2].Amount.Equal(decimal.RequireFromString("4.50")))
+}
+
+// El motivo del recargo extra es una nota interna del operador: el cliente solo ve el codigo RECIDIVISM.
+func TestElClienteNoVeLaJustificacionDelOperador(t *testing.T) {
+	_, pool := setup(t)
+	repo := persistence.NewBalanceRepository(pool)
+	customer := newCustomer(t, pool)
+	markRecidivist(t, pool, customer)
+	_, err := persistence.NewRecidivismRepository(pool).ApplyRecidivismCharge(context.Background(), customer, buildCharge(customer, "4.50"))
+	require.NoError(t, err)
+
+	lines, err := repo.ListOwedLines(context.Background(), customer)
+
+	require.NoError(t, err)
+	require.Len(t, lines, 1)
+	assert.Equal(t, "RECIDIVISM", lines[0].Reason)
+	assert.Empty(t, lines[0].OrderID)
+}
+
+func TestSinDeudaNoHayLineas(t *testing.T) {
+	_, pool := setup(t)
+	lines, err := persistence.NewBalanceRepository(pool).ListOwedLines(context.Background(), newCustomer(t, pool))
+	require.NoError(t, err)
+	assert.Empty(t, lines)
+}

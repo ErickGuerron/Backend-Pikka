@@ -3,6 +3,8 @@ package domain
 import (
 	"errors"
 	"time"
+
+	"github.com/shopspring/decimal"
 )
 
 // BalanceDeadlineDays is how long a customer has to pay a surcharge before the account is blocked
@@ -25,6 +27,33 @@ var (
 type BalanceObligation struct {
 	CustomerID string
 	StartedAt  time.Time
+}
+
+// BalanceLineKind says where a line of the customer's balance comes from.
+type BalanceLineKind string
+
+const (
+	// BalanceLineSurcharge: the 15 % of an order that was not delivered because of the customer.
+	BalanceLineSurcharge BalanceLineKind = "SURCHARGE"
+	// BalanceLineRecidivism: the extra charge an operator applied to a recidivist.
+	BalanceLineRecidivism BalanceLineKind = "RECIDIVISM"
+)
+
+// BalanceLine is one thing the customer owes, as the customer sees it: an amount, why, and since when.
+// Reason is a code the app can translate. For a recidivism charge it is always RECIDIVISM: the operator's
+// justification is an internal audit note and is not shown.
+type BalanceLine struct {
+	Kind      BalanceLineKind
+	ID        string
+	OrderID   string
+	Reason    string
+	Amount    decimal.Decimal
+	StartedAt time.Time
+}
+
+// DueAt is the last moment to pay before the account is blocked; it matches BalanceOverdue.
+func (l BalanceLine) DueAt() time.Time {
+	return l.StartedAt.AddDate(0, 0, BalanceDeadlineDays)
 }
 
 // BalanceOverdue reports whether the oldest obligation is more than two weeks old at now. The clock of

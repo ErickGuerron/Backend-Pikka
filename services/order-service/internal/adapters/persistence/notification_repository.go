@@ -27,7 +27,7 @@ func NewNotificationRepository(pool *pgxpool.Pool) *NotificationRepository {
 // ListByCustomer devuelve los avisos del cliente, del más reciente al más antiguo.
 func (r *NotificationRepository) ListByCustomer(ctx context.Context, customerID uuid.UUID) ([]domain.Notification, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id::text, customer_id::text, order_id::text, kind, detail, created_at, read_at IS NOT NULL
+		`SELECT id::text, customer_id::text, COALESCE(order_id::text, ''), kind, detail, created_at, read_at IS NOT NULL
 		   FROM customer_notifications
 		  WHERE customer_id = $1
 		  ORDER BY created_at DESC, id ASC`,

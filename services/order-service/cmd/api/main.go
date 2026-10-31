@@ -136,6 +136,7 @@ func run(log *slog.Logger) error {
 		Recidivism:       orderapp.NewApplyRecidivismCharge(persistence.NewRecidivismRepository(pool), cfg.RecidivismChargeMax),
 		ListRecidivists:  orderapp.NewListRecidivists(persistence.NewRecidivismRepository(pool)),
 		ClearRecidivist:  orderapp.NewClearRecidivistMark(persistence.NewRecidivismRepository(pool)),
+		Balance:          orderapp.NewGetMyBalance(customerRepo, persistence.NewBalanceRepository(pool)),
 		Pay: orderapp.NewPayBalance(customerRepo, payments.NewSimulated(time.Now),
 			persistence.NewPaymentAttemptRepository(pool), persistence.NewBalanceRepository(pool)),
 	}).WithRouteCapacity(zoneClassifier))
@@ -160,7 +161,8 @@ func run(log *slog.Logger) error {
 
 	// ADR 0006, section 5: block the accounts whose unpaid balance is older than two weeks. The first pass
 	// runs at start so a restart never leaves a late account open; a failure is logged and the next pass retries.
-	go runBalanceSweep(ctx, log, orderapp.NewBlockOverdueBalances(persistence.NewBalanceRepository(pool)), cfg.BalanceSweepInterval)
+	go runBalanceSweep(ctx, log, orderapp.NewReconcileIncidents(surchargeRepo, orderapp.NewIncidentRecorder(surchargeRepo, reincidence)),
+		orderapp.NewBlockOverdueBalances(persistence.NewBalanceRepository(pool)), cfg.BalanceSweepInterval)
 
 	errCh := make(chan error, 2)
 	go func() {
@@ -200,9 +202,15 @@ func run(log *slog.Logger) error {
 	return nil
 }
 
-// runBalanceSweep blocks overdue balances now and then on every tick until ctx ends.
-func runBalanceSweep(ctx context.Context, log *slog.Logger, sweep *orderapp.BlockOverdueBalances, every time.Duration) {
+// runBalanceSweep recovers the lost surcharge incidents and then blocks the overdue balances, now and on every tick
+// until ctx ends. Recovering first means a late incident counts in the same pass.
+func runBalanceSweep(ctx context.Context, log *slog.Logger, reconcile *orderapp.ReconcileIncidents, sweep *orderapp.BlockOverdueBalances, every time.Duration) {
 	run := func() {
+		if recovered, err := reconcile.Run(ctx); err != nil {
+			log.Error("incident reconciliation failed; the next pass retries", "error", err)
+		} else if recovered > 0 {
+			log.Warn("lost surcharge incidents recovered", "count", recovered)
+		}
 		blocked, err := sweep.Run(ctx)
 		switch {
 		case err != nil:

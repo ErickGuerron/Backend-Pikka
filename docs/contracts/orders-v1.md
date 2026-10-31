@@ -44,3 +44,43 @@ el contrato no publica los servicios internos al navegador.
 Validación: `buf lint`, `buf breaking` contra `origin/develop`, regeneración
 reproducible con las versiones de plugins fijadas en CI y `make openapi-lint`.
 La implementación de dominio se revisa después de este contrato.
+
+
+## Recargos, saldo y bloqueo (ADR 0006)
+
+Operaciones de `orders.v1.OrderService` agregadas para el motor de penalizaciones. Los roles los
+verifica el Gateway (`StaffOnly`, `CustomerOnly`) y otra vez Order Service. La identidad auditada sale
+siempre del JWT, nunca del cuerpo. El dinero viaja como texto decimal con dos decimales; un número JSON se
+rechaza con 400.
+
+| REST | gRPC | Rol | Notas |
+|---|---|---|---|
+| `GET /api/v1/surcharges/pending-verification` | `ListSurchargesPendingVerification` | ADMIN, OPERATOR | Cola de recargos `WRONG_ADDRESS`, del más antiguo al más reciente |
+| `POST /api/v1/surcharges/{id}/verification` | `ResolveSurchargeVerification` | ADMIN, OPERATOR | `CONFIRM` o `WAIVE` con motivo de 5 a 300 caracteres; 409 si ya se resolvió |
+| `POST /api/v1/customers/{id}/recidivism-charge` | `ApplyRecidivismCharge` | ADMIN, OPERATOR | 201; 422 si no es reincidente; 409 si ya se cobró esa reincidencia |
+| `POST /api/v1/customers/me/balance/payment` | `PayMyBalance` | CUSTOMER | Sin cuerpo: paga el saldo completo con la tarjeta simulada; siempre `simulated: true` |
+| `GET /api/v1/customers/me/balance` | `GetMyBalance` | CUSTOMER | Saldo, estado de la cuenta y cada línea con su fecha límite; una cuenta bloqueada puede verlo |
+
+Cambios a operaciones existentes, todos aditivos salvo los dos 403:
+
+- `RecordRouteStopOutcome` recibe `reason` (opcional): un motivo del cliente registra la incidencia y fija el
+  recargo del 15 % sobre el precio base del pedido no entregado.
+- `CreateOrderResponse` incluye `pending_surcharge`, aparte de `total`.
+- `Customer` incluye `recidivist_at` (vacío si no es reincidente).
+- Una cuenta `BLOQUEADO_POR_SALDO` recibe `PERMISSION_DENIED` (403) al crear o cancelar pedidos.
+
+Códigos: sin saldo que pagar, `FAILED_PRECONDITION` (422); saldo que cambió mientras se pagaba, `ABORTED` (409,
+el cobro se devuelve); recargo o cliente inexistente, `NOT_FOUND`. Un rechazo de la tarjeta simulada **no** es un
+error: responde 200 con `SIMULATED_DECLINED`.
+
+## Avisos del recargo y del bloqueo
+
+`GET /api/v1/notifications/mine` devuelve dos tipos más de aviso (ADR 0006, sección 5):
+
+| Tipo | Cuándo | `orderId` | `detail` |
+|---|---|---|---|
+| `SURCHARGE_APPLIED` | Un recargo con monto pasa a deberse: incidencia nueva, o el operador confirma un `WRONG_ADDRESS`. No se crea para `PENDING_VERIFICATION`, dispensados ni sin monto | El pedido no entregado | `MOTIVO,MONTO,FECHA_LIMITE`: código cerrado, decimal con dos dígitos y fecha RFC 3339 |
+| `ACCOUNT_BLOCKED_BY_BALANCE` | El barrido bloquea la cuenta por saldo vencido (una vez por bloqueo) | Vacío: es de la cuenta | Vacío |
+
+El detalle no lleva idioma: cada app traduce el motivo y da formato al monto y a la fecha. Un cliente que no conozca los
+tipos nuevos debe ignorarlos en vez de fallar.

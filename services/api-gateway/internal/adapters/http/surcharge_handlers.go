@@ -19,6 +19,7 @@ type SurchargeClient interface {
 	ClearRecidivist(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ClearRecidivistRequest) (*ordersv1.ClearRecidivistResponse, error)
 	ListRecidivists(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ListRecidivistsRequest) (*ordersv1.ListRecidivistsResponse, error)
 	PayMyBalance(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.PayMyBalanceRequest) (*ordersv1.PayMyBalanceResponse, error)
+	GetMyBalance(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.GetMyBalanceRequest) (*ordersv1.GetMyBalanceResponse, error)
 }
 
 type surchargeHandlers struct {
@@ -203,5 +204,48 @@ func (h *surchargeHandlers) payMyBalance(c echo.Context) error {
 	return c.JSON(http.StatusOK, balancePaymentDTO{
 		Status: res.GetStatus(), Simulated: true, Amount: res.GetAmount(), Reference: res.GetReference(),
 		Unblocked: res.GetUnblocked(), CreatedAt: res.GetCreatedAt(),
+	})
+}
+
+type balanceLineDTO struct {
+	Kind      string `json:"kind"`
+	ID        string `json:"id"`
+	OrderID   string `json:"orderId,omitempty"`
+	Reason    string `json:"reason"`
+	Amount    string `json:"amount"`
+	StartedAt string `json:"startedAt"`
+	DueAt     string `json:"dueAt"`
+}
+
+type myBalanceDTO struct {
+	PendingSurcharge string `json:"pendingSurcharge"`
+	AccountStatus    string `json:"accountStatus"`
+	// Blocked is true while the account is blocked for an unpaid balance: it cannot create or cancel orders
+	// until it pays (ADR 0006, section 5).
+	Blocked bool `json:"blocked"`
+	// Simulated is always true: payments are simulated, and the interface must say so (ADR 0006, section 4).
+	Simulated bool             `json:"simulated"`
+	Lines     []balanceLineDTO `json:"lines"`
+}
+
+// myBalance shows the authenticated customer what they owe. A blocked account can read it.
+func (h *surchargeHandlers) myBalance(c echo.Context) error {
+	res, err := h.surcharges.GetMyBalance(c.Request().Context(), callMeta(c), &ordersv1.GetMyBalanceRequest{})
+	if err != nil {
+		return err
+	}
+	lines := make([]balanceLineDTO, 0, len(res.GetLines()))
+	for _, l := range res.GetLines() {
+		lines = append(lines, balanceLineDTO{
+			Kind: l.GetKind(), ID: l.GetId(), OrderID: l.GetOrderId(), Reason: l.GetReason(),
+			Amount: l.GetAmount(), StartedAt: l.GetStartedAt(), DueAt: l.GetDueAt(),
+		})
+	}
+	return c.JSON(http.StatusOK, myBalanceDTO{
+		PendingSurcharge: res.GetPendingSurcharge(),
+		AccountStatus:    res.GetAccountStatus(),
+		Blocked:          res.GetAccountStatus() == "BLOQUEADO_POR_SALDO",
+		Simulated:        true,
+		Lines:            lines,
 	})
 }
