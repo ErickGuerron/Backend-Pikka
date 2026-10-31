@@ -29,6 +29,9 @@ const (
 	OrderService_ApplyRecidivismCharge_FullMethodName             = "/orders.v1.OrderService/ApplyRecidivismCharge"
 	OrderService_ListRecidivists_FullMethodName                   = "/orders.v1.OrderService/ListRecidivists"
 	OrderService_ClearRecidivist_FullMethodName                   = "/orders.v1.OrderService/ClearRecidivist"
+	OrderService_OpenDispute_FullMethodName                       = "/orders.v1.OrderService/OpenDispute"
+	OrderService_ListOpenDisputes_FullMethodName                  = "/orders.v1.OrderService/ListOpenDisputes"
+	OrderService_ResolveDispute_FullMethodName                    = "/orders.v1.OrderService/ResolveDispute"
 	OrderService_SetReassignmentFee_FullMethodName                = "/orders.v1.OrderService/SetReassignmentFee"
 	OrderService_GetReassignmentFee_FullMethodName                = "/orders.v1.OrderService/GetReassignmentFee"
 	OrderService_ApplyReassignmentCharge_FullMethodName           = "/orders.v1.OrderService/ApplyReassignmentCharge"
@@ -83,6 +86,17 @@ type OrderServiceClient interface {
 	// operator gets PERMISSION_DENIED. A customer without the mark returns FAILED_PRECONDITION, an unknown
 	// customer NOT_FOUND. The charges already collected and the balance are not touched.
 	ClearRecidivist(ctx context.Context, in *ClearRecidivistRequest, opts ...grpc.CallOption) (*ClearRecidivistResponse, error)
+	// OpenDispute lets the authenticated CUSTOMER dispute one of their own surcharges within two hours of it becoming
+	// owed (ADR 0007, section 6). One dispute per surcharge. Another customer's or an unknown surcharge returns NOT_FOUND
+	// (the same answer for both); outside the window or not owed returns FAILED_PRECONDITION; a second dispute ABORTED
+	// (HTTP 409). Any role other than CUSTOMER returns PERMISSION_DENIED.
+	OpenDispute(ctx context.Context, in *OpenDisputeRequest, opts ...grpc.CallOption) (*OpenDisputeResponse, error)
+	// ListOpenDisputes is the staff's queue of disputes waiting for a decision, oldest first. Only ADMIN and OPERATOR.
+	ListOpenDisputes(ctx context.Context, in *ListOpenDisputesRequest, opts ...grpc.CallOption) (*ListOpenDisputesResponse, error)
+	// ResolveDispute decides an open dispute, once, with an audited reason. IN_FAVOR waives the surcharge and takes it off
+	// the balance; AGAINST changes nothing. Only ADMIN and OPERATOR. Already resolved returns ABORTED; a surcharge that
+	// was paid meanwhile returns FAILED_PRECONDITION and the dispute stays open.
+	ResolveDispute(ctx context.Context, in *ResolveDisputeRequest, opts ...grpc.CallOption) (*ResolveDisputeResponse, error)
 	// SetReassignmentFee defines or changes the fixed fee charged when an order is reassigned at the customer's
 	// request (ADR 0006). Only ADMIN; the amount and the reason are audited. Every change is a new row.
 	SetReassignmentFee(ctx context.Context, in *SetReassignmentFeeRequest, opts ...grpc.CallOption) (*SetReassignmentFeeResponse, error)
@@ -246,6 +260,36 @@ func (c *orderServiceClient) ClearRecidivist(ctx context.Context, in *ClearRecid
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ClearRecidivistResponse)
 	err := c.cc.Invoke(ctx, OrderService_ClearRecidivist_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *orderServiceClient) OpenDispute(ctx context.Context, in *OpenDisputeRequest, opts ...grpc.CallOption) (*OpenDisputeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OpenDisputeResponse)
+	err := c.cc.Invoke(ctx, OrderService_OpenDispute_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *orderServiceClient) ListOpenDisputes(ctx context.Context, in *ListOpenDisputesRequest, opts ...grpc.CallOption) (*ListOpenDisputesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListOpenDisputesResponse)
+	err := c.cc.Invoke(ctx, OrderService_ListOpenDisputes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *orderServiceClient) ResolveDispute(ctx context.Context, in *ResolveDisputeRequest, opts ...grpc.CallOption) (*ResolveDisputeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveDisputeResponse)
+	err := c.cc.Invoke(ctx, OrderService_ResolveDispute_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -439,6 +483,17 @@ type OrderServiceServer interface {
 	// operator gets PERMISSION_DENIED. A customer without the mark returns FAILED_PRECONDITION, an unknown
 	// customer NOT_FOUND. The charges already collected and the balance are not touched.
 	ClearRecidivist(context.Context, *ClearRecidivistRequest) (*ClearRecidivistResponse, error)
+	// OpenDispute lets the authenticated CUSTOMER dispute one of their own surcharges within two hours of it becoming
+	// owed (ADR 0007, section 6). One dispute per surcharge. Another customer's or an unknown surcharge returns NOT_FOUND
+	// (the same answer for both); outside the window or not owed returns FAILED_PRECONDITION; a second dispute ABORTED
+	// (HTTP 409). Any role other than CUSTOMER returns PERMISSION_DENIED.
+	OpenDispute(context.Context, *OpenDisputeRequest) (*OpenDisputeResponse, error)
+	// ListOpenDisputes is the staff's queue of disputes waiting for a decision, oldest first. Only ADMIN and OPERATOR.
+	ListOpenDisputes(context.Context, *ListOpenDisputesRequest) (*ListOpenDisputesResponse, error)
+	// ResolveDispute decides an open dispute, once, with an audited reason. IN_FAVOR waives the surcharge and takes it off
+	// the balance; AGAINST changes nothing. Only ADMIN and OPERATOR. Already resolved returns ABORTED; a surcharge that
+	// was paid meanwhile returns FAILED_PRECONDITION and the dispute stays open.
+	ResolveDispute(context.Context, *ResolveDisputeRequest) (*ResolveDisputeResponse, error)
 	// SetReassignmentFee defines or changes the fixed fee charged when an order is reassigned at the customer's
 	// request (ADR 0006). Only ADMIN; the amount and the reason are audited. Every change is a new row.
 	SetReassignmentFee(context.Context, *SetReassignmentFeeRequest) (*SetReassignmentFeeResponse, error)
@@ -537,6 +592,15 @@ func (UnimplementedOrderServiceServer) ListRecidivists(context.Context, *ListRec
 }
 func (UnimplementedOrderServiceServer) ClearRecidivist(context.Context, *ClearRecidivistRequest) (*ClearRecidivistResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ClearRecidivist not implemented")
+}
+func (UnimplementedOrderServiceServer) OpenDispute(context.Context, *OpenDisputeRequest) (*OpenDisputeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method OpenDispute not implemented")
+}
+func (UnimplementedOrderServiceServer) ListOpenDisputes(context.Context, *ListOpenDisputesRequest) (*ListOpenDisputesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListOpenDisputes not implemented")
+}
+func (UnimplementedOrderServiceServer) ResolveDispute(context.Context, *ResolveDisputeRequest) (*ResolveDisputeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResolveDispute not implemented")
 }
 func (UnimplementedOrderServiceServer) SetReassignmentFee(context.Context, *SetReassignmentFeeRequest) (*SetReassignmentFeeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetReassignmentFee not implemented")
@@ -780,6 +844,60 @@ func _OrderService_ClearRecidivist_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(OrderServiceServer).ClearRecidivist(ctx, req.(*ClearRecidivistRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OrderService_OpenDispute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(OpenDisputeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).OpenDispute(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_OpenDispute_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).OpenDispute(ctx, req.(*OpenDisputeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OrderService_ListOpenDisputes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListOpenDisputesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).ListOpenDisputes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_ListOpenDisputes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).ListOpenDisputes(ctx, req.(*ListOpenDisputesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OrderService_ResolveDispute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveDisputeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).ResolveDispute(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_ResolveDispute_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).ResolveDispute(ctx, req.(*ResolveDisputeRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1100,6 +1218,18 @@ var OrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ClearRecidivist",
 			Handler:    _OrderService_ClearRecidivist_Handler,
+		},
+		{
+			MethodName: "OpenDispute",
+			Handler:    _OrderService_OpenDispute_Handler,
+		},
+		{
+			MethodName: "ListOpenDisputes",
+			Handler:    _OrderService_ListOpenDisputes_Handler,
+		},
+		{
+			MethodName: "ResolveDispute",
+			Handler:    _OrderService_ResolveDispute_Handler,
 		},
 		{
 			MethodName: "SetReassignmentFee",
