@@ -3,7 +3,7 @@
 -- recovered later by the reconciliation sweep: Order Service does not otherwise keep the reason (it lives in Driver
 -- Service). Orders closed before this table existed have no row and are not reconciled.
 CREATE TABLE order_penalty_reasons (
-    order_id    UUID PRIMARY KEY REFERENCES orders (id),
+    order_id    UUID PRIMARY KEY, -- no FK, like surcharges: the migration reversibility test drops orders by hand
     reason      VARCHAR(32) NOT NULL,
     recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT order_penalty_reasons_reason_not_blank CHECK (btrim(reason) <> '')
