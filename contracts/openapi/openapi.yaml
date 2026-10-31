@@ -577,6 +577,24 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /api/v1/customers/me/balance:
+    get:
+      tags: [surcharges]
+      operationId: getMyBalance
+      summary: Muestra al cliente lo que debe, linea por linea (solo CUSTOMER)
+      description: |
+        Saldo pendiente, estado de la cuenta y cada linea con su motivo y la fecha limite de pago (ADR 0006,
+        secciones 4 y 5). Una cuenta bloqueada por saldo puede consultarlo: asi sabe cuanto pagar. Las lineas
+        van de la mas antigua a la mas reciente. El motivo del recargo extra es siempre RECIDIVISM; la
+        justificacion del operador es una nota interna y no se muestra. `simulated` es siempre true.
+      responses:
+        "200":
+          description: Saldo del cliente
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MyBalance" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /api/v1/customers/me/balance/payment:
     post:
       tags: [surcharges]
@@ -1412,6 +1430,28 @@ components:
         reason: { type: string }
         appliedBy: { type: string, format: uuid, description: Operador que lo aplico }
         createdAt: { type: string, format: date-time }
+    BalanceLine:
+      type: object
+      required: [kind, id, reason, amount, startedAt, dueAt]
+      properties:
+        kind: { type: string, enum: [SURCHARGE, RECIDIVISM] }
+        id: { type: string, format: uuid }
+        orderId: { type: string, format: uuid, description: Pedido que no se entrego. Ausente en RECIDIVISM }
+        reason: { type: string, description: "Codigo que la app puede traducir, por ejemplo CLIENT_REFUSED. RECIDIVISM para el recargo extra" }
+        amount: { type: string, example: "3.00" }
+        startedAt: { type: string, format: date-time, description: Cuando empezo el plazo de 2 semanas }
+        dueAt: { type: string, format: date-time, description: Ultimo momento para pagar antes del bloqueo }
+    MyBalance:
+      type: object
+      required: [pendingSurcharge, accountStatus, blocked, simulated, lines]
+      properties:
+        pendingSurcharge: { type: string, example: "7.50", description: Total que debe }
+        accountStatus: { $ref: "#/components/schemas/CustomerStatus" }
+        blocked: { type: boolean, description: true mientras la cuenta esta BLOQUEADO_POR_SALDO }
+        simulated: { type: boolean, description: Siempre true. Los pagos son simulados }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/BalanceLine" }
     BalancePayment:
       type: object
       required: [status, simulated, amount, reference, unblocked, createdAt]
@@ -1494,9 +1534,9 @@ components:
       required: [id, orderId, kind, detail, createdAt, read]
       properties:
         id: { type: string, format: uuid }
-        orderId: { type: string, format: uuid }
-        kind: { type: string, enum: [ORDER_IN_REVIEW, ORDER_CONFIRMED, ORDER_CORRECTED, ORDER_REJECTED] }
-        detail: { type: string, maxLength: 300, description: Motivos del aviso o motivo de auditoría del operador }
+        orderId: { type: string, description: "Pedido al que se refiere el aviso. Vacío en ACCOUNT_BLOCKED_BY_BALANCE: ese aviso es de la cuenta, no de un pedido" }
+        kind: { type: string, enum: [ORDER_IN_REVIEW, ORDER_CONFIRMED, ORDER_CORRECTED, ORDER_REJECTED, SURCHARGE_APPLIED, ACCOUNT_BLOCKED_BY_BALANCE] }
+        detail: { type: string, maxLength: 300, description: "Motivos del aviso (ORDER_IN_REVIEW), motivo de auditoría del operador (ORDER_CONFIRMED, ORDER_CORRECTED y ORDER_REJECTED), MOTIVO,MONTO,FECHA_LIMITE en SURCHARGE_APPLIED (código cerrado, decimal con dos dígitos y fecha RFC 3339) o vacío en ACCOUNT_BLOCKED_BY_BALANCE" }
         createdAt: { type: string, format: date-time }
         read: { type: boolean }
     OrderReviewRequest:
@@ -1674,12 +1714,13 @@ components:
       allOf:
         - $ref: "#/components/schemas/Order"
         - type: object
-          required: [items, total]
+          required: [items, total, pendingSurcharge]
           properties:
             items:
               type: array
               items: { $ref: "#/components/schemas/OrderLine" }
             total: { type: string, description: "Suma de los subtotales, con dos decimales" }
+            pendingSurcharge: { type: string, example: "7.50", description: "Lo que el cliente debe al confirmar el pedido, como linea aparte; no esta incluido en total (ADR 0006, seccion 4). 0.00 si no debe nada" }
     DriverLocationRequest:
       type: object
       required: [latitude, longitude, recordedAt]

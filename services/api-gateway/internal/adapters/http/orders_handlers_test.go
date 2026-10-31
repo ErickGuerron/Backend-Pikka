@@ -116,6 +116,21 @@ func TestCreateOrder_AddressOnlyIsAccepted_CoordinatesStayAbsent(t *testing.T) {
 	assert.Nil(t, fake.createReq.Longitude)
 }
 
+// ADR 0006 seccion 4: lo que se debe llega como una linea aparte, sin mezclarse con el total del pedido.
+func TestCreateOrder_ReturnsWhatTheCustomerOwesApartFromTheTotal(t *testing.T) {
+	fake := &fakeOrderClient{createRes: &ordersv1.CreateOrderResponse{
+		Order:            &ordersv1.Order{Id: "o-3", Status: ordersv1.OrderStatus_ORDER_STATUS_PENDING},
+		Total:            "3.00",
+		PendingSurcharge: "7.50",
+	}}
+
+	rec := do(ordersRouter(fake), http.MethodPost, "/api/v1/orders", validOrderBody, authHdr(t, "CUSTOMER"))
+
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"total":"3.00"`)
+	assert.Contains(t, rec.Body.String(), `"pendingSurcharge":"7.50"`)
+}
+
 func TestCreateOrder_ReturnsProductsAndTotal(t *testing.T) {
 	fake := &fakeOrderClient{createRes: &ordersv1.CreateOrderResponse{
 		Order: &ordersv1.Order{Id: "o-2", Status: ordersv1.OrderStatus_ORDER_STATUS_PENDING},

@@ -448,3 +448,31 @@ func TestCreateOrderBalanceBlockedCustomerIsRejectedWithoutSideEffects(t *testin
 		})
 	}
 }
+
+// ADR 0006 seccion 4: lo que debe el cliente aparece como una linea aparte, junto al pedido que confirma.
+func TestCreateOrderReturnsWhatTheCustomerOwesAsASeparateLine(t *testing.T) {
+	customer := activeCustomer()
+	customer.PendingSurcharge = decimal.RequireFromString("7.50")
+	f := newCreate(customer, &fakeZones{zoneID: zoneUUID}, &fakeGeocoder{found: true})
+
+	placed, err := f.uc.Place(context.Background(), knownPoint())
+	if err != nil {
+		t.Fatalf("Place: %v", err)
+	}
+	if placed.PendingSurcharge.StringFixed(2) != "7.50" {
+		t.Fatalf("pending surcharge = %s, want 7.50", placed.PendingSurcharge)
+	}
+	if placed.Total.Equal(placed.Total.Add(placed.PendingSurcharge)) {
+		t.Fatal("the balance must not be mixed into the order total")
+	}
+}
+
+func TestCreateOrderWithNothingOwedReturnsZero(t *testing.T) {
+	f := newCreate(activeCustomer(), &fakeZones{zoneID: zoneUUID}, &fakeGeocoder{found: true})
+
+	placed, err := f.uc.Place(context.Background(), knownPoint())
+
+	if err != nil || !placed.PendingSurcharge.IsZero() {
+		t.Fatalf("pending surcharge = %s, err = %v", placed.PendingSurcharge, err)
+	}
+}

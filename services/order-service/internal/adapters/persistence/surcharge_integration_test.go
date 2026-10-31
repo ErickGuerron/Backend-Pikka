@@ -234,10 +234,10 @@ func pricedIncident(t *testing.T, customer, order, reason, base string) domain.S
 }
 
 func TestIncidenciaConMontoSumaAlSaldoUnaSolaVez(t *testing.T) {
-	_, pool := setup(t)
+	store, pool := setup(t)
 	repo := persistence.NewSurchargeRepository(pool)
 	customer := newCustomer(t, pool)
-	order := uuid.NewString()
+	order := realOrder(t, store, pool, customer)
 	ctx := context.Background()
 
 	saved, created, err := repo.RecordSurchargeIncident(ctx, pricedIncident(t, customer, order, "CLIENT_REFUSED", "20.00"))
@@ -253,10 +253,10 @@ func TestIncidenciaConMontoSumaAlSaldoUnaSolaVez(t *testing.T) {
 }
 
 func TestIncidenciaConcurrenteSumaAlSaldoUnaSolaVez(t *testing.T) {
-	_, pool := setup(t)
+	store, pool := setup(t)
 	repo := persistence.NewSurchargeRepository(pool)
 	customer := newCustomer(t, pool)
-	order := uuid.NewString()
+	order := realOrder(t, store, pool, customer)
 
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
@@ -273,11 +273,11 @@ func TestIncidenciaConcurrenteSumaAlSaldoUnaSolaVez(t *testing.T) {
 }
 
 func TestVariasIncidenciasSeAcumulanEnElSaldo(t *testing.T) {
-	_, pool := setup(t)
+	store, pool := setup(t)
 	repo := persistence.NewSurchargeRepository(pool)
 	customer := newCustomer(t, pool)
 	for _, base := range []string{"20.00", "10.00"} {
-		_, _, err := repo.RecordSurchargeIncident(context.Background(), pricedIncident(t, customer, uuid.NewString(), "CLIENT_REFUSED", base))
+		_, _, err := repo.RecordSurchargeIncident(context.Background(), pricedIncident(t, customer, realOrder(t, store, pool, customer), "CLIENT_REFUSED", base))
 		require.NoError(t, err)
 	}
 
@@ -298,7 +298,7 @@ func TestIncidenciaSinMontoNoTocaElSaldo(t *testing.T) {
 
 // WRONG_ADDRESS: con monto pero sin cobro hasta que el operador lo confirma; si lo dispensa, nunca se cobra.
 func TestDireccionIncorrectaSoloSumaAlSaldoSiElOperadorConfirma(t *testing.T) {
-	_, pool := setup(t)
+	store, pool := setup(t)
 	repo := persistence.NewSurchargeRepository(pool)
 	confirmed, waived := newCustomer(t, pool), newCustomer(t, pool)
 	ctx := context.Background()
@@ -309,7 +309,7 @@ func TestDireccionIncorrectaSoloSumaAlSaldoSiElOperadorConfirma(t *testing.T) {
 	}
 	var ids [2]string
 	for i, c := range []string{confirmed, waived} {
-		saved, _, err := repo.RecordSurchargeIncident(ctx, pricedIncident(t, c, uuid.NewString(), "WRONG_ADDRESS", "10.00"))
+		saved, _, err := repo.RecordSurchargeIncident(ctx, pricedIncident(t, c, realOrder(t, store, pool, c), "WRONG_ADDRESS", "10.00"))
 		require.NoError(t, err)
 		require.Equal(t, domain.SurchargePendingVerification, saved.Status)
 		assert.True(t, balanceOf(t, pool, c).IsZero(), "en verificacion no se cobra")

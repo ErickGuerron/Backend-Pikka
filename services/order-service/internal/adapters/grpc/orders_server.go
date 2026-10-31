@@ -49,6 +49,8 @@ type OrderUseCases struct {
 	Recidivism *orderapp.ApplyRecidivismCharge
 	// Pay lets a customer pay the whole balance with the simulated card (ADR 0006, section 5).
 	Pay *orderapp.PayBalance
+	// Balance shows a customer what they owe, line by line (ADR 0006, sections 4 and 5).
+	Balance *orderapp.GetMyBalance
 }
 
 // OrderServer implementa ordersv1.OrderServiceServer. Solo traduce: la regla de
@@ -107,9 +109,10 @@ func (s *OrderServer) CreateOrder(ctx context.Context, req *ordersv1.CreateOrder
 		return nil, mapOrderError(err)
 	}
 	return &ordersv1.CreateOrderResponse{
-		Order: orderToProto(placed.Order),
-		Items: orderLinesToProto(placed.Lines),
-		Total: placed.Total.StringFixed(2),
+		Order:            orderToProto(placed.Order),
+		Items:            orderLinesToProto(placed.Lines),
+		Total:            placed.Total.StringFixed(2),
+		PendingSurcharge: placed.PendingSurcharge.StringFixed(2),
 	}, nil
 }
 

@@ -87,12 +87,35 @@ func (s Surcharge) Resolve(decision SurchargeDecision, operatorID, reason string
 	return s, nil
 }
 
+// UnrecordedIncident is a penalised not-delivery that has no surcharge row yet: the incident was lost when the
+// stop closed. RecordedAt is when the stop closed, so the recovered incident keeps its original date.
+type UnrecordedIncident struct {
+	OrderID    string
+	CustomerID string
+	Reason     string
+	RecordedAt time.Time
+}
+
 // SurchargeFor returns exactly 15 % of the base price, rounded to cents.
 func SurchargeFor(basePrice decimal.Decimal) (decimal.Decimal, error) {
 	if !basePrice.IsPositive() {
 		return decimal.Zero, ErrInvalidSurchargeBase
 	}
 	return basePrice.Mul(SurchargeRate).Round(2), nil
+}
+
+// ClockStart is when the payment clock started: the operator's confirmation for a WRONG_ADDRESS, else the moment the
+// incident happened. The overdue sweep and the customer's balance use the same rule.
+func (s Surcharge) ClockStart() time.Time {
+	if !s.ResolvedAt.IsZero() {
+		return s.ResolvedAt
+	}
+	return s.CreatedAt
+}
+
+// DueAt is the last moment to pay before the account is blocked (ADR 0006, section 5).
+func (s Surcharge) DueAt() time.Time {
+	return s.ClockStart().AddDate(0, 0, BalanceDeadlineDays)
 }
 
 // Price sets the amount: exactly 15 % of the base price of the undelivered order, in cents. It can be

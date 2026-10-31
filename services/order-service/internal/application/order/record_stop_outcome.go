@@ -52,52 +52,20 @@ func (uc *RecordStopOutcome) WithSurcharges(surcharges ports.SurchargeRepository
 	return uc
 }
 
-// priceIncident sets the 15 % over the undelivered order's base price. An order without lines, a failed
-// lookup or a base too small to price leave the incident unpriced: it is still recorded, so the penalty
-// is never lost, and the cause is logged.
-func (uc *RecordStopOutcome) priceIncident(ctx context.Context, incident domain.Surcharge) domain.Surcharge {
-	base, found, err := uc.surcharges.OrderBasePrice(ctx, incident.OrderID)
-	if err != nil {
-		slog.Default().Error("surcharge base price unavailable; recorded unpriced", "order", incident.OrderID, "error", err)
-		return incident
-	}
-	if !found {
-		slog.Default().Warn("order has no lines; surcharge recorded unpriced", "order", incident.OrderID)
-		return incident
-	}
-	priced, err := incident.Price(base)
-	if err != nil {
-		slog.Default().Error("surcharge could not be priced; recorded unpriced", "order", incident.OrderID, "error", err)
-		return incident
-	}
-	return priced
-}
-
 // WithReincidence marks the customer as recidivist when a new incident reaches the threshold.
 func (uc *RecordStopOutcome) WithReincidence(r *Reincidence) *RecordStopOutcome {
 	uc.reincidence = r
 	return uc
 }
 
-// recordSurchargeNonFatal runs after the stop is already closed. A failure is logged and not
-// returned: the driver cannot retry a closed stop, and the unique order_id keeps a later retry safe.
+// recordSurchargeNonFatal runs after the stop is already closed. A failure is logged and not returned: the driver
+// cannot retry a closed stop. The reason was stored with the close, so the reconciliation sweep recovers it.
 func (uc *RecordStopOutcome) recordSurchargeNonFatal(ctx context.Context, closed domain.Order, reason string) {
-	if uc.surcharges == nil || closed.Status != domain.StatusNotDelivered || (!domain.NotDeliveredReason(reason).ChargesSurcharge() && !domain.NotDeliveredReason(reason).NeedsVerification()) {
+	if uc.surcharges == nil || closed.Status != domain.StatusNotDelivered || !domain.NotDeliveredReason(reason).CreatesIncident() {
 		return
 	}
-	incident, err := domain.NewSurchargeIncident(closed.CustomerID, closed.ID, reason, time.Now())
-	var saved domain.Surcharge
-	var created bool
-	if err == nil {
-		saved, created, err = uc.surcharges.RecordSurchargeIncident(ctx, uc.priceIncident(ctx, incident))
-	}
-	if err != nil {
-		slog.Default().Error("surcharge incident not recorded; it must be recorded by hand", "order", closed.ID, "reason", reason, "error", err)
-		return
-	}
-	// Only a new incident that counts now can complete the threshold; one waiting for the operator counts later.
-	if created && saved.Status == domain.SurchargePending {
-		uc.reincidence.evaluateNonFatal(ctx, saved.CustomerID)
+	if _, err := NewIncidentRecorder(uc.surcharges, uc.reincidence).Record(ctx, closed.CustomerID, closed.ID, reason, time.Now()); err != nil {
+		slog.Default().Error("surcharge incident not recorded; the reconciliation sweep recovers it", "order", closed.ID, "reason", reason, "error", err)
 	}
 }
 
@@ -118,7 +86,15 @@ func (uc *RecordStopOutcome) Run(ctx context.Context, cmd RecordStopOutcomeComma
 		return domain.Order{}, domain.ErrInvalidStopOutcome
 	}
 	closed, err := uc.orders.AdvanceRouteStop(ctx, id.String(), routeID, func(current domain.Order) (domain.Order, error) {
-		return current.RecordStopOutcome(cmd.Outcome)
+		next, err := current.RecordStopOutcome(cmd.Outcome)
+		if err != nil {
+			return next, err
+		}
+		// The penalty reason travels with the close so the repository stores both in one transaction.
+		if reason := domain.NotDeliveredReason(cmd.Reason); next.Status == domain.StatusNotDelivered && reason.CreatesIncident() {
+			next.PenaltyReason = reason
+		}
+		return next, nil
 	})
 	if err != nil {
 		return domain.Order{}, err

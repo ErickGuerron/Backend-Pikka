@@ -38,6 +38,10 @@ type Order struct {
 	// its zone. 0 when the order is not waiting. It is computed by the application layer for reads
 	// and is never persisted.
 	QueuePosition int
+	// PenaltyReason is set only while a stop is being closed NOT_DELIVERED for a reason that creates a surcharge
+	// incident (ADR 0006). The repository stores it in the same transaction as the new status, so a failed
+	// incident can be recovered later. It is never read back with the order.
+	PenaltyReason NotDeliveredReason
 }
 
 // NewOrderInput contains only caller-controlled delivery data.

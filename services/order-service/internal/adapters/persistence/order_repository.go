@@ -271,6 +271,15 @@ func (r *OrderRepository) AdvanceRouteStop(ctx context.Context, orderID, routeID
 	if err != nil {
 		return domain.Order{}, fmt.Errorf("advance route stop: update: %w", err)
 	}
+	// The reason of a penalised not-delivery is kept in the same transaction as the status (ADR 0006), so a
+	// surcharge that fails to record afterwards can be recovered by the reconciliation sweep.
+	if next.Status == domain.StatusNotDelivered && next.PenaltyReason != "" {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO order_penalty_reasons (order_id, reason) VALUES ($1, $2) ON CONFLICT (order_id) DO NOTHING`,
+			id, string(next.PenaltyReason)); err != nil {
+			return domain.Order{}, fmt.Errorf("advance route stop: penalty reason: %w", err)
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return domain.Order{}, fmt.Errorf("advance route stop: commit: %w", err)
 	}
@@ -304,7 +313,8 @@ func insertNotification(ctx context.Context, tx pgx.Tx, customerID, orderID stri
 	if err != nil {
 		return fmt.Errorf("notification customer id: %w", err)
 	}
-	oid, err := uuid.Parse(orderID)
+	// The account-block notice has no order: it is stored with a NULL order_id.
+	oid, err := optionalUUID(orderID)
 	if err != nil {
 		return fmt.Errorf("notification order id: %w", err)
 	}
