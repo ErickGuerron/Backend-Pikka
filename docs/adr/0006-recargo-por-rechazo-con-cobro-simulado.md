@@ -169,9 +169,9 @@ crear un pedido con la cuenta bloqueada por saldo se rechaza.
 **Pendiente o fuera de alcance** (el detalle de cada función, su orden, las decisiones que necesita y sus criterios
 de aceptación están en [`docs/planning/penalizaciones-pendientes.md`](../planning/penalizaciones-pendientes.md)):
 
-- Pausa del reloj por disputa abierta y apelación (ADR 0007, sección 6): las disputas aún no existen. Hay una
-  especificación mínima aprobada (reclamo en 2 horas, resuelve ADMIN u OPERATOR, el barrido no bloquea mientras está
-  abierta) pendiente de programar; el cobro reducido, la reasignación y la pausa de la reincidencia quedan fuera.
+- Apelación completa (ADR 0007, sección 6): las disputas existen en su versión mínima (reclamo en 2 horas desde el
+  inicio del reloj, resuelve ADMIN u OPERATOR, el barrido no cuenta el recargo mientras está abierta). El cobro
+  reducido, la reasignación y la pausa de la reincidencia quedan fuera.
 - "Pago sin cuenta", que el ADR 0005 atribuye a este documento: descartado por producto, no existe en el MVP.
 - Caducidad automática de la marca de reincidente: hoy solo un ADMIN la quita.
 - Aviso al cliente del cobro por reasignación y un posible tope de la tarifa fija.
