@@ -42,7 +42,8 @@ tarjeta), bloqueo por saldo vencido y pago del saldo. Las reglas, dónde viven e
 están en `docs/adr/0006-recargo-por-rechazo-con-cobro-simulado.md` (sección 7); la correspondencia REST/gRPC en
 `docs/contracts/orders-v1.md`.
 
-`cmd/api/main.go` arranca además un barrido que bloquea las cuentas con un saldo de más de 14 días: corre al
+`cmd/api/main.go` arranca además un barrido que primero recupera los recargos que no se registraron al cerrar una parada
+(`ReconcileIncidents`) y después bloquea las cuentas con un saldo de más de 14 días: corre al
 iniciar y cada `BALANCE_SWEEP_MINUTES` minutos (15 por defecto). Un fallo se registra en el log y el siguiente
 pase reintenta.
 

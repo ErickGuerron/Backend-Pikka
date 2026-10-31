@@ -151,6 +151,7 @@ Reglas implementadas y dónde viven (Order Service, salvo que se indique):
 | Bloqueo por saldo vencido | `BlockOverdueBalances` (barrido), `domain.BalanceOverdue` |
 | Pago del saldo y desbloqueo | `POST /customers/me/balance/payment` (Gateway), `BalanceRepository.SettleBalance` |
 | El cliente ve su saldo | `GET /customers/me/balance`; `pendingSurcharge` en la respuesta de crear pedido |
+| Recuperar un recargo que no se registró al cerrar la parada | `order_penalty_reasons` (motivo guardado con el cierre), `ReconcileIncidents` en el barrido |
 | Pantallas del cliente (saldo, pago, etiqueta «simulado», bloqueo) | Frontend-Pikka: PR 47 (web) y PR 48 (móvil), `BalanceCard` |
 
 Los contratos están en `contracts/openapi/openapi.yaml` (etiqueta `surcharges`) y el detalle de
@@ -173,8 +174,6 @@ de aceptación están en [`docs/planning/penalizaciones-pendientes.md`](../plann
   por cliente).
 - Un operador puede aplicar el recargo extra pero no listar clientes (`GET /customers` es solo ADMIN).
 - Cancelar un pedido con la cuenta bloqueada solo lo rechaza el servidor; las apps aún muestran el botón.
-- Reconciliación: si falla el registro de una incidencia después de cerrar la parada, solo queda
-  un log de error; no hay un barrido que la recupere.
 - Las incidencias de pedidos sin productos (anteriores al catálogo) se registran sin monto y no
   suman al saldo ni pueden bloquear la cuenta.
 

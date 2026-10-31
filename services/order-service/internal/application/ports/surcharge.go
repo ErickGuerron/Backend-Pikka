@@ -17,6 +17,9 @@ type SurchargeRepository interface {
 	// OrderBasePrice is the sum of unit price times quantity of the order's lines. found is false when
 	// the order has no lines (created before the catalog), so it has no base price.
 	OrderBasePrice(ctx context.Context, orderID string) (base decimal.Decimal, found bool, err error)
+	// ListUnrecordedIncidents returns the penalised not-deliveries (customer reason or wrong address) that have no
+	// surcharge yet, oldest first, at most limit.
+	ListUnrecordedIncidents(ctx context.Context, limit int) ([]domain.UnrecordedIncident, error)
 	// ResolveSurchargeVerification locks the surcharge, lets decide change it and stores the result,
 	// so two operators cannot resolve the same verification. Unknown id returns ErrSurchargeNotFound.
 	ResolveSurchargeVerification(ctx context.Context, id string, decide func(domain.Surcharge) (domain.Surcharge, error)) (domain.Surcharge, error)
