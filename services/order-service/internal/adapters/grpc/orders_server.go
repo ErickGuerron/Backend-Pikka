@@ -49,6 +49,8 @@ type OrderUseCases struct {
 	Recidivism *orderapp.ApplyRecidivismCharge
 	// ListRecidivists lets an operator find the customers an extra charge can be applied to (ADR 0006).
 	ListRecidivists *orderapp.ListRecidivists
+	// ClearRecidivist lets an administrator remove the reincidence mark (ADR 0006).
+	ClearRecidivist *orderapp.ClearRecidivistMark
 	// Pay lets a customer pay the whole balance with the simulated card (ADR 0006, section 5).
 	Pay *orderapp.PayBalance
 	// Balance shows a customer what they owe, line by line (ADR 0006, sections 4 and 5).
@@ -330,7 +332,7 @@ func correctionFromProto(c *ordersv1.OrderCorrection) *orderapp.Correction {
 // Los mensajes de validación del dominio son seguros para el cliente.
 func mapOrderError(err error) error {
 	switch {
-	case errors.Is(err, domain.ErrNotCustomer), errors.Is(err, domain.ErrNotOperator):
+	case errors.Is(err, domain.ErrNotCustomer), errors.Is(err, domain.ErrNotOperator), errors.Is(err, domain.ErrNotAdmin):
 		return status.Error(codes.PermissionDenied, err.Error())
 	case errors.Is(err, orderapp.ErrInvalidDeliveryDate):
 		return status.Error(codes.InvalidArgument, err.Error())
@@ -350,7 +352,7 @@ func mapOrderError(err error) error {
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, domain.ErrRecidivismChargeExists):
 		return status.Error(codes.Aborted, err.Error())
-	case errors.Is(err, domain.ErrInvalidRecidivismCharge):
+	case errors.Is(err, domain.ErrInvalidRecidivismCharge), errors.Is(err, domain.ErrRecidivismChargeTooHigh), errors.Is(err, domain.ErrInvalidRecidivistClear):
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, domain.ErrSurchargeNotPendingVerification):
 		return status.Error(codes.Aborted, err.Error())

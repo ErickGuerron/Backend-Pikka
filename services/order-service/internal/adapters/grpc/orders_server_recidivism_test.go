@@ -32,7 +32,7 @@ func (s *recidivismStore) ApplyRecidivismCharge(_ context.Context, customerID st
 }
 
 func recidivismServer(store *recidivismStore) *OrderServer {
-	return NewOrderServer(OrderUseCases{Recidivism: orderapp.NewApplyRecidivismCharge(store)})
+	return NewOrderServer(OrderUseCases{Recidivism: orderapp.NewApplyRecidivismCharge(store, decimal.NewFromInt(50))})
 }
 
 func recidivismReq() *ordersv1.ApplyRecidivismChargeRequest {

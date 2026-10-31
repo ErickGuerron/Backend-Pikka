@@ -92,6 +92,13 @@ func (o *Orders) ApplyRecidivismCharge(ctx context.Context, m CallMeta, req *ord
 	return o.client.ApplyRecidivismCharge(ctx, req)
 }
 
+// ClearRecidivist quita la marca de reincidente de un cliente (solo ADMIN).
+func (o *Orders) ClearRecidivist(ctx context.Context, m CallMeta, req *ordersv1.ClearRecidivistRequest) (*ordersv1.ClearRecidivistResponse, error) {
+	ctx, cancel := o.outgoing(ctx, m)
+	defer cancel()
+	return o.client.ClearRecidivist(ctx, req)
+}
+
 // ListRecidivists lista los clientes con la marca de reincidente para el operador.
 func (o *Orders) ListRecidivists(ctx context.Context, m CallMeta, req *ordersv1.ListRecidivistsRequest) (*ordersv1.ListRecidivistsResponse, error) {
 	ctx, cancel := o.outgoing(ctx, m)

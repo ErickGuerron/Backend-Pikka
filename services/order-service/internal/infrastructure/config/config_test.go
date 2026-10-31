@@ -49,3 +49,41 @@ func TestLoadRequiresThePassword(t *testing.T) {
 		t.Fatal("a missing POSTGRES_PASSWORD must fail")
 	}
 }
+
+func TestRecidivismChargeMaxDefaultsToFifty(t *testing.T) {
+	t.Setenv("POSTGRES_PASSWORD", "x")
+	t.Setenv("RECIDIVISM_CHARGE_MAX", "")
+
+	cfg, err := Load()
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RecidivismChargeMax.StringFixed(2) != "50.00" {
+		t.Fatalf("max = %s, want 50.00", cfg.RecidivismChargeMax)
+	}
+}
+
+func TestRecidivismChargeMaxComesFromTheEnvironment(t *testing.T) {
+	t.Setenv("POSTGRES_PASSWORD", "x")
+	t.Setenv("RECIDIVISM_CHARGE_MAX", "75.50")
+
+	cfg, err := Load()
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RecidivismChargeMax.StringFixed(2) != "75.50" {
+		t.Fatalf("max = %s, want 75.50", cfg.RecidivismChargeMax)
+	}
+}
+
+func TestRecidivismChargeMaxMustBeAPositiveAmount(t *testing.T) {
+	t.Setenv("POSTGRES_PASSWORD", "x")
+	for _, bad := range []string{"0", "-3", "abc", "1e3x"} {
+		t.Setenv("RECIDIVISM_CHARGE_MAX", bad)
+		if _, err := Load(); err == nil {
+			t.Fatalf("RECIDIVISM_CHARGE_MAX=%q must be rejected", bad)
+		}
+	}
+}

@@ -3,10 +3,12 @@ package order
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/application/ports"
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/domain"
@@ -43,7 +45,7 @@ func TestApplyRecidivismChargeByOperatorAndAdmin(t *testing.T) {
 		cmd := validRecidivismCommand()
 		cmd.Role = role
 
-		got, err := NewApplyRecidivismCharge(repo).Run(context.Background(), cmd)
+		got, err := NewApplyRecidivismCharge(repo, testRecidivismCap).Run(context.Background(), cmd)
 
 		if err != nil {
 			t.Fatalf("%s: %v", role, err)
@@ -74,7 +76,7 @@ func TestApplyRecidivismChargeRejectsBeforeRepository(t *testing.T) {
 			cmd := validRecidivismCommand()
 			tc.mutate(&cmd)
 
-			_, err := NewApplyRecidivismCharge(repo).Run(context.Background(), cmd)
+			_, err := NewApplyRecidivismCharge(repo, testRecidivismCap).Run(context.Background(), cmd)
 
 			if !errors.Is(err, tc.want) {
 				t.Fatalf("err = %v, want %v", err, tc.want)
@@ -89,9 +91,51 @@ func TestApplyRecidivismChargeRejectsBeforeRepository(t *testing.T) {
 func TestApplyRecidivismChargePropagatesRepositoryDecisions(t *testing.T) {
 	for _, want := range []error{domain.ErrCustomerNotRecidivist, domain.ErrRecidivismChargeExists, domain.ErrCustomerNotFound} {
 		repo := &recidivismRepoFake{err: want}
-		_, err := NewApplyRecidivismCharge(repo).Run(context.Background(), validRecidivismCommand())
+		_, err := NewApplyRecidivismCharge(repo, testRecidivismCap).Run(context.Background(), validRecidivismCommand())
 		if !errors.Is(err, want) {
 			t.Fatalf("err = %v, want %v", err, want)
 		}
 	}
+}
+
+var testRecidivismCap = decimal.NewFromInt(50)
+
+func TestApplyRecidivismChargeRespectsTheCap(t *testing.T) {
+	t.Run("the cap itself is allowed", func(t *testing.T) {
+		repo := &recidivismRepoFake{markedAt: time.Date(2026, 10, 10, 9, 0, 0, 0, time.UTC)}
+		cmd := validRecidivismCommand()
+		cmd.Amount = "50.00"
+		if _, err := NewApplyRecidivismCharge(repo, testRecidivismCap).Run(context.Background(), cmd); err != nil {
+			t.Fatalf("err = %v", err)
+		}
+	})
+	t.Run("above the cap is rejected before the repository, naming the cap", func(t *testing.T) {
+		repo := &recidivismRepoFake{}
+		cmd := validRecidivismCommand()
+		cmd.Amount = "50.01"
+		_, err := NewApplyRecidivismCharge(repo, testRecidivismCap).Run(context.Background(), cmd)
+		if !errors.Is(err, domain.ErrRecidivismChargeTooHigh) {
+			t.Fatalf("err = %v, want ErrRecidivismChargeTooHigh", err)
+		}
+		if !strings.Contains(err.Error(), "50.00") {
+			t.Fatalf("message %q does not name the cap", err.Error())
+		}
+		if repo.calls != 0 {
+			t.Fatalf("repository called %d times", repo.calls)
+		}
+	})
+	t.Run("a typo with extra zeros is caught", func(t *testing.T) {
+		repo := &recidivismRepoFake{}
+		cmd := validRecidivismCommand()
+		cmd.Amount = "1250.00"
+		if _, err := NewApplyRecidivismCharge(repo, testRecidivismCap).Run(context.Background(), cmd); !errors.Is(err, domain.ErrRecidivismChargeTooHigh) {
+			t.Fatalf("err = %v", err)
+		}
+	})
+	t.Run("a cap that is not positive rejects everything instead of disabling the limit", func(t *testing.T) {
+		repo := &recidivismRepoFake{}
+		if _, err := NewApplyRecidivismCharge(repo, decimal.Zero).Run(context.Background(), validRecidivismCommand()); !errors.Is(err, domain.ErrRecidivismChargeTooHigh) {
+			t.Fatalf("err = %v", err)
+		}
+	})
 }

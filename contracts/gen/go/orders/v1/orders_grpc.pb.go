@@ -28,6 +28,7 @@ const (
 	OrderService_ResolveSurchargeVerification_FullMethodName      = "/orders.v1.OrderService/ResolveSurchargeVerification"
 	OrderService_ApplyRecidivismCharge_FullMethodName             = "/orders.v1.OrderService/ApplyRecidivismCharge"
 	OrderService_ListRecidivists_FullMethodName                   = "/orders.v1.OrderService/ListRecidivists"
+	OrderService_ClearRecidivist_FullMethodName                   = "/orders.v1.OrderService/ClearRecidivist"
 	OrderService_PayMyBalance_FullMethodName                      = "/orders.v1.OrderService/PayMyBalance"
 	OrderService_GetMyBalance_FullMethodName                      = "/orders.v1.OrderService/GetMyBalance"
 	OrderService_ReviewOrder_FullMethodName                       = "/orders.v1.OrderService/ReviewOrder"
@@ -75,6 +76,10 @@ type OrderServiceClient interface {
 	// ListRecidivists lists the customers marked as recidivist, oldest mark first, with only what an operator
 	// needs to decide an extra charge and reach the customer (ADR 0006). Only ADMIN and OPERATOR.
 	ListRecidivists(ctx context.Context, in *ListRecidivistsRequest, opts ...grpc.CallOption) (*ListRecidivistsResponse, error)
+	// ClearRecidivist removes the reincidence mark with an audited reason (ADR 0006, F5). Only ADMIN: an
+	// operator gets PERMISSION_DENIED. A customer without the mark returns FAILED_PRECONDITION, an unknown
+	// customer NOT_FOUND. The charges already collected and the balance are not touched.
+	ClearRecidivist(ctx context.Context, in *ClearRecidivistRequest, opts ...grpc.CallOption) (*ClearRecidivistResponse, error)
 	// PayMyBalance pays the whole pending balance of the authenticated CUSTOMER with the simulated card
 	// (ADR 0006, section 5). There is no amount to send: only the full balance can be paid. An approved
 	// payment returns a balance-blocked account to ACTIVO at once. A declined charge is a result, not an
@@ -219,6 +224,16 @@ func (c *orderServiceClient) ListRecidivists(ctx context.Context, in *ListRecidi
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListRecidivistsResponse)
 	err := c.cc.Invoke(ctx, OrderService_ListRecidivists_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *orderServiceClient) ClearRecidivist(ctx context.Context, in *ClearRecidivistRequest, opts ...grpc.CallOption) (*ClearRecidivistResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClearRecidivistResponse)
+	err := c.cc.Invoke(ctx, OrderService_ClearRecidivist_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -378,6 +393,10 @@ type OrderServiceServer interface {
 	// ListRecidivists lists the customers marked as recidivist, oldest mark first, with only what an operator
 	// needs to decide an extra charge and reach the customer (ADR 0006). Only ADMIN and OPERATOR.
 	ListRecidivists(context.Context, *ListRecidivistsRequest) (*ListRecidivistsResponse, error)
+	// ClearRecidivist removes the reincidence mark with an audited reason (ADR 0006, F5). Only ADMIN: an
+	// operator gets PERMISSION_DENIED. A customer without the mark returns FAILED_PRECONDITION, an unknown
+	// customer NOT_FOUND. The charges already collected and the balance are not touched.
+	ClearRecidivist(context.Context, *ClearRecidivistRequest) (*ClearRecidivistResponse, error)
 	// PayMyBalance pays the whole pending balance of the authenticated CUSTOMER with the simulated card
 	// (ADR 0006, section 5). There is no amount to send: only the full balance can be paid. An approved
 	// payment returns a balance-blocked account to ACTIVO at once. A declined charge is a result, not an
@@ -464,6 +483,9 @@ func (UnimplementedOrderServiceServer) ApplyRecidivismCharge(context.Context, *A
 }
 func (UnimplementedOrderServiceServer) ListRecidivists(context.Context, *ListRecidivistsRequest) (*ListRecidivistsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListRecidivists not implemented")
+}
+func (UnimplementedOrderServiceServer) ClearRecidivist(context.Context, *ClearRecidivistRequest) (*ClearRecidivistResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ClearRecidivist not implemented")
 }
 func (UnimplementedOrderServiceServer) PayMyBalance(context.Context, *PayMyBalanceRequest) (*PayMyBalanceResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PayMyBalance not implemented")
@@ -680,6 +702,24 @@ func _OrderService_ListRecidivists_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(OrderServiceServer).ListRecidivists(ctx, req.(*ListRecidivistsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OrderService_ClearRecidivist_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClearRecidivistRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).ClearRecidivist(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_ClearRecidivist_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).ClearRecidivist(ctx, req.(*ClearRecidivistRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -942,6 +982,10 @@ var OrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListRecidivists",
 			Handler:    _OrderService_ListRecidivists_Handler,
+		},
+		{
+			MethodName: "ClearRecidivist",
+			Handler:    _OrderService_ClearRecidivist_Handler,
 		},
 		{
 			MethodName: "PayMyBalance",

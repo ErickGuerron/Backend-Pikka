@@ -2,6 +2,7 @@ package order
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,11 +26,14 @@ type ApplyRecidivismChargeCommand struct {
 // audited reason (ADR 0006, section 1).
 type ApplyRecidivismCharge struct {
 	repo  ports.RecidivismRepository
+	max   decimal.Decimal
 	clock func() time.Time
 }
 
-func NewApplyRecidivismCharge(repo ports.RecidivismRepository) *ApplyRecidivismCharge {
-	return &ApplyRecidivismCharge{repo: repo, clock: time.Now}
+// NewApplyRecidivismCharge limits every charge to max. A max that is not positive rejects every charge:
+// a missing limit must never mean "no limit".
+func NewApplyRecidivismCharge(repo ports.RecidivismRepository, max decimal.Decimal) *ApplyRecidivismCharge {
+	return &ApplyRecidivismCharge{repo: repo, max: max, clock: time.Now}
 }
 
 // Run validates everything it can before the repository and builds the charge under its lock.
@@ -49,6 +53,9 @@ func (uc *ApplyRecidivismCharge) Run(ctx context.Context, cmd ApplyRecidivismCha
 	// rejects a bad amount, operator or reason without touching the database.
 	if _, err := domain.NewRecidivismCharge(customerID.String(), time.Time{}, amount, cmd.OperatorID, cmd.Reason, uc.clock()); err != nil {
 		return domain.RecidivismCharge{}, err
+	}
+	if amount.Round(2).GreaterThan(uc.max) || !uc.max.IsPositive() {
+		return domain.RecidivismCharge{}, fmt.Errorf("%w: %s", domain.ErrRecidivismChargeTooHigh, uc.max.StringFixed(2))
 	}
 	return uc.repo.ApplyRecidivismCharge(ctx, customerID.String(), func(recidivistAt time.Time) (domain.RecidivismCharge, error) {
 		return domain.NewRecidivismCharge(customerID.String(), recidivistAt, amount, cmd.OperatorID, cmd.Reason, uc.clock())

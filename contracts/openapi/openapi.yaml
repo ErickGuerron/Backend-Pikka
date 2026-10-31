@@ -575,6 +575,8 @@ paths:
         cliente en la misma operacion y la decision queda auditada con el operador y la hora.
         Solo aplica a clientes marcados como reincidentes (tres no entregas del cliente en un plazo de 14 dias) y una
         vez por reincidencia: un segundo intento responde 409; un cliente sin la marca responde 422.
+        El monto tiene un tope que fija el negocio (variable RECIDIVISM_CHARGE_MAX, 50.00 de inicio): un monto mayor
+        responde 400 con el tope en el mensaje y no toca el saldo.
       parameters:
         - name: id
           in: path
@@ -636,6 +638,37 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /api/v1/customers/{id}/recidivist/clear:
+    post:
+      tags: [surcharges]
+      operationId: clearRecidivist
+      summary: Quita la marca de reincidente a un cliente (solo ADMIN)
+      description: |
+        Solo un administrador puede quitar la marca (ADR 0006, F5); el motivo (5 a 300 caracteres) y quien lo hizo
+        quedan auditados. No borra los recargos extra ya cobrados ni cambia el saldo. Tras quitarla, una nueva
+        reincidencia vuelve a marcar al cliente y permite otro recargo extra. Un OPERATOR responde 403; un cliente
+        sin la marca responde 422.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClearRecidivistRequest" }
+      responses:
+        "200":
+          description: Marca quitada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecidivistClear" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
   /api/v1/orders/{id}/cancel:
     post:
@@ -1449,6 +1482,21 @@ components:
         recidivistAt: { type: string, format: date-time, description: Cuando se marco al cliente }
         pendingSurcharge: { type: string, example: "4.50", description: Saldo pendiente actual como decimal con dos digitos }
         chargeApplied: { type: boolean, description: true si el recargo extra de esta marca ya se aplico }
+    ClearRecidivistRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 5, maxLength: 300, description: "Justificación del administrador, auditada" }
+    RecidivistClear:
+      type: object
+      required: [id, customerId, recidivistAt, reason, clearedBy, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        customerId: { type: string, format: uuid }
+        recidivistAt: { type: string, format: date-time, description: Marca que se quitó }
+        reason: { type: string }
+        clearedBy: { type: string, format: uuid, description: Administrador que la quitó }
+        createdAt: { type: string, format: date-time }
     RecidivismCharge:
       type: object
       required: [id, customerId, recidivistAt, amount, reason, appliedBy, createdAt]
