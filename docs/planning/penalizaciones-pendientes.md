@@ -22,7 +22,7 @@ decisión pequeña; al final lo que necesita una especificación.
 | F7 | «Pago sin cuenta» (ADR 0005) | Sí, de producto (D2) | por definir | por definir |
 | F8 | Disputas, pausa del reloj y apelación | Sí, requiere especificación | todo | item 1, 3 y 4 |
 
-**Hechas:** F1, F2 (web; falta la app móvil) y F3.
+**Hechas:** F1, F2 (web y móvil), F3, F4, F5 y F6. **Descartada:** F7. **Especificada, sin programar:** F8 (versión mínima).
 
 Cada función se entrega como su propio PR, con pruebas primero y la documentación al día. Las decisiones propuestas
 («Propuesta») son un punto de partida, no están aprobadas hasta que producto las confirme.
@@ -79,7 +79,7 @@ el 15 %, registra la incidencia y evalúa la reincidencia, usado por el cierre y
 
 ## F2. Aviso en la app al confirmarse la penalización
 
-**Estado:** backend y web implementados (rama `feat/penalty-f2-notice`); **la app móvil queda pendiente (F2b)**. **Decisión requerida:** solo el texto del aviso (propuesto abajo).
+**Estado:** implementada: backend (Backend-Pikka#96), web (Frontend-Pikka#49) y app móvil (Frontend-Pikka#52, F2b). **Decisión requerida:** solo el texto del aviso (propuesto abajo).
 
 **Qué es.** El ADR 0006 dice que el reloj de 2 semanas empieza «cuando el sistema confirma la penalización **y notifica
 al cliente en la app**». Hoy el reloj empieza al confirmarse, pero no existe el aviso: el cliente se entera de que debe
@@ -137,7 +137,7 @@ mensaje del saldo; con la cuenta activa nada cambia.
 
 ## F4. Listado de reincidentes para el operador
 
-**Estado:** no implementada. **Decisión pequeña pendiente (D-F4).**
+**Estado:** implementada (Backend-Pikka#97): `GET /api/v1/customers/recidivists`, ADMIN y OPERATOR; devuelve nombre, teléfono de contacto, fecha de la marca, saldo y si el recargo extra ya se aplicó. Sin correo ni dirección.
 
 **Qué es.** El operador puede aplicar el recargo extra (`POST /customers/{id}/recidivism-charge`) pero no tiene cómo
 encontrar al cliente: `GET /customers` es solo ADMIN (ADR 0008).
@@ -153,7 +153,7 @@ trae datos de contacto; los más antiguos primero.
 
 ## F5. Tope del recargo extra y quitar la marca de reincidente
 
-**Estado:** no implementada. **Decisiones pendientes (D-F5a, D-F5b).**
+**Estado:** implementada (Backend-Pikka#98). Tope: variable `RECIDIVISM_CHARGE_MAX` (50.00 de inicio; el negocio fija el valor real); un monto mayor responde 400 con el tope. Quitar la marca: `POST /api/v1/customers/{id}/recidivist/clear`, solo ADMIN, con motivo auditado (tabla `recidivist_clears`); no borra los recargos ya cobrados. Queda fuera: caducidad automática de la marca.
 
 **Qué es.** (a) El recargo extra solo está limitado por la columna `NUMERIC(12,2)`: un error de tecleo con ceros de más
 pasaría. (b) La marca de reincidente es permanente, así que hoy cada cliente puede recibir **un solo** recargo extra en
@@ -174,7 +174,7 @@ queda auditado y no borra los recargos extra ya cobrados.
 
 ## F6. Cobro adicional por reasignación (T5)
 
-**Estado:** no implementada. **Decisión requerida: D3.**
+**Estado:** implementada (Backend-Pikka#100) con el enfoque simple: **monto fijo**, sin gasolina ni distancias. Un ADMIN define la tarifa con motivo auditado (`PUT /api/v1/settings/reassignment-fee`, historial en `reassignment_fees`); ADMIN u OPERATOR la cobran una vez por pedido (`POST /api/v1/orders/{id}/reassignment-charge`). El monto nunca se envía y sin tarifa definida no se cobra. El cobro suma al saldo, entra al barrido de 14 días y se paga con el resto. Pendiente: aviso al cliente de este cobro y un posible tope de la tarifa.
 
 **Qué es.** El ADR 0006 (dirección incorrecta) dice que si el repartidor ya va en camino y el cliente da un motivo, el
 pedido se reasigna con un cobro adicional «calculado por distancia con el precio de la gasolina como referencia y
@@ -195,7 +195,7 @@ la vista del saldo sin cambios.
 
 ## F7. «Pago sin cuenta» (ADR 0005)
 
-**Estado:** sin definir. **Decisión de producto requerida: D2.**
+**Estado:** descartada por decisión de producto (2026-10-30): no existe en el MVP y no se construye.
 
 El ADR 0005 dice que las reglas del «pago sin cuenta» están en el ADR 0006, pero el 0006 no lo define. Hay que decidir,
 al menos: qué es (¿un cliente que pide sin registrarse?), cómo se le cobra un recargo si no tiene cuenta que bloquear, y
@@ -205,7 +205,7 @@ qué identifica a esa persona. Mientras no exista esa definición no hay nada qu
 
 ## F8. Disputas, pausa del reloj y apelación
 
-**Estado:** no implementada; **las disputas no existen en el sistema.** **Requiere especificación.**
+**Estado:** no implementada; **las disputas no existen en el sistema.** **Especificación mínima aprobada (2026-10-30), pendiente de programar:** el cliente abre una disputa con motivo dentro de 2 horas desde el aviso (depende de F2); ADMIN u OPERATOR la resuelve a favor (se dispensa el recargo) o en contra (sigue igual), con motivo auditado; mientras está abierta el barrido no bloquea la cuenta. Fuera de esta versión: cobro reducido, reasignación y pausa de la reincidencia.
 
 **Qué dice el ADR.** ADR 0006 §5: mientras haya una disputa abierta sobre la penalización, el reloj se pausa y no se
 bloquea la cuenta. ADR 0007 §6: el cliente puede disputar dentro de un plazo (por ejemplo, 2 horas desde el aviso); una

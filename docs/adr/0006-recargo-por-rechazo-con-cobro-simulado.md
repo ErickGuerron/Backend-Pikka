@@ -110,7 +110,7 @@ Para que el saldo no quede indefinido:
   cliente en la app. El repartidor no inicia el reloj.
   *Implementación:* el reloj empieza al confirmarse la penalización (al ocurrir, o
   cuando el operador confirma un `WRONG_ADDRESS`), y el aviso en la app (`SURCHARGE_APPLIED`) se crea en la misma
-  transacción que suma el recargo al saldo. En la app móvil el aviso aún no se muestra (F2b).
+  transacción que suma el recargo al saldo. La web y la app móvil muestran el aviso.
 - **Bloqueo**: si pasadas 2 semanas el saldo sigue sin pagar, la cuenta pasa a
   `BLOQUEADO_POR_SALDO`. El cliente no puede crear pedidos ni cancelarlos.
   Puede seguir entrando a la app y ver el saldo.
@@ -153,7 +153,10 @@ Reglas implementadas y dónde viven (Order Service, salvo que se indique):
 | Pago del saldo y desbloqueo | `POST /customers/me/balance/payment` (Gateway), `BalanceRepository.SettleBalance` |
 | El cliente ve su saldo | `GET /customers/me/balance`; `pendingSurcharge` en la respuesta de crear pedido |
 | Recuperar un recargo que no se registró al cerrar la parada | `order_penalty_reasons` (motivo guardado con el cierre), `ReconcileIncidents` en el barrido |
-| Aviso al cliente al confirmarse el recargo y al bloquearse la cuenta | `SURCHARGE_APPLIED` y `ACCOUNT_BLOCKED_BY_BALANCE` en `customer_notifications`; panel de avisos de la web |
+| Aviso al cliente al confirmarse el recargo y al bloquearse la cuenta | `SURCHARGE_APPLIED` y `ACCOUNT_BLOCKED_BY_BALANCE` en `customer_notifications`; panel de avisos de la web y de la app móvil |
+| Listado de reincidentes para el operador | `GET /customers/recidivists` (ADMIN y OPERATOR), solo nombre, teléfono, fecha de la marca, saldo y si el recargo extra ya se aplicó |
+| Tope del recargo extra y quitar la marca | `RECIDIVISM_CHARGE_MAX` (400 con el tope si se supera); `POST /customers/{id}/recidivist/clear` solo ADMIN, auditado en `recidivist_clears` |
+| Cobro adicional por reasignación | Tarifa fija que define un ADMIN (`PUT /settings/reassignment-fee`, historial en `reassignment_fees`); `POST /orders/{id}/reassignment-charge` la cobra una vez por pedido y entra al barrido y al pago |
 | Pantallas del cliente (saldo, pago, etiqueta «simulado», bloqueo) | Frontend-Pikka: PR 47 (web) y PR 48 (móvil), `BalanceCard` |
 
 Los contratos están en `contracts/openapi/openapi.yaml` (etiqueta `surcharges`) y el detalle de
@@ -166,16 +169,12 @@ crear un pedido con la cuenta bloqueada por saldo se rechaza.
 **Pendiente o fuera de alcance** (el detalle de cada función, su orden, las decisiones que necesita y sus criterios
 de aceptación están en [`docs/planning/penalizaciones-pendientes.md`](../planning/penalizaciones-pendientes.md)):
 
-- Cobro adicional por reasignación (sección 1, dirección incorrecta): falta definir la fórmula de
-  distancia, el precio de la gasolina de referencia y dónde guarda el administrador su ajuste.
-- Pausa del reloj por disputa abierta y apelación (ADR 0007, sección 6): las disputas aún no existen.
-- Mostrar los avisos en la app móvil, que no tiene panel de avisos (F2b).
-- "Pago sin cuenta", que el ADR 0005 atribuye a este documento y que aquí no está definido.
-- Tope al monto del recargo extra (hoy solo lo limita la columna `NUMERIC(12,2)`) y forma de
-  quitar la marca de reincidente (hoy es permanente, por lo que se aplica un solo recargo extra
-  por cliente).
-- Un operador puede aplicar el recargo extra pero no listar clientes (`GET /customers` es solo ADMIN).
-- Cancelar un pedido con la cuenta bloqueada solo lo rechaza el servidor; las apps aún muestran el botón.
+- Pausa del reloj por disputa abierta y apelación (ADR 0007, sección 6): las disputas aún no existen. Hay una
+  especificación mínima aprobada (reclamo en 2 horas, resuelve ADMIN u OPERATOR, el barrido no bloquea mientras está
+  abierta) pendiente de programar; el cobro reducido, la reasignación y la pausa de la reincidencia quedan fuera.
+- "Pago sin cuenta", que el ADR 0005 atribuye a este documento: descartado por producto, no existe en el MVP.
+- Caducidad automática de la marca de reincidente: hoy solo un ADMIN la quita.
+- Aviso al cliente del cobro por reasignación y un posible tope de la tarifa fija.
 - Las incidencias de pedidos sin productos (anteriores al catálogo) se registran sin monto y no
   suman al saldo ni pueden bloquear la cuenta.
 
