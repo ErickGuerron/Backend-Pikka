@@ -37,6 +37,13 @@ func (r *sweepRepo) BlockCustomersForBalance(_ context.Context, ids []string) (i
 	return len(ids), nil
 }
 
+// noLostIncidents is a surcharge store with nothing to recover, so the reconcile step of the loop is a no-op here.
+type noLostIncidents struct{ ports.SurchargeRepository }
+
+func (noLostIncidents) ListUnrecordedIncidents(context.Context, int) ([]domain.UnrecordedIncident, error) {
+	return nil, nil
+}
+
 // runSweep runs the loop until it has passed twice (the start pass and one tick), then stops it and returns its log.
 func runSweep(t *testing.T, repo *sweepRepo) string {
 	t.Helper()
@@ -45,7 +52,7 @@ func runSweep(t *testing.T, repo *sweepRepo) string {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		runBalanceSweep(ctx, log, orderapp.NewBlockOverdueBalances(repo), time.Millisecond)
+		runBalanceSweep(ctx, log, orderapp.NewReconcileIncidents(noLostIncidents{}, nil), orderapp.NewBlockOverdueBalances(repo), time.Millisecond)
 		close(done)
 	}()
 	deadline := time.After(5 * time.Second)

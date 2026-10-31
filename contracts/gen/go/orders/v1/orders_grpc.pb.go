@@ -33,6 +33,7 @@ const (
 	OrderService_GetReassignmentFee_FullMethodName                = "/orders.v1.OrderService/GetReassignmentFee"
 	OrderService_ApplyReassignmentCharge_FullMethodName           = "/orders.v1.OrderService/ApplyReassignmentCharge"
 	OrderService_PayMyBalance_FullMethodName                      = "/orders.v1.OrderService/PayMyBalance"
+	OrderService_GetMyBalance_FullMethodName                      = "/orders.v1.OrderService/GetMyBalance"
 	OrderService_ReviewOrder_FullMethodName                       = "/orders.v1.OrderService/ReviewOrder"
 	OrderService_ListMyOrders_FullMethodName                      = "/orders.v1.OrderService/ListMyOrders"
 	OrderService_ListMyNotifications_FullMethodName               = "/orders.v1.OrderService/ListMyNotifications"
@@ -97,6 +98,10 @@ type OrderServiceClient interface {
 	// error. Nothing owed returns FAILED_PRECONDITION; a balance that changed while paying ABORTED (the
 	// charge is refunded). Any role other than CUSTOMER returns PERMISSION_DENIED.
 	PayMyBalance(ctx context.Context, in *PayMyBalanceRequest, opts ...grpc.CallOption) (*PayMyBalanceResponse, error)
+	// GetMyBalance shows the authenticated CUSTOMER what they owe: the total, the account status and each
+	// line with its reason and its due date (ADR 0006, sections 4 and 5). A blocked account can still call
+	// it. Any role other than CUSTOMER returns PERMISSION_DENIED.
+	GetMyBalance(ctx context.Context, in *GetMyBalanceRequest, opts ...grpc.CallOption) (*GetMyBalanceResponse, error)
 	// ReviewOrder only accepts PENDING_REVIEW; another state returns
 	// ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
 	ReviewOrder(ctx context.Context, in *ReviewOrderRequest, opts ...grpc.CallOption) (*ReviewOrderResponse, error)
@@ -287,6 +292,16 @@ func (c *orderServiceClient) PayMyBalance(ctx context.Context, in *PayMyBalanceR
 	return out, nil
 }
 
+func (c *orderServiceClient) GetMyBalance(ctx context.Context, in *GetMyBalanceRequest, opts ...grpc.CallOption) (*GetMyBalanceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetMyBalanceResponse)
+	err := c.cc.Invoke(ctx, OrderService_GetMyBalance_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *orderServiceClient) ReviewOrder(ctx context.Context, in *ReviewOrderRequest, opts ...grpc.CallOption) (*ReviewOrderResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReviewOrderResponse)
@@ -439,6 +454,10 @@ type OrderServiceServer interface {
 	// error. Nothing owed returns FAILED_PRECONDITION; a balance that changed while paying ABORTED (the
 	// charge is refunded). Any role other than CUSTOMER returns PERMISSION_DENIED.
 	PayMyBalance(context.Context, *PayMyBalanceRequest) (*PayMyBalanceResponse, error)
+	// GetMyBalance shows the authenticated CUSTOMER what they owe: the total, the account status and each
+	// line with its reason and its due date (ADR 0006, sections 4 and 5). A blocked account can still call
+	// it. Any role other than CUSTOMER returns PERMISSION_DENIED.
+	GetMyBalance(context.Context, *GetMyBalanceRequest) (*GetMyBalanceResponse, error)
 	// ReviewOrder only accepts PENDING_REVIEW; another state returns
 	// ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
 	ReviewOrder(context.Context, *ReviewOrderRequest) (*ReviewOrderResponse, error)
@@ -530,6 +549,9 @@ func (UnimplementedOrderServiceServer) ApplyReassignmentCharge(context.Context, 
 }
 func (UnimplementedOrderServiceServer) PayMyBalance(context.Context, *PayMyBalanceRequest) (*PayMyBalanceResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PayMyBalance not implemented")
+}
+func (UnimplementedOrderServiceServer) GetMyBalance(context.Context, *GetMyBalanceRequest) (*GetMyBalanceResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMyBalance not implemented")
 }
 func (UnimplementedOrderServiceServer) ReviewOrder(context.Context, *ReviewOrderRequest) (*ReviewOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReviewOrder not implemented")
@@ -834,6 +856,24 @@ func _OrderService_PayMyBalance_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _OrderService_GetMyBalance_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMyBalanceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).GetMyBalance(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_GetMyBalance_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).GetMyBalance(ctx, req.(*GetMyBalanceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _OrderService_ReviewOrder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ReviewOrderRequest)
 	if err := dec(in); err != nil {
@@ -1076,6 +1116,10 @@ var OrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PayMyBalance",
 			Handler:    _OrderService_PayMyBalance_Handler,
+		},
+		{
+			MethodName: "GetMyBalance",
+			Handler:    _OrderService_GetMyBalance_Handler,
 		},
 		{
 			MethodName: "ReviewOrder",

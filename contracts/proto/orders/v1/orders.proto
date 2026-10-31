@@ -52,6 +52,10 @@ service OrderService {
   // error. Nothing owed returns FAILED_PRECONDITION; a balance that changed while paying ABORTED (the
   // charge is refunded). Any role other than CUSTOMER returns PERMISSION_DENIED.
   rpc PayMyBalance(PayMyBalanceRequest) returns (PayMyBalanceResponse);
+  // GetMyBalance shows the authenticated CUSTOMER what they owe: the total, the account status and each
+  // line with its reason and its due date (ADR 0006, sections 4 and 5). A blocked account can still call
+  // it. Any role other than CUSTOMER returns PERMISSION_DENIED.
+  rpc GetMyBalance(GetMyBalanceRequest) returns (GetMyBalanceResponse);
   // ReviewOrder only accepts PENDING_REVIEW; another state returns
   // ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
   rpc ReviewOrder(ReviewOrderRequest) returns (ReviewOrderResponse);
@@ -191,6 +195,9 @@ message CreateOrderResponse {
   repeated OrderLine items = 2;
   // Suma de los subtotales, como texto decimal con dos decimales.
   string total = 3;
+  // What the customer owes when the order is confirmed, as a separate line from the order's total
+  // (ADR 0006, section 4). Decimal string with two digits; "0.00" when nothing is owed.
+  string pending_surcharge = 4;
 }
 
 // Un producto del pedido tal como quedó guardado: nombre y precio del momento del pedido.
@@ -275,10 +282,14 @@ message ListMyNotificationsResponse {
 // Notice sent to the customer when the automatic validation or an operator review changes an order.
 message Notification {
   string id = 1;
+  // Empty for ACCOUNT_BLOCKED_BY_BALANCE: that notice belongs to the account, not to an order.
   string order_id = 2;
-  // ORDER_IN_REVIEW, ORDER_CONFIRMED, ORDER_CORRECTED or ORDER_REJECTED.
+  // ORDER_IN_REVIEW, ORDER_CONFIRMED, ORDER_CORRECTED, ORDER_REJECTED, SURCHARGE_APPLIED or
+  // ACCOUNT_BLOCKED_BY_BALANCE.
   string kind = 3;
-  // Review reasons (ORDER_IN_REVIEW) or the operator's audit reason (other kinds).
+  // Review reasons (ORDER_IN_REVIEW), the operator's audit reason (ORDER_CONFIRMED, ORDER_CORRECTED, ORDER_REJECTED),
+  // "REASON,AMOUNT,DUE" for SURCHARGE_APPLIED (a closed reason code, a decimal amount and the RFC 3339 due date) or empty
+  // for ACCOUNT_BLOCKED_BY_BALANCE.
   string detail = 4;
   // RFC 3339, UTC.
   string created_at = 5;
@@ -555,4 +566,32 @@ message ReassignmentCharge {
 
 message ApplyReassignmentChargeResponse {
   ReassignmentCharge charge = 1;
+}
+
+message GetMyBalanceRequest {}
+
+// BalanceLine is one thing the customer owes.
+message BalanceLine {
+  // SURCHARGE (an order not delivered because of the customer) or RECIDIVISM (an extra charge).
+  string kind = 1;
+  string id = 2;
+  // The order that was not delivered. Empty for a RECIDIVISM line.
+  string order_id = 3;
+  // Closed code the app can translate, for example CLIENT_REFUSED. RECIDIVISM for the extra charge.
+  string reason = 4;
+  // Decimal string with two digits.
+  string amount = 5;
+  // When the two-week clock started (RFC 3339, UTC).
+  string started_at = 6;
+  // Last moment to pay before the account is blocked (RFC 3339, UTC).
+  string due_at = 7;
+}
+
+message GetMyBalanceResponse {
+  // Decimal string with two digits.
+  string pending_surcharge = 1;
+  // ACTIVO, BLOQUEADO_POR_SALDO or BLOQUEADO_POR_INCIDENCIAS.
+  string account_status = 2;
+  // Oldest first. Empty when nothing is owed.
+  repeated BalanceLine lines = 3;
 }

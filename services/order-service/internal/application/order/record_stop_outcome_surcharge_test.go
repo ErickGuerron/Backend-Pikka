@@ -20,6 +20,8 @@ type surchargeRepoFake struct {
 	base      decimal.Decimal
 	baseFound bool
 	baseErr   error
+	// existing marks orders whose incident was already recorded: they come back with created=false.
+	existing map[string]bool
 }
 
 var _ ports.SurchargeRepository = (*surchargeRepoFake)(nil)
@@ -31,6 +33,9 @@ func (f *surchargeRepoFake) OrderBasePrice(context.Context, string) (decimal.Dec
 func (f *surchargeRepoFake) RecordSurchargeIncident(_ context.Context, s domain.Surcharge) (domain.Surcharge, bool, error) {
 	if f.err != nil {
 		return domain.Surcharge{}, false, f.err
+	}
+	if f.existing[s.OrderID] {
+		return s, false, nil
 	}
 	f.recorded = append(f.recorded, s)
 	return s, true, nil

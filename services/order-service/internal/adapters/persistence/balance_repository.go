@@ -71,6 +71,43 @@ func (r *BalanceRepository) ListActiveObligations(ctx context.Context) ([]domain
 	return out, nil
 }
 
+// ListOwedLines returns what the customer owes, oldest first. A recidivism charge shows the fixed code
+// RECIDIVISM and never the operator's justification, which is an internal audit note.
+func (r *BalanceRepository) ListOwedLines(ctx context.Context, customerID string) ([]domain.BalanceLine, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT 'SURCHARGE', s.id::text, s.order_id::text, s.reason, s.amount, COALESCE(s.resolved_at, s.created_at) AS started_at
+		  FROM surcharges s
+		 WHERE s.customer_id = $1 AND s.status = 'PENDING' AND s.amount IS NOT NULL
+		UNION ALL
+		SELECT 'RECIDIVISM', rc.id::text, '', 'RECIDIVISM', rc.amount, rc.created_at
+		  FROM recidivism_charges rc
+		 WHERE rc.customer_id = $1 AND rc.paid_at IS NULL
+		 ORDER BY started_at ASC, 2 ASC`, customerID)
+	if err != nil {
+		return nil, fmt.Errorf("list owed lines: %w", err)
+	}
+	defer rows.Close()
+
+	out := []domain.BalanceLine{}
+	for rows.Next() {
+		var (
+			l    domain.BalanceLine
+			kind string
+			at   time.Time
+		)
+		if err := rows.Scan(&kind, &l.ID, &l.OrderID, &l.Reason, &l.Amount, &at); err != nil {
+			return nil, fmt.Errorf("list owed lines: %w", err)
+		}
+		l.Kind = domain.BalanceLineKind(kind)
+		l.StartedAt = at.UTC()
+		out = append(out, l)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list owed lines: %w", err)
+	}
+	return out, nil
+}
+
 // SettleBalance applies a full payment atomically. The customer row is locked first, so a payment and a
 // new surcharge cannot interleave: the balance is compared with what was charged under the lock.
 func (r *BalanceRepository) SettleBalance(ctx context.Context, customerID string, amount decimal.Decimal, at time.Time) (bool, error) {
@@ -122,17 +159,46 @@ func (r *BalanceRepository) SettleBalance(ctx context.Context, customerID string
 	return unblocked, nil
 }
 
-// BlockCustomersForBalance changes only customers that are still ACTIVO.
+// BlockCustomersForBalance changes only customers that are still ACTIVO, and tells each newly blocked customer in
+// the same transaction. One that was already blocked is not touched and is not notified again.
 func (r *BalanceRepository) BlockCustomersForBalance(ctx context.Context, customerIDs []string) (int, error) {
 	if len(customerIDs) == 0 {
 		return 0, nil
 	}
-	tag, err := r.pool.Exec(ctx, `
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("block customers for balance: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	rows, err := tx.Query(ctx, `
 		UPDATE customers
 		   SET status = 'BLOQUEADO_POR_SALDO', updated_at = now()
-		 WHERE id = ANY($1::uuid[]) AND status = 'ACTIVO'`, customerIDs)
+		 WHERE id = ANY($1::uuid[]) AND status = 'ACTIVO'
+		RETURNING id::text`, customerIDs)
 	if err != nil {
 		return 0, fmt.Errorf("block customers for balance: %w", err)
 	}
-	return int(tag.RowsAffected()), nil
+	var blocked []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("block customers for balance: %w", err)
+		}
+		blocked = append(blocked, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("block customers for balance: %w", err)
+	}
+	for _, id := range blocked {
+		if err := insertNotification(ctx, tx, id, "", domain.NewAccountBlockedNotification(id)); err != nil {
+			return 0, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("block customers for balance: commit: %w", err)
+	}
+	return len(blocked), nil
 }
