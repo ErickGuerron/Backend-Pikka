@@ -134,6 +134,7 @@ func run(log *slog.Logger) error {
 		RecordOutcome:    recordStopOutcome,
 		Surcharges:       orderapp.NewResolveSurchargeVerification(surchargeRepo).WithReincidence(reincidence),
 		Recidivism:       orderapp.NewApplyRecidivismCharge(persistence.NewRecidivismRepository(pool)),
+		Balance:          orderapp.NewGetMyBalance(customerRepo, persistence.NewBalanceRepository(pool)),
 		Pay: orderapp.NewPayBalance(customerRepo, payments.NewSimulated(time.Now),
 			persistence.NewPaymentAttemptRepository(pool), persistence.NewBalanceRepository(pool)),
 	}).WithRouteCapacity(zoneClassifier))

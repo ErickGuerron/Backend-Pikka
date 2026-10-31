@@ -16,13 +16,15 @@ import (
 )
 
 type fakeSurchargeClient struct {
-	listCalls  int
-	resolveReq *ordersv1.ResolveSurchargeVerificationRequest
-	chargeReq  *ordersv1.ApplyRecidivismChargeRequest
-	payCalls   int
-	payRes     *ordersv1.PayMyBalanceResponse
-	meta       grpcclient.CallMeta
-	err        error
+	listCalls    int
+	resolveReq   *ordersv1.ResolveSurchargeVerificationRequest
+	chargeReq    *ordersv1.ApplyRecidivismChargeRequest
+	payCalls     int
+	balanceRes   *ordersv1.GetMyBalanceResponse
+	balanceCalls int
+	payRes       *ordersv1.PayMyBalanceResponse
+	meta         grpcclient.CallMeta
+	err          error
 }
 
 func (f *fakeSurchargeClient) ListSurchargesPendingVerification(_ context.Context, m grpcclient.CallMeta, _ *ordersv1.ListSurchargesPendingVerificationRequest) (*ordersv1.ListSurchargesPendingVerificationResponse, error) {
@@ -68,6 +70,21 @@ func (f *fakeSurchargeClient) PayMyBalance(_ context.Context, m grpcclient.CallM
 		return f.payRes, nil
 	}
 	return &ordersv1.PayMyBalanceResponse{Status: "SIMULATED_APPROVED", Amount: "7.50", Reference: "SIM-1", Unblocked: true, CreatedAt: "2026-10-29T09:00:00Z"}, nil
+}
+
+func (f *fakeSurchargeClient) GetMyBalance(_ context.Context, m grpcclient.CallMeta, _ *ordersv1.GetMyBalanceRequest) (*ordersv1.GetMyBalanceResponse, error) {
+	f.balanceCalls++
+	f.meta = m
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.balanceRes != nil {
+		return f.balanceRes, nil
+	}
+	return &ordersv1.GetMyBalanceResponse{PendingSurcharge: "7.50", AccountStatus: "BLOQUEADO_POR_SALDO", Lines: []*ordersv1.BalanceLine{
+		{Kind: "SURCHARGE", Id: "s1", OrderId: "o1", Reason: "CLIENT_REFUSED", Amount: "3.00", StartedAt: "2026-10-01T08:00:00Z", DueAt: "2026-10-15T08:00:00Z"},
+		{Kind: "RECIDIVISM", Id: "r1", Reason: "RECIDIVISM", Amount: "4.50", StartedAt: "2026-10-03T08:00:00Z", DueAt: "2026-10-17T08:00:00Z"},
+	}}, nil
 }
 
 func surchargeRouter(c httpapi.SurchargeClient) http.Handler {
@@ -244,4 +261,39 @@ func TestPayMyBalance_IgnoresAnyBody(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.Equal(t, 1, fake.payCalls)
+}
+
+const balancePath = "/api/v1/customers/me/balance"
+
+func TestGetMyBalance_CustomerSeesTheTotalTheStatusAndEveryLine(t *testing.T) {
+	fake := &fakeSurchargeClient{}
+
+	rec := do(surchargeRouter(fake), http.MethodGet, balancePath, "", authHdr(t, "CUSTOMER"))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.JSONEq(t, `{"pendingSurcharge":"7.50","accountStatus":"BLOQUEADO_POR_SALDO","blocked":true,"simulated":true,"lines":[
+		{"kind":"SURCHARGE","id":"s1","orderId":"o1","reason":"CLIENT_REFUSED","amount":"3.00","startedAt":"2026-10-01T08:00:00Z","dueAt":"2026-10-15T08:00:00Z"},
+		{"kind":"RECIDIVISM","id":"r1","reason":"RECIDIVISM","amount":"4.50","startedAt":"2026-10-03T08:00:00Z","dueAt":"2026-10-17T08:00:00Z"}]}`, rec.Body.String())
+	assert.Equal(t, "CUSTOMER", fake.meta.Role)
+}
+
+func TestGetMyBalance_NothingOwedIsAnEmptyArrayNotNull(t *testing.T) {
+	fake := &fakeSurchargeClient{balanceRes: &ordersv1.GetMyBalanceResponse{PendingSurcharge: "0.00", AccountStatus: "ACTIVO"}}
+
+	rec := do(surchargeRouter(fake), http.MethodGet, balancePath, "", authHdr(t, "CUSTOMER"))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"lines":[]`)
+	assert.Contains(t, rec.Body.String(), `"blocked":false`)
+}
+
+func TestGetMyBalance_OnlyTheCustomerRoleReachesTheService(t *testing.T) {
+	for _, role := range []string{"OPERATOR", "ADMIN", "DRIVER"} {
+		fake := &fakeSurchargeClient{}
+		rec := do(surchargeRouter(fake), http.MethodGet, balancePath, "", authHdr(t, role))
+
+		assert.Equal(t, http.StatusForbidden, rec.Code, role)
+		assert.Equal(t, 0, fake.balanceCalls, role)
+	}
+	assert.Equal(t, http.StatusUnauthorized, do(surchargeRouter(&fakeSurchargeClient{}), http.MethodGet, balancePath, "", nil).Code)
 }
