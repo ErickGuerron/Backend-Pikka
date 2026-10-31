@@ -739,6 +739,85 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /api/v1/surcharges/{id}/dispute:
+    post:
+      tags: [surcharges]
+      operationId: openDispute
+      summary: El cliente disputa uno de sus recargos (solo CUSTOMER)
+      description: |
+        Dentro de las 2 horas siguientes a que el recargo pasó a deberse (ADR 0007, sección 6) el cliente puede
+        disputarlo con un motivo de 5 a 300 caracteres. Una disputa por recargo. Mientras está abierta, el barrido no
+        bloquea la cuenta por ese recargo (ADR 0006, sección 5). Solo se disputa un recargo propio, pendiente y con
+        monto: uno ajeno o inexistente responde 404 (la misma respuesta para ambos); fuera del plazo o ya pagado
+        responde 422; una segunda disputa del mismo recargo responde 409.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OpenDisputeRequest" }
+      responses:
+        "201":
+          description: Disputa abierta
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dispute" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /api/v1/disputes:
+    get:
+      tags: [surcharges]
+      operationId: listOpenDisputes
+      summary: Cola de disputas abiertas, la más antigua primero (ADMIN u OPERATOR)
+      responses:
+        "200":
+          description: Disputas abiertas
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Dispute" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/disputes/{id}/resolution:
+    post:
+      tags: [surcharges]
+      operationId: resolveDispute
+      summary: Resuelve una disputa a favor o en contra del cliente (ADMIN u OPERATOR)
+      description: |
+        Una sola vez y con un motivo auditado de 5 a 300 caracteres. `IN_FAVOR` dispensa el recargo y lo quita del saldo
+        en la misma operación; `AGAINST` no cambia nada y el plazo de pago sigue donde estaba. Ya resuelta responde 409;
+        si el recargo se pagó mientras tanto, responde 422 y la disputa sigue abierta.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResolveDisputeRequest" }
+      responses:
+        "200":
+          description: Disputa resuelta
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dispute" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
   /api/v1/orders/{id}/cancel:
     post:
       tags: [orders]
@@ -1582,6 +1661,30 @@ components:
         reason: { type: string }
         appliedBy: { type: string, format: uuid }
         createdAt: { type: string, format: date-time }
+    OpenDisputeRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 5, maxLength: 300, description: "Explicación del cliente, auditada" }
+    ResolveDisputeRequest:
+      type: object
+      required: [decision, reason]
+      properties:
+        decision: { type: string, enum: [IN_FAVOR, AGAINST] }
+        reason: { type: string, minLength: 5, maxLength: 300, description: "Justificación del personal, auditada" }
+    Dispute:
+      type: object
+      required: [id, surchargeId, customerId, reason, status, openedAt]
+      properties:
+        id: { type: string, format: uuid }
+        surchargeId: { type: string, format: uuid }
+        customerId: { type: string, format: uuid }
+        reason: { type: string }
+        status: { type: string, enum: [OPEN, IN_FAVOR, AGAINST] }
+        openedAt: { type: string, format: date-time }
+        resolvedBy: { type: string, format: uuid, description: Ausente mientras está abierta }
+        resolutionReason: { type: string }
+        resolvedAt: { type: string, format: date-time }
     ClearRecidivistRequest:
       type: object
       required: [reason]
@@ -1619,6 +1722,8 @@ components:
         amount: { type: string, example: "3.00" }
         startedAt: { type: string, format: date-time, description: Cuando empezo el plazo de 2 semanas }
         dueAt: { type: string, format: date-time, description: Ultimo momento para pagar antes del bloqueo }
+        disputeStatus: { type: string, enum: [OPEN, IN_FAVOR, AGAINST], description: Estado de la disputa del cliente sobre esta linea. Ausente si no hay }
+        disputableUntil: { type: string, format: date-time, description: "Ultimo momento para disputar esta linea. Ausente si ya no se puede (o nunca: solo los recargos SURCHARGE sin disputa, en las 2 horas siguientes a que pasaron a deberse)" }
     MyBalance:
       type: object
       required: [pendingSurcharge, accountStatus, blocked, simulated, lines]

@@ -191,3 +191,24 @@ func (o *Orders) ApplyReassignmentCharge(ctx context.Context, m CallMeta, req *o
 	defer cancel()
 	return o.client.ApplyReassignmentCharge(ctx, req)
 }
+
+// OpenDispute abre la disputa del cliente autenticado sobre uno de sus recargos.
+func (o *Orders) OpenDispute(ctx context.Context, m CallMeta, req *ordersv1.OpenDisputeRequest) (*ordersv1.OpenDisputeResponse, error) {
+	ctx, cancel := o.outgoing(ctx, m)
+	defer cancel()
+	return o.client.OpenDispute(ctx, req)
+}
+
+// ListOpenDisputes devuelve al personal la cola de disputas abiertas.
+func (o *Orders) ListOpenDisputes(ctx context.Context, m CallMeta, req *ordersv1.ListOpenDisputesRequest) (*ordersv1.ListOpenDisputesResponse, error) {
+	ctx, cancel := o.outgoing(ctx, m)
+	defer cancel()
+	return o.client.ListOpenDisputes(ctx, req)
+}
+
+// ResolveDispute registra la decision del personal sobre una disputa.
+func (o *Orders) ResolveDispute(ctx context.Context, m CallMeta, req *ordersv1.ResolveDisputeRequest) (*ordersv1.ResolveDisputeResponse, error) {
+	ctx, cancel := o.outgoing(ctx, m)
+	defer cancel()
+	return o.client.ResolveDispute(ctx, req)
+}

@@ -77,15 +77,16 @@ func (r *BalanceRepository) ListActiveObligations(ctx context.Context) ([]domain
 // RECIDIVISM and never the operator's justification, which is an internal audit note.
 func (r *BalanceRepository) ListOwedLines(ctx context.Context, customerID string) ([]domain.BalanceLine, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT 'SURCHARGE', s.id::text, s.order_id::text, s.reason, s.amount, COALESCE(s.resolved_at, s.created_at) AS started_at
+		SELECT 'SURCHARGE', s.id::text, s.order_id::text, s.reason, s.amount, COALESCE(s.resolved_at, s.created_at) AS started_at,
+		       COALESCE((SELECT d.status FROM surcharge_disputes d WHERE d.surcharge_id = s.id), '')
 		  FROM surcharges s
 		 WHERE s.customer_id = $1 AND s.status = 'PENDING' AND s.amount IS NOT NULL
 		UNION ALL
-		SELECT 'RECIDIVISM', rc.id::text, '', 'RECIDIVISM', rc.amount, rc.created_at
+		SELECT 'RECIDIVISM', rc.id::text, '', 'RECIDIVISM', rc.amount, rc.created_at, ''
 		  FROM recidivism_charges rc
 		 WHERE rc.customer_id = $1 AND rc.paid_at IS NULL
 		UNION ALL
-		SELECT 'REASSIGNMENT', ra.id::text, ra.order_id::text, 'REASSIGNMENT', ra.amount, ra.created_at
+		SELECT 'REASSIGNMENT', ra.id::text, ra.order_id::text, 'REASSIGNMENT', ra.amount, ra.created_at, ''
 		  FROM reassignment_charges ra
 		 WHERE ra.customer_id = $1 AND ra.paid_at IS NULL
 		 ORDER BY started_at ASC, 2 ASC`, customerID)
@@ -101,7 +102,7 @@ func (r *BalanceRepository) ListOwedLines(ctx context.Context, customerID string
 			kind string
 			at   time.Time
 		)
-		if err := rows.Scan(&kind, &l.ID, &l.OrderID, &l.Reason, &l.Amount, &at); err != nil {
+		if err := rows.Scan(&kind, &l.ID, &l.OrderID, &l.Reason, &l.Amount, &at, &l.DisputeStatus); err != nil {
 			return nil, fmt.Errorf("list owed lines: %w", err)
 		}
 		l.Kind = domain.BalanceLineKind(kind)
