@@ -36,7 +36,7 @@ func setup(t *testing.T) (*persistence.Store, *pgxpool.Pool) {
 	pool, err := pgxpool.New(ctx, dsn)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	_, err = pool.Exec(ctx, `TRUNCATE customer_notifications, order_penalty_reasons, order_items, stock_movements, products, orders, customers RESTART IDENTITY CASCADE`)
+	_, err = pool.Exec(ctx, `TRUNCATE customer_notifications, order_penalty_reasons, reassignment_fees, order_items, stock_movements, products, orders, customers RESTART IDENTITY CASCADE`)
 	require.NoError(t, err)
 	return persistence.NewStore(pool), pool
 }
