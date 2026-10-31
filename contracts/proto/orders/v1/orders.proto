@@ -572,7 +572,8 @@ message GetMyBalanceRequest {}
 
 // BalanceLine is one thing the customer owes.
 message BalanceLine {
-  // SURCHARGE (an order not delivered because of the customer) or RECIDIVISM (an extra charge).
+  // SURCHARGE (an order not delivered because of the customer), RECIDIVISM (an extra charge) or REASSIGNMENT
+  // (the fixed fee for an order reassigned at the customer's request).
   string kind = 1;
   string id = 2;
   // The order that was not delivered. Empty for a RECIDIVISM line.

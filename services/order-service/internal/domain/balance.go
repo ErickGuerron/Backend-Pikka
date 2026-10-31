@@ -37,6 +37,8 @@ const (
 	BalanceLineSurcharge BalanceLineKind = "SURCHARGE"
 	// BalanceLineRecidivism: the extra charge an operator applied to a recidivist.
 	BalanceLineRecidivism BalanceLineKind = "RECIDIVISM"
+	// BalanceLineReassignment: the fixed fee charged when an order was reassigned at the customer's request.
+	BalanceLineReassignment BalanceLineKind = "REASSIGNMENT"
 )
 
 // BalanceLine is one thing the customer owes, as the customer sees it: an amount, why, and since when.

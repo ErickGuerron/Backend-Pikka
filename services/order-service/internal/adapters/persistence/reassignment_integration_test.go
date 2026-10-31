@@ -139,3 +139,30 @@ func TestElCobroPorReasignacionImpagoEntraAlBarridoYPagarloLoSaca(t *testing.T) 
 	assert.True(t, balanceOf(t, pool, customer).IsZero())
 	assert.Equal(t, 0, countRows(t, pool, `SELECT count(*) FROM reassignment_charges WHERE customer_id = $1 AND paid_at IS NULL`, customer))
 }
+
+// The customer's breakdown must add up to the total it owes: the reassignment charge is a line like any other.
+func TestElCobroPorReasignacionImpagoApareceComoLineaDelSaldoYDejaDeAparecerAlPagar(t *testing.T) {
+	store, pool := setup(t)
+	reassignments := persistence.NewReassignmentRepository(pool)
+	balances := persistence.NewBalanceRepository(pool)
+	customer := newCustomer(t, pool)
+	order := placedOrder(t, store, pool, customer)
+	setFee(t, reassignments, "2.50")
+	_, err := reassignments.ApplyReassignmentCharge(context.Background(), order, buildReassignment(order))
+	require.NoError(t, err)
+
+	lines, err := balances.ListOwedLines(context.Background(), customer)
+
+	require.NoError(t, err)
+	require.Len(t, lines, 1)
+	assert.Equal(t, domain.BalanceLineReassignment, lines[0].Kind)
+	assert.Equal(t, order, lines[0].OrderID)
+	assert.Equal(t, "REASSIGNMENT", lines[0].Reason)
+	assert.True(t, lines[0].Amount.Equal(decimal.RequireFromString("2.50")))
+
+	_, err = balances.SettleBalance(context.Background(), customer, decimal.RequireFromString("2.50"), time.Now())
+	require.NoError(t, err)
+	lines, err = balances.ListOwedLines(context.Background(), customer)
+	require.NoError(t, err)
+	assert.Empty(t, lines)
+}

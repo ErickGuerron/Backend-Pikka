@@ -82,6 +82,10 @@ func (r *BalanceRepository) ListOwedLines(ctx context.Context, customerID string
 		SELECT 'RECIDIVISM', rc.id::text, '', 'RECIDIVISM', rc.amount, rc.created_at
 		  FROM recidivism_charges rc
 		 WHERE rc.customer_id = $1 AND rc.paid_at IS NULL
+		UNION ALL
+		SELECT 'REASSIGNMENT', ra.id::text, ra.order_id::text, 'REASSIGNMENT', ra.amount, ra.created_at
+		  FROM reassignment_charges ra
+		 WHERE ra.customer_id = $1 AND ra.paid_at IS NULL
 		 ORDER BY started_at ASC, 2 ASC`, customerID)
 	if err != nil {
 		return nil, fmt.Errorf("list owed lines: %w", err)
