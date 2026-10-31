@@ -51,6 +51,10 @@ type OrderUseCases struct {
 	ListRecidivists *orderapp.ListRecidivists
 	// ClearRecidivist lets an administrator remove the reincidence mark (ADR 0006).
 	ClearRecidivist *orderapp.ClearRecidivistMark
+	// SetReassignmentFee, GetReassignmentFee and ApplyReassignmentCharge manage the fixed reassignment fee (ADR 0006).
+	SetReassignmentFee      *orderapp.SetReassignmentFee
+	GetReassignmentFee      *orderapp.GetReassignmentFee
+	ApplyReassignmentCharge *orderapp.ApplyReassignmentCharge
 	// Pay lets a customer pay the whole balance with the simulated card (ADR 0006, section 5).
 	Pay *orderapp.PayBalance
 	// Balance shows a customer what they owe, line by line (ADR 0006, sections 4 and 5).
@@ -350,9 +354,12 @@ func mapOrderError(err error) error {
 		return status.Error(codes.NotFound, "cliente no encontrado")
 	case errors.Is(err, domain.ErrCustomerNotRecidivist):
 		return status.Error(codes.FailedPrecondition, err.Error())
-	case errors.Is(err, domain.ErrRecidivismChargeExists):
+	case errors.Is(err, domain.ErrReassignmentFeeNotSet):
+		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, domain.ErrReassignmentChargeExists), errors.Is(err, domain.ErrRecidivismChargeExists):
 		return status.Error(codes.Aborted, err.Error())
-	case errors.Is(err, domain.ErrInvalidRecidivismCharge), errors.Is(err, domain.ErrRecidivismChargeTooHigh), errors.Is(err, domain.ErrInvalidRecidivistClear):
+	case errors.Is(err, domain.ErrInvalidRecidivismCharge), errors.Is(err, domain.ErrRecidivismChargeTooHigh), errors.Is(err, domain.ErrInvalidRecidivistClear),
+		errors.Is(err, domain.ErrInvalidReassignmentFee), errors.Is(err, domain.ErrInvalidReassignmentCharge):
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, domain.ErrSurchargeNotPendingVerification):
 		return status.Error(codes.Aborted, err.Error())

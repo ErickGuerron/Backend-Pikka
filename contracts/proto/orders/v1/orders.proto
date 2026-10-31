@@ -37,6 +37,15 @@ service OrderService {
   // operator gets PERMISSION_DENIED. A customer without the mark returns FAILED_PRECONDITION, an unknown
   // customer NOT_FOUND. The charges already collected and the balance are not touched.
   rpc ClearRecidivist(ClearRecidivistRequest) returns (ClearRecidivistResponse);
+  // SetReassignmentFee defines or changes the fixed fee charged when an order is reassigned at the customer's
+  // request (ADR 0006). Only ADMIN; the amount and the reason are audited. Every change is a new row.
+  rpc SetReassignmentFee(SetReassignmentFeeRequest) returns (SetReassignmentFeeResponse);
+  // GetReassignmentFee returns the current fee to ADMIN and OPERATOR. With none set it returns
+  // FAILED_PRECONDITION: an amount is never invented.
+  rpc GetReassignmentFee(GetReassignmentFeeRequest) returns (GetReassignmentFeeResponse);
+  // ApplyReassignmentCharge charges the current fixed fee to the customer of an order, once per order (a
+  // second charge returns ABORTED, HTTP 409). Only ADMIN and OPERATOR. The amount is never sent: it is the fee.
+  rpc ApplyReassignmentCharge(ApplyReassignmentChargeRequest) returns (ApplyReassignmentChargeResponse);
   // PayMyBalance pays the whole pending balance of the authenticated CUSTOMER with the simulated card
   // (ADR 0006, section 5). There is no amount to send: only the full balance can be paid. An approved
   // payment returns a balance-blocked account to ACTIVO at once. A declined charge is a result, not an
@@ -512,6 +521,51 @@ message PayMyBalanceResponse {
   bool unblocked = 4;
   // RFC 3339, UTC.
   string created_at = 5;
+}
+
+message SetReassignmentFeeRequest {
+  // Decimal string, greater than zero.
+  string amount = 1;
+  // The administrator's justification, 5 to 300 characters. It is audited.
+  string reason = 2;
+}
+
+message GetReassignmentFeeRequest {}
+
+message ReassignmentFee {
+  string id = 1;
+  string amount = 2;
+  string reason = 3;
+  string set_by = 4;
+  string created_at = 5;
+}
+
+message SetReassignmentFeeResponse {
+  ReassignmentFee fee = 1;
+}
+
+message GetReassignmentFeeResponse {
+  ReassignmentFee fee = 1;
+}
+
+message ApplyReassignmentChargeRequest {
+  string order_id = 1;
+  // The operator's justification, 5 to 300 characters. It is audited.
+  string reason = 2;
+}
+
+message ReassignmentCharge {
+  string id = 1;
+  string customer_id = 2;
+  string order_id = 3;
+  string amount = 4;
+  string reason = 5;
+  string applied_by = 6;
+  string created_at = 7;
+}
+
+message ApplyReassignmentChargeResponse {
+  ReassignmentCharge charge = 1;
 }
 
 message GetMyBalanceRequest {}

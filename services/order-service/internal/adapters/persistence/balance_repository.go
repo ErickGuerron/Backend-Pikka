@@ -30,6 +30,7 @@ func NewBalanceRepository(pool *pgxpool.Pool) *BalanceRepository {
 //     never blocks). Its clock started when
 //     the system confirmed it: the operator's verification time for a WRONG_ADDRESS, else its creation.
 //   - a recidivism charge not yet paid (its clock starts when applied).
+//   - a reassignment charge not yet paid (its clock starts when applied).
 //
 // WAIVED incidents, those waiting for verification and APPLIED or PAID ones are not obligations.
 // A recidivism charge stops being one when it is stamped paid.
@@ -43,7 +44,12 @@ func (r *BalanceRepository) ListActiveObligations(ctx context.Context) ([]domain
 		SELECT rc.customer_id::text, rc.created_at
 		  FROM recidivism_charges rc
 		  JOIN customers c ON c.id = rc.customer_id
-		 WHERE c.status = 'ACTIVO' AND rc.paid_at IS NULL`)
+		 WHERE c.status = 'ACTIVO' AND rc.paid_at IS NULL
+		UNION ALL
+		SELECT ra.customer_id::text, ra.created_at
+		  FROM reassignment_charges ra
+		  JOIN customers c ON c.id = ra.customer_id
+		 WHERE c.status = 'ACTIVO' AND ra.paid_at IS NULL`)
 	if err != nil {
 		return nil, fmt.Errorf("list active obligations: %w", err)
 	}
@@ -133,6 +139,10 @@ func (r *BalanceRepository) SettleBalance(ctx context.Context, customerID string
 	if _, err := tx.Exec(ctx, `
 		UPDATE recidivism_charges SET paid_at = $2 WHERE customer_id = $1 AND paid_at IS NULL`, customerID, at.UTC()); err != nil {
 		return false, fmt.Errorf("settle balance: recidivism charges: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE reassignment_charges SET paid_at = $2 WHERE customer_id = $1 AND paid_at IS NULL`, customerID, at.UTC()); err != nil {
+		return false, fmt.Errorf("settle balance: reassignment charges: %w", err)
 	}
 	unblocked := status == string(domain.StatusBlockedSurcharge)
 	if _, err := tx.Exec(ctx, `

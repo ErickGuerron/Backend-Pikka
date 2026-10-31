@@ -170,3 +170,24 @@ func (o *Orders) ListOrders(ctx context.Context, m CallMeta, req *ordersv1.ListO
 	defer cancel()
 	return o.client.ListOrders(ctx, req)
 }
+
+// SetReassignmentFee define la tarifa fija de reasignación (solo ADMIN).
+func (o *Orders) SetReassignmentFee(ctx context.Context, m CallMeta, req *ordersv1.SetReassignmentFeeRequest) (*ordersv1.SetReassignmentFeeResponse, error) {
+	ctx, cancel := o.outgoing(ctx, m)
+	defer cancel()
+	return o.client.SetReassignmentFee(ctx, req)
+}
+
+// GetReassignmentFee devuelve la tarifa fija vigente al personal.
+func (o *Orders) GetReassignmentFee(ctx context.Context, m CallMeta, req *ordersv1.GetReassignmentFeeRequest) (*ordersv1.GetReassignmentFeeResponse, error) {
+	ctx, cancel := o.outgoing(ctx, m)
+	defer cancel()
+	return o.client.GetReassignmentFee(ctx, req)
+}
+
+// ApplyReassignmentCharge cobra la tarifa fija vigente por la reasignación de un pedido.
+func (o *Orders) ApplyReassignmentCharge(ctx context.Context, m CallMeta, req *ordersv1.ApplyReassignmentChargeRequest) (*ordersv1.ApplyReassignmentChargeResponse, error) {
+	ctx, cancel := o.outgoing(ctx, m)
+	defer cancel()
+	return o.client.ApplyReassignmentCharge(ctx, req)
+}
