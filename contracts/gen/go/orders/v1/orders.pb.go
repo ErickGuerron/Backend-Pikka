@@ -3819,7 +3819,8 @@ func (*GetMyBalanceRequest) Descriptor() ([]byte, []int) {
 // BalanceLine is one thing the customer owes.
 type BalanceLine struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// SURCHARGE (an order not delivered because of the customer) or RECIDIVISM (an extra charge).
+	// SURCHARGE (an order not delivered because of the customer), RECIDIVISM (an extra charge) or REASSIGNMENT
+	// (the fixed fee for an order reassigned at the customer's request).
 	Kind string `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
 	Id   string `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	// The order that was not delivered. Empty for a RECIDIVISM line.

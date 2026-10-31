@@ -1612,7 +1612,7 @@ components:
       type: object
       required: [kind, id, reason, amount, startedAt, dueAt]
       properties:
-        kind: { type: string, enum: [SURCHARGE, RECIDIVISM] }
+        kind: { type: string, enum: [SURCHARGE, RECIDIVISM, REASSIGNMENT] }
         id: { type: string, format: uuid }
         orderId: { type: string, format: uuid, description: Pedido que no se entrego. Ausente en RECIDIVISM }
         reason: { type: string, description: "Codigo que la app puede traducir, por ejemplo CLIENT_REFUSED. RECIDIVISM para el recargo extra" }
