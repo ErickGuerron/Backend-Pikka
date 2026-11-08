@@ -50,6 +50,7 @@ func TestPlan_ConcurrentCreateProduct_AllSucceedWithDistinctIDs(t *testing.T) {
 		distinct[ids[i]] = struct{}{}
 	}
 	assert.Len(t, distinct, workers)
-	assert.Equal(t, workers, countRows(t, pool, `SELECT count(*) FROM products`))
-	assert.Equal(t, workers, countRows(t, pool, `SELECT count(*) FROM stock_movements`), "each product keeps its opening movement")
+	// El esquema de la prueba trae el catalogo semilla (migracion 000010): se cuentan solo los productos de esta prueba.
+	assert.Equal(t, workers, countRows(t, pool, `SELECT count(*) FROM products WHERE name LIKE 'Producto concurrente %'`))
+	assert.Equal(t, workers, countRows(t, pool, `SELECT count(*) FROM stock_movements m JOIN products p ON p.id = m.product_id WHERE p.name LIKE 'Producto concurrente %'`), "each product keeps its opening movement")
 }

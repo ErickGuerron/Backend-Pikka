@@ -102,8 +102,8 @@ go vet ./...
 golangci-lint run --config ../../.golangci.yml ./...
 
 # Con -p 1 los paquetes no corren en paralelo (la prueba de migraciones baja y sube el esquema).
-# Base local inicializada por el compose, usando la contraseña de tu .env.
-export ORDER_TEST_DATABASE_URL="postgres://order_service_user:${ORDER_DB_PASSWORD}@127.0.0.1:5432/last_mile?sslmode=disable&search_path=orders,public"
+# Base desechable last_mile_test (nunca last_mile: las pruebas vacían tablas y el guard la rechaza).
+export ORDER_TEST_DATABASE_URL="postgres://order_service_user:${ORDER_DB_PASSWORD}@127.0.0.1:5432/last_mile_test?sslmode=disable&search_path=orders,public"
 go test -race -tags integration -count=1 ./...
 ```
 

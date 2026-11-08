@@ -22,7 +22,7 @@ var (
 func (r *OrderRepository) ListDriverRouteStops(ctx context.Context, routeID string) ([]domain.Order, error) {
 	return r.queryOrders(ctx,
 		`SELECT `+orderColumns+` FROM orders
-		  WHERE route_id = $1 AND stop_sequence IS NOT NULL AND status <> 'CANCELLED'
+		  WHERE deleted_at IS NULL AND route_id = $1 AND stop_sequence IS NOT NULL AND status <> 'CANCELLED'
 		  ORDER BY stop_sequence ASC`,
 		routeID)
 }
@@ -38,11 +38,11 @@ func (r *OrderRepository) CountStopsBefore(ctx context.Context, orderID string, 
 	var count int64
 	err = r.pool.QueryRow(ctx,
 		`SELECT (SELECT count(*) FROM orders o
-		          WHERE o.route_id = me.route_id
+		          WHERE o.deleted_at IS NULL AND o.route_id = me.route_id
 		            AND o.stop_sequence < me.stop_sequence
 		            AND o.status NOT IN ('DELIVERED', 'NOT_DELIVERED', 'CANCELLED'))
 		   FROM orders me
-		  WHERE me.id = $1 AND me.customer_id = $2`,
+		  WHERE me.deleted_at IS NULL AND me.id = $1 AND me.customer_id = $2`,
 		id, customerID,
 	).Scan(&count)
 	if errors.Is(err, pgx.ErrNoRows) {

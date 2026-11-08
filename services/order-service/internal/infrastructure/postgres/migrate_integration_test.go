@@ -5,11 +5,15 @@ package postgres_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
+	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,10 +27,13 @@ const insertSQL = `INSERT INTO orders
 	VALUES ($1, $2, $3, $4::date, $5::time, $6::time, $7, $8::text[], $9)`
 
 func TestOrderMigrations(t *testing.T) {
-	dsn := os.Getenv("ORDER_TEST_DATABASE_URL")
-	if dsn == "" {
+	base := os.Getenv("ORDER_TEST_DATABASE_URL")
+	if base == "" {
 		t.Skip("ORDER_TEST_DATABASE_URL is not set")
 	}
+	// La prueba baja y sube migraciones: corre en un esquema propio para no tocar el de otras pruebas.
+	schema := "t_" + strings.ReplaceAll(uuid.NewString(), "-", "_")
+	dsn := isolatedSchemaDSN(t, base, schema)
 	if err := postgres.Migrate(dsn); err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +54,7 @@ func TestOrderMigrations(t *testing.T) {
 		err := pool.QueryRow(ctx, `SELECT current_schema(),
 			has_schema_privilege(current_user, 'auth', 'USAGE'),
 			has_schema_privilege(current_user, 'zones', 'USAGE')`).Scan(&schema, &canAccessAuth, &canAccessZones)
-		if err != nil || schema != "orders" || canAccessAuth || canAccessZones {
+		if err != nil || schema != isolatedName(dsn) || canAccessAuth || canAccessZones {
 			t.Fatalf("schema isolation failed: %q auth=%v zones=%v err=%v", schema, canAccessAuth, canAccessZones, err)
 		}
 	})
@@ -217,4 +224,35 @@ func assertCheckViolation(t *testing.T, err error) {
 	if !errors.As(err, &pgErr) || pgErr.Code != "23514" {
 		t.Fatalf("expected PostgreSQL CHECK violation, got %v", err)
 	}
+}
+
+// isolatedSchemaDSN crea el esquema de la prueba y devuelve el DSN apuntando a el.
+func isolatedSchemaDSN(t *testing.T, dsn, schema string) string {
+	t.Helper()
+	ctx := context.Background()
+	admin, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	if _, err := admin.Exec(ctx, fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)); err != nil {
+		t.Fatal(err)
+	}
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := u.Query()
+	q.Set("search_path", schema+",public")
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+// isolatedName devuelve el nombre del esquema de un DSN aislado (su primer search_path).
+func isolatedName(dsn string) string {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return ""
+	}
+	return strings.Split(u.Query().Get("search_path"), ",")[0]
 }

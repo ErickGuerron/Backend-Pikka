@@ -3,9 +3,10 @@ package http
 import (
 	"net/http"
 
-	"github.com/labstack/echo/v4"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 
 	driversv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/drivers/v1"
 	ordersv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/orders/v1"
@@ -44,7 +45,7 @@ type driverRouteStopDTO struct {
 
 // get responde la ruta del repartidor. Un repartidor sin perfil o sin ruta recibe 200 vacío: no tener
 // ruta no es un error, y la app muestra su vista de "sin ruta asignada".
-func (h *driverRouteHandlers) get(c echo.Context) error {
+func (h *driverRouteHandlers) get(c *httpx.Context) error {
 	ctx := c.Request().Context()
 	m := callMeta(c)
 	id, _ := identityFrom(c)

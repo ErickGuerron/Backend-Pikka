@@ -80,6 +80,9 @@ jobs:
           export POSTGRES_USER=postgres POSTGRES_DB=last_mile_ci
           export AUTH_DB_PASSWORD=auth ORDER_DB_PASSWORD=x ZONE_DB_PASSWORD=x ROUTING_DB_PASSWORD=x DRIVER_DB_PASSWORD=x TRACKING_DB_PASSWORD=x
           bash infrastructure/postgres/init/01-schemas-and-users.sh
+          # Each integration test runs in its own schema of this disposable database, so the service
+          # users need CREATE on it. Scoped to last_mile_ci only; the development database never gets this.
+          psql -v ON_ERROR_STOP=1 -U postgres -d last_mile_ci -c "GRANT CREATE ON DATABASE last_mile_ci TO auth_service_user, order_service_user, driver_service_user;"
       - name: Auth Service integration tests
         working-directory: services/auth-service
         env:

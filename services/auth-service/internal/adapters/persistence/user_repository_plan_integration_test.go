@@ -4,7 +4,6 @@ package persistence_test
 
 import (
 	"context"
-	"os"
 	"sync"
 	"testing"
 
@@ -19,10 +18,7 @@ import (
 
 // Plan: concurrent sign-ups with the same email end with one user and the domain duplicate error for the rest.
 func TestPlan_ConcurrentCreateSameEmail_OnlyOneWins(t *testing.T) {
-	dsn := os.Getenv("AUTH_TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("AUTH_TEST_DATABASE_URL not set")
-	}
+	dsn := isolatedDSN(t, "AUTH_TEST_DATABASE_URL")
 	ctx := context.Background()
 	require.NoError(t, postgres.Migrate(dsn))
 	pool, err := postgres.Connect(ctx, dsn)

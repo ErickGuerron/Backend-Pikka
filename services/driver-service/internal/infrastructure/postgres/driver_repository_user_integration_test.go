@@ -43,10 +43,11 @@ func TestDriverRepositoryListIncludesInactiveAndHonoursLimit(t *testing.T) {
 
 	all, err := repo.List(ctx, 10)
 	require.NoError(t, err)
-	require.Len(t, all, 3)
+	mine := onlyIDs(all, driverA, driverB, driverC)
+	require.Len(t, mine, 3)
 	// Mismo nombre y apellido: desempata el id.
-	assert.Equal(t, []string{driverA, driverB, driverC}, []string{all[0].ID, all[1].ID, all[2].ID})
-	assert.False(t, all[1].Active, "los inactivos también se listan")
+	assert.Equal(t, []string{driverA, driverB, driverC}, []string{mine[0].ID, mine[1].ID, mine[2].ID})
+	assert.False(t, mine[1].Active, "los inactivos también se listan")
 
 	limited, err := repo.List(ctx, 2)
 	require.NoError(t, err)

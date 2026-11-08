@@ -8,9 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/labstack/echo/v4"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 
 	driversv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/drivers/v1"
 	ordersv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/orders/v1"
@@ -85,7 +86,7 @@ type customerTrackingHandlers struct {
 
 // snapshot responde el estado actual del pedido. Un pedido ajeno o inexistente llega como NOT_FOUND
 // (404), con el mismo cuerpo en ambos casos.
-func (h *customerTrackingHandlers) snapshot(c echo.Context) error {
+func (h *customerTrackingHandlers) snapshot(c *httpx.Context) error {
 	snap, err := h.build(c.Request().Context(), callMeta(c), c.Param("id"))
 	if err != nil {
 		return err

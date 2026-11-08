@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/labstack/echo/v4"
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 
 	zonesv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/zones/v1"
 	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/grpcclient"
@@ -23,7 +23,7 @@ type ZonesClient interface {
 	DeleteZone(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.DeleteZoneRequest) (*zonesv1.DeleteZoneResponse, error)
 }
 
-func (h *zonesHandlers) list(c echo.Context) error {
+func (h *zonesHandlers) list(c *httpx.Context) error {
 	res, err := h.zones.ListZones(c.Request().Context(), callMeta(c), &zonesv1.ListZonesRequest{})
 	if err != nil {
 		return err
@@ -51,7 +51,7 @@ type coverageZonesResponse struct {
 
 // coverage lista las zonas activas para dibujar la cobertura. Zone Service decide los roles
 // permitidos y filtra las inactivas; aquí solo se recorta cada zona al contorno.
-func (h *zonesHandlers) coverage(c echo.Context) error {
+func (h *zonesHandlers) coverage(c *httpx.Context) error {
 	res, err := h.zones.ListCoverageZones(c.Request().Context(), callMeta(c), &zonesv1.ListCoverageZonesRequest{})
 	if err != nil {
 		return err
@@ -64,7 +64,7 @@ func (h *zonesHandlers) coverage(c echo.Context) error {
 	return c.JSON(http.StatusOK, out)
 }
 
-func (h *zonesHandlers) update(c echo.Context) error {
+func (h *zonesHandlers) update(c *httpx.Context) error {
 	var req updateZoneRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
@@ -144,7 +144,7 @@ type updateZoneRequest struct {
 	ExpectedVersion int32 `json:"expectedVersion"`
 }
 
-func (h *zonesHandlers) create(c echo.Context) error {
+func (h *zonesHandlers) create(c *httpx.Context) error {
 	var req createZoneRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
@@ -162,7 +162,7 @@ func (h *zonesHandlers) create(c echo.Context) error {
 	return c.JSON(http.StatusCreated, toZoneDTO(res.GetZone()))
 }
 
-func (h *zonesHandlers) get(c echo.Context) error {
+func (h *zonesHandlers) get(c *httpx.Context) error {
 	res, err := h.zones.GetZone(c.Request().Context(), callMeta(c), &zonesv1.GetZoneRequest{Id: c.Param("id")})
 	if err != nil {
 		return err
@@ -170,14 +170,14 @@ func (h *zonesHandlers) get(c echo.Context) error {
 	return c.JSON(http.StatusOK, toZoneDTO(res.GetZone()))
 }
 
-func (h *zonesHandlers) classify(c echo.Context) error {
+func (h *zonesHandlers) classify(c *httpx.Context) error {
 	lat, err := strconv.ParseFloat(c.QueryParam("latitude"), 64)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "latitude must be a number")
+		return httpx.NewHTTPError(http.StatusBadRequest, "latitude must be a number")
 	}
 	lng, err := strconv.ParseFloat(c.QueryParam("longitude"), 64)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "longitude must be a number")
+		return httpx.NewHTTPError(http.StatusBadRequest, "longitude must be a number")
 	}
 	res, err := h.zones.ClassifyPoint(c.Request().Context(), callMeta(c), &zonesv1.ClassifyPointRequest{
 		Point: &zonesv1.Coordinate{Latitude: lat, Longitude: lng},
@@ -283,7 +283,7 @@ type deleteRequest struct {
 }
 
 // setStatus activa o desactiva una zona. El motivo es obligatorio y queda en la bitácora del servicio.
-func (h *zonesHandlers) setStatus(c echo.Context) error {
+func (h *zonesHandlers) setStatus(c *httpx.Context) error {
 	var req statusRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
@@ -300,7 +300,7 @@ func (h *zonesHandlers) setStatus(c echo.Context) error {
 }
 
 // remove borra físicamente una zona inactiva.
-func (h *zonesHandlers) remove(c echo.Context) error {
+func (h *zonesHandlers) remove(c *httpx.Context) error {
 	var req deleteRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err

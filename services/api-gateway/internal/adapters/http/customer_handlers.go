@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/labstack/echo/v4"
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 
 	customerv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/customer/v1"
 	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/grpcclient"
@@ -63,7 +63,7 @@ func toCustomerDTO(c *customerv1.Customer) customerDTO {
 	}
 }
 
-func (h *customerHandlers) setStatus(c echo.Context) error {
+func (h *customerHandlers) setStatus(c *httpx.Context) error {
 	var req setCustomerStatusRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
@@ -78,7 +78,7 @@ func (h *customerHandlers) setStatus(c echo.Context) error {
 	return c.JSON(http.StatusOK, toCustomerDTO(res.GetCustomer()))
 }
 
-func (h *customerHandlers) get(c echo.Context) error {
+func (h *customerHandlers) get(c *httpx.Context) error {
 	res, err := h.customers.GetByID(c.Request().Context(), callMeta(c), &customerv1.GetByIDRequest{Id: c.Param("id")})
 	if err != nil {
 		return err
@@ -86,7 +86,7 @@ func (h *customerHandlers) get(c echo.Context) error {
 	return c.JSON(http.StatusOK, toCustomerDTO(res.GetCustomer()))
 }
 
-func (h *customerHandlers) list(c echo.Context) error {
+func (h *customerHandlers) list(c *httpx.Context) error {
 	limit, err := intQuery(c, "limit")
 	if err != nil {
 		return err
@@ -117,14 +117,14 @@ func (h *customerHandlers) list(c echo.Context) error {
 
 // intQuery lee un entero opcional; ausente => 0 (default del servicio).
 // Un valor no numerico es 400; los negativos los rechaza el servicio.
-func intQuery(c echo.Context, name string) (int32, error) {
+func intQuery(c *httpx.Context, name string) (int32, error) {
 	raw := c.QueryParam(name)
 	if raw == "" {
 		return 0, nil
 	}
 	n, err := strconv.ParseInt(raw, 10, 32)
 	if err != nil {
-		return 0, echo.NewHTTPError(http.StatusBadRequest, name+" must be an integer")
+		return 0, httpx.NewHTTPError(http.StatusBadRequest, name+" must be an integer")
 	}
 	return int32(n), nil
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/labstack/echo/v4"
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 
 	ordersv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/orders/v1"
 	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/grpcclient"
@@ -59,7 +59,7 @@ func toSurchargeDTO(s *ordersv1.Surcharge) surchargeDTO {
 }
 
 // listPendingVerification answers a plain array, like the other operator queues.
-func (h *surchargeHandlers) listPendingVerification(c echo.Context) error {
+func (h *surchargeHandlers) listPendingVerification(c *httpx.Context) error {
 	res, err := h.surcharges.ListSurchargesPendingVerification(c.Request().Context(), callMeta(c), &ordersv1.ListSurchargesPendingVerificationRequest{})
 	if err != nil {
 		return err
@@ -73,7 +73,7 @@ func (h *surchargeHandlers) listPendingVerification(c echo.Context) error {
 
 // resolve forwards the operator's decision. Order Service validates the decision, the reason and the
 // state; the audited operator id comes from the verified JWT, never from the body.
-func (h *surchargeHandlers) resolve(c echo.Context) error {
+func (h *surchargeHandlers) resolve(c *httpx.Context) error {
 	var req resolveSurchargeRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
@@ -109,7 +109,7 @@ type recidivismChargeDTO struct {
 // applyRecidivismCharge forwards the operator's extra charge. Order Service checks the role, that the
 // customer is a recidivist and that the reincidence was not charged yet; the audited operator is the
 // JWT's, never the body's.
-func (h *surchargeHandlers) applyRecidivismCharge(c echo.Context) error {
+func (h *surchargeHandlers) applyRecidivismCharge(c *httpx.Context) error {
 	var req applyRecidivismChargeRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
@@ -140,7 +140,7 @@ type recidivistDTO struct {
 }
 
 // listRecidivists answers a plain array, oldest mark first, like the other operator queues.
-func (h *surchargeHandlers) listRecidivists(c echo.Context) error {
+func (h *surchargeHandlers) listRecidivists(c *httpx.Context) error {
 	res, err := h.surcharges.ListRecidivists(c.Request().Context(), callMeta(c), &ordersv1.ListRecidivistsRequest{})
 	if err != nil {
 		return err
@@ -170,7 +170,7 @@ type recidivistClearDTO struct {
 
 // clearRecidivist removes the customer's reincidence mark. The route is ADMIN only and Order Service checks the
 // role again; the audited administrator is the JWT's, never the body's.
-func (h *surchargeHandlers) clearRecidivist(c echo.Context) error {
+func (h *surchargeHandlers) clearRecidivist(c *httpx.Context) error {
 	var req clearRecidivistRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
@@ -202,7 +202,7 @@ type balancePaymentDTO struct {
 
 // payMyBalance pays the whole balance of the authenticated customer. It reads no body: nothing the
 // client sends can change the amount. A declined simulated card answers 200 with its status.
-func (h *surchargeHandlers) payMyBalance(c echo.Context) error {
+func (h *surchargeHandlers) payMyBalance(c *httpx.Context) error {
 	res, err := h.surcharges.PayMyBalance(c.Request().Context(), callMeta(c), &ordersv1.PayMyBalanceRequest{})
 	if err != nil {
 		return err
@@ -238,7 +238,7 @@ type myBalanceDTO struct {
 }
 
 // myBalance shows the authenticated customer what they owe. A blocked account can read it.
-func (h *surchargeHandlers) myBalance(c echo.Context) error {
+func (h *surchargeHandlers) myBalance(c *httpx.Context) error {
 	res, err := h.surcharges.GetMyBalance(c.Request().Context(), callMeta(c), &ordersv1.GetMyBalanceRequest{})
 	if err != nil {
 		return err

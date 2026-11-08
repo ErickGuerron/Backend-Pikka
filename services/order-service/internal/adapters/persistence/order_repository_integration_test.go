@@ -41,7 +41,7 @@ func TestOrderRepositoryPersistsAndListsByCustomer(t *testing.T) {
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		_, _ = pool.Exec(ctx, `DELETE FROM orders WHERE customer_id = $1`, customer.ID)
+		_, _ = pool.Exec(ctx, `UPDATE orders SET deleted_at = now() WHERE customer_id = $1 AND deleted_at IS NULL`, customer.ID)
 		_, _ = pool.Exec(ctx, `DELETE FROM customers WHERE id = $1`, customer.ID)
 	})
 

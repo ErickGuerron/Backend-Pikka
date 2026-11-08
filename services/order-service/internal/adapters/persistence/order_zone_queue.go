@@ -76,7 +76,7 @@ func (r *OrderRepository) QueuePosition(ctx context.Context, order domain.Order)
 	var position int
 	err := r.pool.QueryRow(ctx,
 		`SELECT count(*) FROM orders
-		  WHERE zone_id = $1::uuid AND delivery_date = $2::date
+		  WHERE deleted_at IS NULL AND zone_id = $1::uuid AND delivery_date = $2::date
 		    AND status = 'PENDING' AND route_id IS NULL
 		    AND (created_at, id) <= ($3::timestamptz, $4::uuid)`,
 		order.ZoneID, order.DeliveryDate.String(), order.CreatedAt, order.ID,
@@ -95,7 +95,7 @@ func routeWithRoom(ctx context.Context, tx pgx.Tx, zoneID, deliveryDate string, 
 	var zoneActive int
 	if err := tx.QueryRow(ctx,
 		`SELECT count(*) FROM orders
-		  WHERE zone_id = $1::uuid AND delivery_date = $2::date
+		  WHERE deleted_at IS NULL AND zone_id = $1::uuid AND delivery_date = $2::date
 		    AND status IN ('ROUTE_ASSIGNED', 'PICKED_UP', 'IN_TRANSIT')`,
 		zoneID, deliveryDate,
 	).Scan(&zoneActive); err != nil {
@@ -112,7 +112,7 @@ func routeWithRoom(ctx context.Context, tx pgx.Tx, zoneID, deliveryDate string, 
 		        COALESCE(max(stop_sequence), 0),
 		        count(*) FILTER (WHERE status IN ('ROUTE_ASSIGNED', 'PICKED_UP', 'IN_TRANSIT')) AS active
 		   FROM orders
-		  WHERE zone_id = $1::uuid AND delivery_date = $2::date AND route_id IS NOT NULL
+		  WHERE deleted_at IS NULL AND zone_id = $1::uuid AND delivery_date = $2::date AND route_id IS NOT NULL
 		  GROUP BY route_id
 		  ORDER BY active ASC, route_id ASC
 		  LIMIT 1`,
@@ -132,7 +132,7 @@ func routeWithRoom(ctx context.Context, tx pgx.Tx, zoneID, deliveryDate string, 
 func oldestWaiting(ctx context.Context, tx pgx.Tx, zoneID, deliveryDate string) (domain.Order, bool, error) {
 	order, err := scanOrder(tx.QueryRow(ctx,
 		`SELECT `+orderColumns+` FROM orders
-		  WHERE zone_id = $1::uuid AND delivery_date = $2::date
+		  WHERE deleted_at IS NULL AND zone_id = $1::uuid AND delivery_date = $2::date
 		    AND status = 'PENDING' AND route_id IS NULL
 		  ORDER BY created_at ASC, id ASC
 		  LIMIT 1

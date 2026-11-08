@@ -3,7 +3,7 @@ package http
 import (
 	"net/http"
 
-	"github.com/labstack/echo/v4"
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 
 	ordersv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/orders/v1"
 )
@@ -27,7 +27,7 @@ func feeDTO(f *ordersv1.ReassignmentFee) reassignmentFeeDTO {
 
 // setReassignmentFee defines the fixed reassignment fee. The route is ADMIN only and Order Service checks the
 // role again; the audited administrator is the JWT's, never the body's.
-func (h *surchargeHandlers) setReassignmentFee(c echo.Context) error {
+func (h *surchargeHandlers) setReassignmentFee(c *httpx.Context) error {
 	var req setReassignmentFeeRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
@@ -42,7 +42,7 @@ func (h *surchargeHandlers) setReassignmentFee(c echo.Context) error {
 }
 
 // getReassignmentFee shows the current fee to the staff.
-func (h *surchargeHandlers) getReassignmentFee(c echo.Context) error {
+func (h *surchargeHandlers) getReassignmentFee(c *httpx.Context) error {
 	res, err := h.surcharges.GetReassignmentFee(c.Request().Context(), callMeta(c), &ordersv1.GetReassignmentFeeRequest{})
 	if err != nil {
 		return err
@@ -66,7 +66,7 @@ type reassignmentChargeDTO struct {
 
 // applyReassignmentCharge charges the current fixed fee for an order. It reads no amount: nothing the client sends
 // can change what is charged.
-func (h *surchargeHandlers) applyReassignmentCharge(c echo.Context) error {
+func (h *surchargeHandlers) applyReassignmentCharge(c *httpx.Context) error {
 	var req applyReassignmentChargeRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err

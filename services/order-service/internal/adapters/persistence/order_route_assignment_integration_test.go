@@ -14,7 +14,7 @@ import (
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/domain"
 )
 
-const testRoute = "zone-1#1"
+var testRoute = "zone-1#1"
 
 func assignOne(t *testing.T, orders *persistence.OrderRepository, id string) {
 	t.Helper()

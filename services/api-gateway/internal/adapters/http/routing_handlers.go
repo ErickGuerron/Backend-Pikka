@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/labstack/echo/v4"
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 
 	routingv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/routing/v1"
 	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/grpcclient"
@@ -49,14 +49,14 @@ type plannedStopDTO struct {
 // generate responds 200 with the created routes. A date with no orders returns an empty routes array, not null.
 // planId and unassignedOrderIds are phase-1 values: the plan id is derived and not persisted, and the
 // unassigned list is always empty. Both are always arrays or strings, never null.
-func (h *routePlanHandlers) generate(c echo.Context) error {
+func (h *routePlanHandlers) generate(c *httpx.Context) error {
 	var req generatePlanRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
 	}
 	deliveryDate := strings.TrimSpace(req.DeliveryDate)
 	if deliveryDate == "" {
-		return echo.NewHTTPError(http.StatusBadRequest, "deliveryDate is required")
+		return httpx.NewHTTPError(http.StatusBadRequest, "deliveryDate is required")
 	}
 	res, err := h.routing.GeneratePlan(c.Request().Context(), callMeta(c), &routingv1.GeneratePlanRequest{DeliveryDate: deliveryDate})
 	if err != nil {

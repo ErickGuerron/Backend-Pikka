@@ -4,7 +4,6 @@ package persistence_test
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	"github.com/google/uuid"
@@ -19,16 +18,16 @@ import (
 
 // Requiere AUTH_TEST_DATABASE_URL. Ejecutar con: go test -tags integration ./...
 func TestUserRepositoryUpdateUser(t *testing.T) {
-	dsn := os.Getenv("AUTH_TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("AUTH_TEST_DATABASE_URL not set")
-	}
+	dsn := isolatedDSN(t, "AUTH_TEST_DATABASE_URL")
 	ctx := context.Background()
 	require.NoError(t, postgres.Migrate(dsn))
 	pool, err := postgres.Connect(ctx, dsn)
 	require.NoError(t, err)
 	defer pool.Close()
-	_, err = pool.Exec(ctx, `TRUNCATE users`)
+
+	// La semilla trae un ADMIN activo (admin@pikka.com). Esta prueba necesita que el unico ADMIN activo sea
+	// el que ella crea, asi que la semilla se desactiva dentro de su propio esquema.
+	_, err = pool.Exec(ctx, `UPDATE users SET active = false WHERE id = '00000000-0000-4000-8000-000000000001'`)
 	require.NoError(t, err)
 
 	repo := persistence.NewUserRepository(pool)

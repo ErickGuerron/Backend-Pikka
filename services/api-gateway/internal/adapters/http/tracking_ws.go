@@ -8,7 +8,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/labstack/echo/v4"
+
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 
 	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/grpcclient"
 )
@@ -28,31 +29,31 @@ func isWebSocketUpgrade(r *http.Request) bool {
 func tokenFromSubprotocols(values []string) (string, error) {
 	parts := strings.Split(strings.Join(values, ","), ",")
 	if len(parts) < 2 || strings.TrimSpace(parts[0]) != trackingSubprotocol {
-		return "", echo.NewHTTPError(http.StatusUnauthorized, "missing bearer subprotocol")
+		return "", httpx.NewHTTPError(http.StatusUnauthorized, "missing bearer subprotocol")
 	}
 	token := strings.TrimSpace(parts[1])
 	if token == "" {
-		return "", echo.NewHTTPError(http.StatusUnauthorized, "missing bearer subprotocol")
+		return "", httpx.NewHTTPError(http.StatusUnauthorized, "missing bearer subprotocol")
 	}
 	return token, nil
 }
 
 // ws valida identidad y pertenencia antes de actualizar la conexión. Un pedido ajeno o inexistente
 // responde 404 por HTTP, sin abrir socket. Después envía el snapshot y sondea hasta que el cliente se va.
-func (h *customerTrackingHandlers) ws(c echo.Context) error {
+func (h *customerTrackingHandlers) ws(c *httpx.Context) error {
 	token, err := tokenFromSubprotocols(c.Request().Header.Values("Sec-WebSocket-Protocol"))
 	if err != nil {
 		return err
 	}
 	id, err := h.verifier.Verify(token)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusUnauthorized, "invalid or expired token")
+		return httpx.NewHTTPError(http.StatusUnauthorized, "invalid or expired token")
 	}
 	if !strings.EqualFold(id.Role, "CUSTOMER") {
-		return echo.NewHTTPError(http.StatusForbidden, "customer role required")
+		return httpx.NewHTTPError(http.StatusForbidden, "customer role required")
 	}
 
-	m := grpcclient.CallMeta{RequestID: c.Response().Header().Get(echo.HeaderXRequestID), UserID: id.UserID, Role: id.Role}
+	m := grpcclient.CallMeta{RequestID: c.Response().Header().Get(httpx.HeaderXRequestID), UserID: id.UserID, Role: id.Role}
 	orderID := c.Param("id")
 	ctx := c.Request().Context()
 	first, err := h.build(ctx, m, orderID)

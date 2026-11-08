@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,12 +23,16 @@ func newAttempt(t *testing.T, customer, amount, reference string, status domain.
 	return a
 }
 
+// uniqueRef hace unica la referencia de cobro: la tabla no se vacia entre pruebas, asi que una
+// referencia fija choca con la de otra corrida.
+func uniqueRef(base string) string { return base + "-" + uuid.NewString() }
+
 func TestGuardarIntentoDeCobroConservaMontoYEstado(t *testing.T) {
 	_, pool := setup(t)
 	repo := persistence.NewPaymentAttemptRepository(pool)
 	customer := newCustomer(t, pool)
 
-	saved, err := repo.SavePaymentAttempt(context.Background(), newAttempt(t, customer, "3.75", "SIM-1", domain.PaymentApproved))
+	saved, err := repo.SavePaymentAttempt(context.Background(), newAttempt(t, customer, "3.75", uniqueRef("SIM-1"), domain.PaymentApproved))
 
 	require.NoError(t, err)
 	assert.NotEmpty(t, saved.ID)
@@ -41,7 +46,7 @@ func TestIntentoRechazadoTambienSeRegistra(t *testing.T) {
 	repo := persistence.NewPaymentAttemptRepository(pool)
 	customer := newCustomer(t, pool)
 
-	_, err := repo.SavePaymentAttempt(context.Background(), newAttempt(t, customer, "7.99", "SIM-2", domain.PaymentDeclined))
+	_, err := repo.SavePaymentAttempt(context.Background(), newAttempt(t, customer, "7.99", uniqueRef("SIM-2"), domain.PaymentDeclined))
 	require.NoError(t, err)
 
 	list, err := repo.ListPaymentAttempts(context.Background(), customer)
@@ -56,9 +61,10 @@ func TestReferenciaDeCobroEsUnica(t *testing.T) {
 	customer := newCustomer(t, pool)
 	ctx := context.Background()
 
-	_, err := repo.SavePaymentAttempt(ctx, newAttempt(t, customer, "5", "SIM-3", domain.PaymentApproved))
+	ref := uniqueRef("SIM-3")
+	_, err := repo.SavePaymentAttempt(ctx, newAttempt(t, customer, "5", ref, domain.PaymentApproved))
 	require.NoError(t, err)
-	_, err = repo.SavePaymentAttempt(ctx, newAttempt(t, customer, "5", "SIM-3", domain.PaymentApproved))
+	_, err = repo.SavePaymentAttempt(ctx, newAttempt(t, customer, "5", ref, domain.PaymentApproved))
 
 	assert.Error(t, err, "la misma referencia no se registra dos veces")
 }
@@ -87,13 +93,14 @@ func TestListarIntentosSoloDelCliente(t *testing.T) {
 	ctx := context.Background()
 	mine, other := newCustomer(t, pool), newCustomer(t, pool)
 
-	_, err := repo.SavePaymentAttempt(ctx, newAttempt(t, mine, "5", "SIM-4", domain.PaymentApproved))
+	mineRef := uniqueRef("SIM-4")
+	_, err := repo.SavePaymentAttempt(ctx, newAttempt(t, mine, "5", mineRef, domain.PaymentApproved))
 	require.NoError(t, err)
-	_, err = repo.SavePaymentAttempt(ctx, newAttempt(t, other, "5", "SIM-5", domain.PaymentApproved))
+	_, err = repo.SavePaymentAttempt(ctx, newAttempt(t, other, "5", uniqueRef("SIM-5"), domain.PaymentApproved))
 	require.NoError(t, err)
 
 	list, err := repo.ListPaymentAttempts(ctx, mine)
 	require.NoError(t, err)
 	require.Len(t, list, 1)
-	assert.Equal(t, "SIM-4", list[0].Reference)
+	assert.Equal(t, mineRef, list[0].Reference)
 }

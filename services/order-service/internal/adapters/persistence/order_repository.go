@@ -88,7 +88,7 @@ func insertOrder(ctx context.Context, tx pgx.Tx, order domain.Order) (domain.Ord
 // ListByCustomer devuelve los pedidos de un cliente, del más reciente al más antiguo.
 func (r *OrderRepository) ListByCustomer(ctx context.Context, customerID uuid.UUID) ([]domain.Order, error) {
 	return r.queryOrders(ctx,
-		`SELECT `+orderColumns+` FROM orders WHERE customer_id = $1 ORDER BY created_at DESC, id ASC`,
+		`SELECT `+orderColumns+` FROM orders WHERE deleted_at IS NULL AND customer_id = $1 ORDER BY created_at DESC, id ASC`,
 		customerID)
 }
 
@@ -100,7 +100,7 @@ func (r *OrderRepository) GetForCustomer(ctx context.Context, orderID string, cu
 		return domain.Order{}, domain.ErrOrderNotFound
 	}
 	order, err := scanOrder(r.pool.QueryRow(ctx,
-		`SELECT `+orderColumns+` FROM orders WHERE id = $1 AND customer_id = $2`, id, customerID))
+		`SELECT `+orderColumns+` FROM orders WHERE deleted_at IS NULL AND id = $1 AND customer_id = $2`, id, customerID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.Order{}, domain.ErrOrderNotFound
 	}
@@ -117,7 +117,7 @@ const listAllLimit = 500
 func (r *OrderRepository) ListAll(ctx context.Context, f ports.OrderFilter) ([]domain.Order, error) {
 	return r.queryOrders(ctx,
 		`SELECT `+orderColumns+` FROM orders
-		  WHERE ($1 = '' OR delivery_date = $1::date) AND ($2 = '' OR status = $2)
+		  WHERE deleted_at IS NULL AND ($1 = '' OR delivery_date = $1::date) AND ($2 = '' OR status = $2)
 		  ORDER BY created_at DESC, id ASC LIMIT $3`,
 		f.DeliveryDate, string(f.Status), listAllLimit)
 }
@@ -125,7 +125,7 @@ func (r *OrderRepository) ListAll(ctx context.Context, f ports.OrderFilter) ([]d
 // ListExceptions devuelve la cola de excepciones, la más antigua primero.
 func (r *OrderRepository) ListExceptions(ctx context.Context) ([]domain.Order, error) {
 	return r.queryOrders(ctx,
-		`SELECT `+orderColumns+` FROM orders WHERE status = 'PENDING_REVIEW' ORDER BY created_at ASC, id ASC`)
+		`SELECT `+orderColumns+` FROM orders WHERE deleted_at IS NULL AND status = 'PENDING_REVIEW' ORDER BY created_at ASC, id ASC`)
 }
 
 // Review aplica la decisión dentro de una transacción con bloqueo de fila
@@ -141,7 +141,7 @@ func (r *OrderRepository) Review(ctx context.Context, orderID string, decide fun
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	current, err := scanOrder(tx.QueryRow(ctx, `SELECT `+orderColumns+` FROM orders WHERE id = $1 FOR UPDATE`, id))
+	current, err := scanOrder(tx.QueryRow(ctx, `SELECT `+orderColumns+` FROM orders WHERE deleted_at IS NULL AND id = $1 FOR UPDATE`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.Order{}, domain.ErrOrderNotFound
 	}
@@ -203,7 +203,7 @@ func (r *OrderRepository) CancelForCustomer(ctx context.Context, orderID string,
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	current, err := scanOrder(tx.QueryRow(ctx,
-		`SELECT `+orderColumns+` FROM orders WHERE id = $1 AND customer_id = $2 FOR UPDATE`, id, customerID))
+		`SELECT `+orderColumns+` FROM orders WHERE deleted_at IS NULL AND id = $1 AND customer_id = $2 FOR UPDATE`, id, customerID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.Order{}, domain.ErrOrderNotFound
 	}
@@ -249,7 +249,7 @@ func (r *OrderRepository) AdvanceRouteStop(ctx context.Context, orderID, routeID
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	current, err := scanOrder(tx.QueryRow(ctx,
-		`SELECT `+orderColumns+` FROM orders WHERE id = $1 AND route_id = $2 FOR UPDATE`, id, routeID))
+		`SELECT `+orderColumns+` FROM orders WHERE deleted_at IS NULL AND id = $1 AND route_id = $2 FOR UPDATE`, id, routeID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.Order{}, domain.ErrOrderNotFound
 	}

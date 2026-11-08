@@ -5,9 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/labstack/echo/v4"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 
 	driversv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/drivers/v1"
 	ordersv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/orders/v1"
@@ -29,17 +30,17 @@ type stopResultRequest struct {
 //  3. Order Service cierra el pedido.
 //
 // Si el paso 3 falla después del 2, la respuesta es de error y no se reintenta a ciegas.
-func (h *driverStopHandlers) result(c echo.Context) error {
+func (h *driverStopHandlers) result(c *httpx.Context) error {
 	var req stopResultRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
 	}
 	outcome, ok := stopOutcomeFromRequest(req.Outcome)
 	if !ok {
-		return echo.NewHTTPError(http.StatusBadRequest, "outcome must be DELIVERED or NOT_DELIVERED")
+		return httpx.NewHTTPError(http.StatusBadRequest, "outcome must be DELIVERED or NOT_DELIVERED")
 	}
 	if req.Latitude == nil || req.Longitude == nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "latitude and longitude are required")
+		return httpx.NewHTTPError(http.StatusBadRequest, "latitude and longitude are required")
 	}
 
 	ctx := c.Request().Context()
@@ -52,7 +53,7 @@ func (h *driverStopHandlers) result(c echo.Context) error {
 		return err
 	}
 	if !owned {
-		return echo.NewHTTPError(http.StatusNotFound, "route not found")
+		return httpx.NewHTTPError(http.StatusNotFound, "route not found")
 	}
 
 	stops, err := h.orders.ListDriverRouteStops(ctx, m, &ordersv1.ListDriverRouteStopsRequest{RouteId: routeID})
@@ -61,7 +62,7 @@ func (h *driverStopHandlers) result(c echo.Context) error {
 	}
 	st, found := stopStatus(stops.GetStops(), stopID)
 	if !found {
-		return echo.NewHTTPError(http.StatusNotFound, "stop not found")
+		return httpx.NewHTTPError(http.StatusNotFound, "stop not found")
 	}
 	if st != ordersv1.OrderStatus_ORDER_STATUS_IN_TRANSIT {
 		return status.Error(codes.FailedPrecondition, "stop must be IN_TRANSIT to record its result")
@@ -86,7 +87,7 @@ func (h *driverStopHandlers) result(c echo.Context) error {
 			return c.JSON(http.StatusNotImplemented, errorBody{Error: APIError{
 				Code:      "NOT_IMPLEMENTED",
 				Message:   "this driver route is not available yet",
-				RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
+				RequestID: c.Response().Header().Get(httpx.HeaderXRequestID),
 			}})
 		}
 		return err

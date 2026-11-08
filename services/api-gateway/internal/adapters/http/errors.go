@@ -4,9 +4,10 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/labstack/echo/v4"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 )
 
 // APIError es el formato único de error de la API pública.
@@ -49,12 +50,12 @@ var httpCodes = map[int]string{
 }
 
 // ErrorHandler transforma cualquier error (gRPC, Echo o desconocido) al formato APIError.
-func ErrorHandler(err error, c echo.Context) {
+func ErrorHandler(err error, c *httpx.Context) {
 	if c.Response().Committed {
 		return
 	}
 	status, body := translate(err)
-	body.RequestID = c.Response().Header().Get(echo.HeaderXRequestID)
+	body.RequestID = c.Response().Header().Get(httpx.HeaderXRequestID)
 	if status >= http.StatusInternalServerError {
 		c.Set("error", err.Error())
 	}
@@ -66,7 +67,7 @@ func ErrorHandler(err error, c echo.Context) {
 }
 
 func translate(err error) (int, APIError) {
-	var he *echo.HTTPError
+	var he *httpx.HTTPError
 	if errors.As(err, &he) {
 		code, ok := httpCodes[he.Code]
 		if !ok {

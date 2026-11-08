@@ -7,9 +7,10 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/labstack/echo/v4"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 
 	driversv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/drivers/v1"
 	ordersv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/orders/v1"
@@ -34,10 +35,10 @@ type driverRoutePlanResponse struct {
 // plan responde el orden óptimo de las paradas activas del repartidor desde su posición (lat, lon de la
 // consulta). El origen es un dato personal: no se registra en logs. Sin ruta o sin paradas activas la
 // respuesta es vacía y no se llama al planificador.
-func (h *driverRouteHandlers) plan(c echo.Context) error {
+func (h *driverRouteHandlers) plan(c *httpx.Context) error {
 	origin, err := parsePlanOrigin(c)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		return httpx.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 	ctx := c.Request().Context()
 	m := callMeta(c)
@@ -64,7 +65,7 @@ func (h *driverRouteHandlers) plan(c echo.Context) error {
 		return c.JSON(http.StatusOK, emptyDriverRoutePlan())
 	}
 	if h.planner == nil {
-		return echo.NewHTTPError(http.StatusServiceUnavailable, "route planning is not configured")
+		return httpx.NewHTTPError(http.StatusServiceUnavailable, "route planning is not configured")
 	}
 
 	points := make([]osrm.Point, 0, len(active))
@@ -73,12 +74,12 @@ func (h *driverRouteHandlers) plan(c echo.Context) error {
 	}
 	trip, err := h.planner.Optimize(ctx, origin, points)
 	if errors.Is(err, osrm.ErrNoRoute) || errors.Is(err, osrm.ErrInvalidPoint) {
-		return echo.NewHTTPError(http.StatusUnprocessableEntity, "no road route between the driver and the stops")
+		return httpx.NewHTTPError(http.StatusUnprocessableEntity, "no road route between the driver and the stops")
 	}
 	if err != nil {
 		// Any other failure is the planner being unreachable or unhealthy (OSRM not started, timeout, bad
 		// status). The driver app shows a clear "route planner unavailable" for this, not a generic error.
-		return echo.NewHTTPError(http.StatusServiceUnavailable, "route planner unavailable")
+		return httpx.NewHTTPError(http.StatusServiceUnavailable, "route planner unavailable")
 	}
 
 	order := make([]string, 0, len(trip.Order))
@@ -103,7 +104,7 @@ func emptyDriverRoutePlan() driverRoutePlanResponse {
 
 // parsePlanOrigin lee la posición del repartidor de la consulta. Ambos valores deben ser números y un
 // punto válido de la Tierra; cualquier otra cosa es 400 antes de tocar la ruta.
-func parsePlanOrigin(c echo.Context) (osrm.Point, error) {
+func parsePlanOrigin(c *httpx.Context) (osrm.Point, error) {
 	lat, err := strconv.ParseFloat(c.QueryParam("lat"), 64)
 	if err != nil {
 		return osrm.Point{}, errors.New("lat must be a number")

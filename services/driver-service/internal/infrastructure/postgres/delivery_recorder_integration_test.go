@@ -4,7 +4,6 @@ package postgres_test
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -19,18 +18,13 @@ import (
 
 func openRecorder(t *testing.T) (*postgres.DeliveryRecorder, *pgxpool.Pool) {
 	t.Helper()
-	dsn := os.Getenv("DRIVER_TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("DRIVER_TEST_DATABASE_URL is not set")
-	}
+	dsn := isolatedDSN(t, "DRIVER_TEST_DATABASE_URL")
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, dsn)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	// El esquema drivers lo crea el script de inicialización; el usuario de servicio no puede crearlo.
 	require.NoError(t, postgres.Migrate(dsn))
-	_, err = pool.Exec(ctx, `TRUNCATE deliveries`)
-	require.NoError(t, err)
 	return postgres.NewDeliveryRecorder(pool), pool
 }
 
