@@ -107,9 +107,9 @@ func TestADR0006_PaymentAttemptsSoloAceptaEstadosSimulados(t *testing.T) {
 		return err
 	}
 
-	require.NoError(t, insert("SIMULATED_APPROVED", "ref-ok-1"))
-	require.NoError(t, insert("SIMULATED_DECLINED", "ref-ok-2"))
-	for i, real := range []string{"APPROVED", "DECLINED", "PAID", "CAPTURED", "approved"} {
-		assert.Error(t, insert(real, "ref-bad-"+string(rune('a'+i))), "%q no es un estado simulado", real)
+	require.NoError(t, insert("SIMULATED_APPROVED", uniqueRef("ref-ok-1")))
+	require.NoError(t, insert("SIMULATED_DECLINED", uniqueRef("ref-ok-2")))
+	for _, real := range []string{"APPROVED", "DECLINED", "PAID", "CAPTURED", "approved"} {
+		assert.Error(t, insert(real, uniqueRef("ref-bad")), "%q no es un estado simulado", real)
 	}
 }

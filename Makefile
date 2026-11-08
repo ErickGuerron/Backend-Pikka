@@ -1,6 +1,10 @@
 GO_MODULES := services/auth-service services/api-gateway services/order-service services/zone-service services/driver-service services/routing-service services/tracking-service
 LINT := golangci-lint
 
+# Base desechable para pruebas de integración. Nunca usar la base de desarrollo (last_mile): las
+# pruebas vacían tablas y cada paquete lo rechaza con un guard propio.
+TEST_DB ?= last_mile_test
+
 # Carga las variables de .env (igual que docker compose) para que las recetas
 # usen las mismas contraseñas que el contenedor. Sin .env no falla.
 -include .env
@@ -32,9 +36,9 @@ test: ## Pruebas unitarias de todos los módulos
 	@for m in $(GO_MODULES); do echo "== $$m"; (cd $$m && go test -race ./...) || exit 1; done
 
 test-integration: ## Pruebas de integración contra el PostgreSQL de docker compose
-	cd services/auth-service && AUTH_TEST_DATABASE_URL="postgres://auth_service_user:$${AUTH_DB_PASSWORD:-change_me_auth}@localhost:5432/last_mile?sslmode=disable&search_path=auth" go test -tags integration -count=1 ./...
-	cd services/order-service && ORDER_TEST_DATABASE_URL="postgres://order_service_user:$${ORDER_DB_PASSWORD:-change_me_orders}@localhost:5432/last_mile?sslmode=disable&search_path=orders,public" go test -tags integration -count=1 ./...
-	cd services/driver-service && DRIVER_TEST_DATABASE_URL="postgres://driver_service_user:$${DRIVER_DB_PASSWORD:-change_me_drivers}@localhost:5432/last_mile?sslmode=disable&search_path=drivers,public" go test -p 1 -tags integration -count=1 ./...
+	cd services/auth-service && AUTH_TEST_DATABASE_URL="postgres://auth_service_user:$${AUTH_DB_PASSWORD:-change_me_auth}@localhost:5432/$(TEST_DB)?sslmode=disable&search_path=auth" go test -tags integration -count=1 ./...
+	cd services/order-service && ORDER_TEST_DATABASE_URL="postgres://order_service_user:$${ORDER_DB_PASSWORD:-change_me_orders}@localhost:5432/$(TEST_DB)?sslmode=disable&search_path=orders,public" go test -tags integration -count=1 ./...
+	cd services/driver-service && DRIVER_TEST_DATABASE_URL="postgres://driver_service_user:$${DRIVER_DB_PASSWORD:-change_me_drivers}@localhost:5432/$(TEST_DB)?sslmode=disable&search_path=drivers,public" go test -p 1 -tags integration -count=1 ./...
 
 lint: ## go vet + golangci-lint
 	@for m in $(GO_MODULES); do echo "== $$m"; (cd $$m && go vet ./... && $(LINT) run --config ../../.golangci.yml ./...) || exit 1; done

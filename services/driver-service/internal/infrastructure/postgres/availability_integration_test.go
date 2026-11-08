@@ -36,6 +36,7 @@ func TestAvailabilityFlowPostgres(t *testing.T) {
 
 	available, err := svc.FindAvailableDrivers(ctx, 0)
 	require.NoError(t, err)
-	require.Len(t, available, 1)
-	assert.Equal(t, driverA, available[0].ID)
+	mine := onlyIDs(available, driverA)
+	require.Len(t, mine, 1)
+	assert.Equal(t, driverA, mine[0].ID)
 }

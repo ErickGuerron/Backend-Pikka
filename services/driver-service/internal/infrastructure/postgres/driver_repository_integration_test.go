@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -33,19 +32,13 @@ var t0 = time.Date(2026, 10, 13, 8, 0, 0, 0, time.UTC)
 // openRepo prepara la base de pruebas: aplica migraciones y vacía la tabla.
 func openRepo(t *testing.T) (*postgres.DriverRepository, *pgxpool.Pool) {
 	t.Helper()
-	dsn := os.Getenv("DRIVER_TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("DRIVER_TEST_DATABASE_URL is not set")
-	}
-	refuseProtectedDatabase(t, dsn)
+	dsn := isolatedDSN(t, "DRIVER_TEST_DATABASE_URL")
 	ctx := context.Background()
 	admin, err := pgxpool.New(ctx, dsn)
 	require.NoError(t, err)
 	t.Cleanup(admin.Close)
 	// El esquema drivers lo crea el script de inicialización; el usuario de servicio no puede crearlo.
 	require.NoError(t, postgres.Migrate(dsn))
-	_, err = admin.Exec(ctx, `TRUNCATE drivers`)
-	require.NoError(t, err)
 	return postgres.NewDriverRepository(admin), admin
 }
 
@@ -142,8 +135,9 @@ func TestDriverRepositoryFindAvailable(t *testing.T) {
 	got, err := repo.FindAvailable(ctx, 10)
 
 	require.NoError(t, err)
-	require.Len(t, got, 1)
-	assert.Equal(t, driverA, got[0].ID)
+	mine := onlyIDs(got, driverA, driverB, driverC)
+	require.Len(t, mine, 1)
+	assert.Equal(t, driverA, mine[0].ID)
 }
 
 // La reserva concurrente se prueba end-to-end: el servicio de aplicación con el repositorio

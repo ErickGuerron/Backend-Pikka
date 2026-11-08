@@ -6,7 +6,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -32,13 +34,32 @@ func setup(t *testing.T) (*persistence.Store, *pgxpool.Pool) {
 		t.Skip("ORDER_TEST_DATABASE_URL is not set")
 	}
 	ctx := context.Background()
-	require.NoError(t, postgres.Migrate(dsn))
-	pool, err := pgxpool.New(ctx, dsn)
+	scoped := isolatedSchemaDSN(t, dsn)
+	require.NoError(t, postgres.Migrate(scoped))
+	pool, err := pgxpool.New(ctx, scoped)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	_, err = pool.Exec(ctx, `TRUNCATE customer_notifications, order_penalty_reasons, reassignment_fees, order_items, stock_movements, products, orders, customers RESTART IDENTITY CASCADE`)
-	require.NoError(t, err)
+	testRoute = "zone-1#" + uuid.NewString()
 	return persistence.NewStore(pool), pool
+}
+
+// isolatedSchemaDSN crea un esquema nuevo para la prueba y devuelve el DSN apuntando a el. Cada prueba
+// tiene sus propias tablas: no comparte estado con otras y no hace falta vaciar nada.
+func isolatedSchemaDSN(t *testing.T, dsn string) string {
+	t.Helper()
+	schema := "t_" + strings.ReplaceAll(uuid.NewString(), "-", "_")
+	ctx := context.Background()
+	admin, err := pgxpool.New(ctx, dsn)
+	require.NoError(t, err)
+	defer admin.Close()
+	_, err = admin.Exec(ctx, fmt.Sprintf(`CREATE SCHEMA "%s"`, schema))
+	require.NoError(t, err)
+	u, err := url.Parse(dsn)
+	require.NoError(t, err)
+	q := u.Query()
+	q.Set("search_path", schema+",public")
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 func stock(n int64) *int64 { return &n }

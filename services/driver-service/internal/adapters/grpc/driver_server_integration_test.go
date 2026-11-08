@@ -5,7 +5,6 @@ package grpc_test
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -27,18 +26,12 @@ const integrationDriverID = "11111111-1111-4111-8111-111111111111"
 
 // La reserva concurrente por gRPC contra PostgreSQL real: el contrato debe dar una sola ganadora.
 func TestReserveDriverGRPCConcurrentePostgres(t *testing.T) {
-	dsn := os.Getenv("DRIVER_TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("DRIVER_TEST_DATABASE_URL is not set")
-	}
-	refuseProtectedDatabase(t, dsn)
+	dsn := isolatedDSN(t, "DRIVER_TEST_DATABASE_URL")
 	ctx := context.Background()
 	require.NoError(t, postgres.Migrate(dsn))
 	pool, err := pgxpool.New(ctx, dsn)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	_, err = pool.Exec(ctx, `TRUNCATE drivers`)
-	require.NoError(t, err)
 
 	repo := postgres.NewDriverRepository(pool)
 	d, err := domain.NewDriver(integrationDriverID, domaintest.Input("22222222-2222-4222-8222-222222222222"), time.Now())
