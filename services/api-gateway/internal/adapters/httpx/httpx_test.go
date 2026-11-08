@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -187,7 +188,9 @@ func TestRealIP_XFFMalformedFallsBackToPeer(t *testing.T) {
 
 func TestRateLimiter_DeniesAfterBurst(t *testing.T) {
 	e := httpx.New()
-	store := httpx.NewMemoryRateLimiter(rate.Limit(0.0001), 2, 0)
+	// expiresIn must exceed the test duration: idle buckets are discarded, and a zero value would
+	// reset the budget on every request.
+	store := httpx.NewMemoryRateLimiter(rate.Limit(0.0001), 2, time.Minute)
 	e.GET("/r", text("ok"), httpx.RateLimiter(store))
 	assert.Equal(t, http.StatusOK, send(e, http.MethodGet, "/r", nil).Code)
 	assert.Equal(t, http.StatusOK, send(e, http.MethodGet, "/r", nil).Code)
