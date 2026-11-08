@@ -16,7 +16,7 @@ import (
 func (r *OrderRepository) ListPendingByDate(ctx context.Context, deliveryDate string) ([]domain.Order, error) {
 	return r.queryOrders(ctx,
 		`SELECT `+orderColumns+` FROM orders
-		  WHERE status = 'PENDING' AND delivery_date = $1::date
+		  WHERE deleted_at IS NULL AND status = 'PENDING' AND delivery_date = $1::date
 		  ORDER BY created_at ASC, id ASC`,
 		deliveryDate,
 	)
@@ -101,7 +101,7 @@ func isDuplicateStopSequence(err error) bool {
 // lockOrders carga y bloquea los pedidos pedidos, indexados por id.
 func lockOrders(ctx context.Context, tx pgx.Tx, ids []uuid.UUID) (map[string]domain.Order, error) {
 	rows, err := tx.Query(ctx,
-		`SELECT `+orderColumns+` FROM orders WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE`, ids)
+		`SELECT `+orderColumns+` FROM orders WHERE deleted_at IS NULL AND id = ANY($1::uuid[]) ORDER BY id FOR UPDATE`, ids)
 	if err != nil {
 		return nil, fmt.Errorf("assign route: lock: %w", err)
 	}
