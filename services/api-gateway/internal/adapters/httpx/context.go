@@ -6,7 +6,6 @@ package httpx
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 )
 
 // HandlerFunc handles one request. Returning an error routes it through the engine's error handler.
@@ -145,9 +144,4 @@ func (c *Context) HTML(code int, html string) error {
 func (c *Context) NoContent(code int) error {
 	c.res.WriteHeader(code)
 	return nil
-}
-
-// hasPrefixFold reports whether s starts with prefix, ignoring ASCII case.
-func hasPrefixFold(s, prefix string) bool {
-	return len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix)
 }

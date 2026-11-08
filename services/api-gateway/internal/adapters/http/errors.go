@@ -4,9 +4,10 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 )
 
 // APIError es el formato único de error de la API pública.

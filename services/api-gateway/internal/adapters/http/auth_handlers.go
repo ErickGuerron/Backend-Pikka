@@ -8,9 +8,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 
 	authv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/auth/v1"
 	customerv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/customer/v1"
