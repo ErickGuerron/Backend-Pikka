@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/labstack/echo/v4"
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 
 	authv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/auth/v1"
 	driversv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/drivers/v1"
@@ -57,18 +57,18 @@ type createDriverResponse struct {
 // create valida la forma de la fecha y del vehículo antes de tocar nada, crea el usuario DRIVER y
 // después el perfil. Si el perfil falla, desactiva el usuario recién creado (compensación) y
 // devuelve el error original: Auth Service no borra usuarios, así que el correo queda reservado.
-func (h *driverAdminHandlers) create(c echo.Context) error {
+func (h *driverAdminHandlers) create(c *httpx.Context) error {
 	var req createDriverRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
 	}
 	birth := strings.TrimSpace(req.BirthDate)
 	if _, err := time.Parse(time.DateOnly, birth); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "birthDate must be YYYY-MM-DD")
+		return httpx.NewHTTPError(http.StatusBadRequest, "birthDate must be YYYY-MM-DD")
 	}
 	vehicle, ok := vehicleToProto(req.VehicleType)
 	if !ok {
-		return echo.NewHTTPError(http.StatusBadRequest, "vehicleType must be MOTORIZADO, AUTOMOVIL or SUV")
+		return httpx.NewHTTPError(http.StatusBadRequest, "vehicleType must be MOTORIZADO, AUTOMOVIL or SUV")
 	}
 
 	ctx := c.Request().Context()
@@ -121,7 +121,7 @@ type driverListItemDTO struct {
 }
 
 // list responde un arreglo (vacío si no hay repartidores) con la flota completa.
-func (h *driverAdminHandlers) list(c echo.Context) error {
+func (h *driverAdminHandlers) list(c *httpx.Context) error {
 	res, err := h.drivers.ListDrivers(c.Request().Context(), callMeta(c), &driversv1.ListDriversRequest{})
 	if err != nil {
 		return err

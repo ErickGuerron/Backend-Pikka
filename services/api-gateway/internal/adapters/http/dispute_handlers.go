@@ -3,7 +3,7 @@ package http
 import (
 	"net/http"
 
-	"github.com/labstack/echo/v4"
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 
 	ordersv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/orders/v1"
 )
@@ -34,7 +34,7 @@ type openDisputeRequest struct {
 
 // openDispute forwards the customer's dispute. Only the reason comes from the body: the customer is the JWT's, so nobody
 // can dispute in another customer's name.
-func (h *surchargeHandlers) openDispute(c echo.Context) error {
+func (h *surchargeHandlers) openDispute(c *httpx.Context) error {
 	var req openDisputeRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
@@ -49,7 +49,7 @@ func (h *surchargeHandlers) openDispute(c echo.Context) error {
 }
 
 // listOpenDisputes answers a plain array, oldest first, like the other staff queues.
-func (h *surchargeHandlers) listOpenDisputes(c echo.Context) error {
+func (h *surchargeHandlers) listOpenDisputes(c *httpx.Context) error {
 	res, err := h.surcharges.ListOpenDisputes(c.Request().Context(), callMeta(c), &ordersv1.ListOpenDisputesRequest{})
 	if err != nil {
 		return err
@@ -67,7 +67,7 @@ type resolveDisputeRequest struct {
 }
 
 // resolveDispute forwards the staff's decision. The audited operator is the JWT's, never the body's.
-func (h *surchargeHandlers) resolveDispute(c echo.Context) error {
+func (h *surchargeHandlers) resolveDispute(c *httpx.Context) error {
 	var req resolveDisputeRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err

@@ -2,12 +2,13 @@ package http
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
 	"unicode/utf8"
 
-	"github.com/labstack/echo/v4"
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -92,7 +93,7 @@ type userDTO struct {
 	CreatedAt string `json:"createdAt"`
 }
 
-func (h *authHandlers) login(c echo.Context) error {
+func (h *authHandlers) login(c *httpx.Context) error {
 	var req loginRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
@@ -109,16 +110,16 @@ func (h *authHandlers) login(c echo.Context) error {
 	})
 }
 
-func (h *authHandlers) me(c echo.Context) error {
+func (h *authHandlers) me(c *httpx.Context) error {
 	id, _ := identityFrom(c)
 	return h.respondUser(c, id.UserID)
 }
 
-func (h *authHandlers) getUser(c echo.Context) error {
+func (h *authHandlers) getUser(c *httpx.Context) error {
 	return h.respondUser(c, c.Param("id"))
 }
 
-func (h *authHandlers) respondUser(c echo.Context, userID string) error {
+func (h *authHandlers) respondUser(c *httpx.Context, userID string) error {
 	res, err := h.auth.GetUser(c.Request().Context(), callMeta(c), &authv1.GetUserRequest{Id: userID})
 	if err != nil {
 		return err
@@ -126,7 +127,7 @@ func (h *authHandlers) respondUser(c echo.Context, userID string) error {
 	return c.JSON(http.StatusOK, toUserDTO(res.GetUser()))
 }
 
-func (h *authHandlers) createUser(c echo.Context) error {
+func (h *authHandlers) createUser(c *httpx.Context) error {
 	var req createUserRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
@@ -145,7 +146,7 @@ func (h *authHandlers) createUser(c echo.Context) error {
 
 // signup registra un cliente nuevo. Ruta pública: no propaga identidad del
 // Gateway (el cliente todavía no existe). Devuelve 201 con el JWT.
-func (h *authHandlers) signup(c echo.Context) error {
+func (h *authHandlers) signup(c *httpx.Context) error {
 	var req signupRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
@@ -185,7 +186,7 @@ func (h *authHandlers) signup(c echo.Context) error {
 // reintento posterior es seguro: CreateCustomer es idempotente por user_id
 // (ErrCustomerAlreadyExists -> AlreadyExists), por lo que un backfill o job de
 // reconciliación puede volver a llamarlo sin riesgo.
-func (h *authHandlers) createCustomer(c echo.Context, u *authv1.User, phone, city string) {
+func (h *authHandlers) createCustomer(c *httpx.Context, u *authv1.User, phone, city string) {
 	if h.customers == nil || u == nil {
 		return
 	}
@@ -202,13 +203,13 @@ func (h *authHandlers) createCustomer(c echo.Context, u *authv1.User, phone, cit
 			break
 		}
 	}
-	c.Logger().Errorf("signup: create customer failed request_id=%s user_id=%s err=%v", m.RequestID, u.GetId(), err)
+	slog.Error("signup: create customer failed", "request_id", m.RequestID, "user_id", u.GetId(), "err", err)
 }
 
 // listUsers devuelve la lista completa de usuarios. La autorización por rol
 // (solo ADMIN) la aplica el adminOnlyMiddleware antes de llegar a este handler;
 // la capa de auth-service revalida por defensa en profundidad.
-func (h *authHandlers) listUsers(c echo.Context) error {
+func (h *authHandlers) listUsers(c *httpx.Context) error {
 	res, err := h.auth.ListUsers(c.Request().Context(), callMeta(c), &authv1.ListUsersRequest{})
 	if err != nil {
 		return err
@@ -221,7 +222,7 @@ func (h *authHandlers) listUsers(c echo.Context) error {
 }
 
 // updateUser edita nombre y/o rol de un usuario (solo ADMIN, filtrado por adminOnly).
-func (h *authHandlers) updateUser(c echo.Context) error {
+func (h *authHandlers) updateUser(c *httpx.Context) error {
 	var req updateUserRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
@@ -239,7 +240,7 @@ func (h *authHandlers) updateUser(c echo.Context) error {
 }
 
 // deactivateUser hace borrado lógico (active=false) y devuelve el usuario (solo ADMIN).
-func (h *authHandlers) deactivateUser(c echo.Context) error {
+func (h *authHandlers) deactivateUser(c *httpx.Context) error {
 	res, err := h.auth.DeactivateUser(c.Request().Context(), callMeta(c), &authv1.DeactivateUserRequest{Id: c.Param("id")})
 	if err != nil {
 		return err
@@ -257,7 +258,7 @@ var (
 func normalizePhone(raw string) (string, error) {
 	phone := phoneSeparators.Replace(strings.TrimSpace(raw))
 	if !phonePattern.MatchString(phone) {
-		return "", echo.NewHTTPError(http.StatusBadRequest, "phone must have 7 to 15 digits with an optional leading +")
+		return "", httpx.NewHTTPError(http.StatusBadRequest, "phone must have 7 to 15 digits with an optional leading +")
 	}
 	return phone, nil
 }
@@ -266,23 +267,23 @@ func normalizePhone(raw string) (string, error) {
 func normalizeCity(raw string) (string, error) {
 	city := strings.TrimSpace(raw)
 	if n := utf8.RuneCountInString(city); strings.ContainsRune(city, '\x00') || n < 2 || n > 80 {
-		return "", echo.NewHTTPError(http.StatusBadRequest, "city must contain 2 to 80 characters")
+		return "", httpx.NewHTTPError(http.StatusBadRequest, "city must contain 2 to 80 characters")
 	}
 	return city, nil
 }
 
-func bindJSON(c echo.Context, dst any) error {
-	if ct := c.Request().Header.Get(echo.HeaderContentType); !isJSON(ct) {
-		return echo.NewHTTPError(http.StatusUnsupportedMediaType, "content type must be application/json")
+func bindJSON(c *httpx.Context, dst any) error {
+	if ct := c.Request().Header.Get(httpx.HeaderContentType); !isJSON(ct) {
+		return httpx.NewHTTPError(http.StatusUnsupportedMediaType, "content type must be application/json")
 	}
-	if err := (&echo.DefaultBinder{}).BindBody(c, dst); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "malformed JSON body")
+	if err := httpx.BindBody(c, dst); err != nil {
+		return httpx.NewHTTPError(http.StatusBadRequest, "malformed JSON body")
 	}
 	return nil
 }
 
 func isJSON(ct string) bool {
-	return strings.HasPrefix(strings.ToLower(ct), echo.MIMEApplicationJSON)
+	return strings.HasPrefix(strings.ToLower(ct), httpx.MIMEApplicationJSON)
 }
 
 func toUserDTO(u *authv1.User) userDTO {

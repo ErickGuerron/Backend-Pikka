@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/labstack/echo/v4"
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -276,7 +276,7 @@ func TestTrackingWS_DefaultPollingTickerDeliversTheFirstSnapshot(t *testing.T) {
 
 // Sin identidad (que solo deja Authenticate) cada middleware de rol responde 401 y no llama al handler.
 func TestRoleMiddlewares_RejectRequestsWithoutIdentity(t *testing.T) {
-	cases := map[string]echo.MiddlewareFunc{
+	cases := map[string]httpx.MiddlewareFunc{
 		"AdminOnly":    httpapi.AdminOnly(),
 		"DriverOnly":   httpapi.DriverOnly(),
 		"StaffOnly":    httpapi.StaffOnly(),
@@ -284,16 +284,16 @@ func TestRoleMiddlewares_RejectRequestsWithoutIdentity(t *testing.T) {
 	}
 	for name, mw := range cases {
 		t.Run(name, func(t *testing.T) {
-			c := echo.New().NewContext(httptest.NewRequest(http.MethodGet, "/", nil), httptest.NewRecorder())
+			c := httpx.NewContext(httpx.New(), httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 			reached := false
-			next := func(echo.Context) error {
+			next := func(*httpx.Context) error {
 				reached = true
 				return nil
 			}
 
 			err := mw(next)(c)
 
-			var he *echo.HTTPError
+			var he *httpx.HTTPError
 			require.ErrorAs(t, err, &he)
 			assert.Equal(t, http.StatusUnauthorized, he.Code)
 			assert.False(t, reached)
@@ -306,19 +306,19 @@ func TestRoleMiddlewares_RejectRequestsWithoutIdentity(t *testing.T) {
 func TestErrorHandler_CommittedAndHeadResponses(t *testing.T) {
 	t.Run("una respuesta ya enviada no se reescribe", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		c := echo.New().NewContext(httptest.NewRequest(http.MethodGet, "/", nil), rec)
+		c := httpx.NewContext(httpx.New(), rec, httptest.NewRequest(http.MethodGet, "/", nil))
 		c.Response().WriteHeader(http.StatusOK)
 
-		httpapi.ErrorHandler(echo.ErrNotFound, c)
+		httpapi.ErrorHandler(httpx.ErrNotFound, c)
 
 		assert.Equal(t, http.StatusOK, rec.Code)
 		assert.Empty(t, rec.Body.String())
 	})
 	t.Run("HEAD responde solo el estado, sin cuerpo", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		c := echo.New().NewContext(httptest.NewRequest(http.MethodHead, "/", nil), rec)
+		c := httpx.NewContext(httpx.New(), rec, httptest.NewRequest(http.MethodHead, "/", nil))
 
-		httpapi.ErrorHandler(echo.ErrNotFound, c)
+		httpapi.ErrorHandler(httpx.ErrNotFound, c)
 
 		assert.Equal(t, http.StatusNotFound, rec.Code)
 		assert.Empty(t, rec.Body.String())

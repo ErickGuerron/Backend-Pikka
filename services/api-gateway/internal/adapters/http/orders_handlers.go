@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/labstack/echo/v4"
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 
 	ordersv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/orders/v1"
 	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/grpcclient"
@@ -124,7 +124,7 @@ type listNotificationsResponse struct {
 	Notifications []notificationDTO `json:"notifications"`
 }
 
-func (h *ordersHandlers) create(c echo.Context) error {
+func (h *ordersHandlers) create(c *httpx.Context) error {
 	var req createOrderRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
@@ -170,7 +170,7 @@ func (h *ordersHandlers) create(c echo.Context) error {
 	})
 }
 
-func (h *ordersHandlers) listMine(c echo.Context) error {
+func (h *ordersHandlers) listMine(c *httpx.Context) error {
 	res, err := h.orders.ListMyOrders(c.Request().Context(), callMeta(c), &ordersv1.ListMyOrdersRequest{})
 	if err != nil {
 		return err
@@ -181,10 +181,10 @@ func (h *ordersHandlers) listMine(c echo.Context) error {
 // list devuelve los pedidos de todos los clientes (ADMIN y OPERATOR), con filtros opcionales
 // deliveryDate (YYYY-MM-DD) y status. El Order Service valida la fecha y el permiso. Responde un
 // arreglo plano, como declara el OpenAPI y espera la web (a diferencia de /orders/exceptions).
-func (h *ordersHandlers) list(c echo.Context) error {
+func (h *ordersHandlers) list(c *httpx.Context) error {
 	filter, ok := orderStatusFilter(c.QueryParam("status"))
 	if !ok {
-		return echo.NewHTTPError(http.StatusBadRequest, "status is not a valid order status")
+		return httpx.NewHTTPError(http.StatusBadRequest, "status is not a valid order status")
 	}
 	res, err := h.orders.ListOrders(c.Request().Context(), callMeta(c), &ordersv1.ListOrdersRequest{
 		DeliveryDate: strings.TrimSpace(c.QueryParam("deliveryDate")),
@@ -208,7 +208,7 @@ func orderStatusFilter(raw string) (ordersv1.OrderStatus, bool) {
 	return ordersv1.OrderStatus_ORDER_STATUS_UNSPECIFIED, false
 }
 
-func (h *ordersHandlers) listExceptions(c echo.Context) error {
+func (h *ordersHandlers) listExceptions(c *httpx.Context) error {
 	res, err := h.orders.ListOrderExceptions(c.Request().Context(), callMeta(c), &ordersv1.ListOrderExceptionsRequest{})
 	if err != nil {
 		return err
@@ -216,14 +216,14 @@ func (h *ordersHandlers) listExceptions(c echo.Context) error {
 	return c.JSON(http.StatusOK, listOrdersResponse{Orders: toOrderDTOs(res.GetOrders())})
 }
 
-func (h *ordersHandlers) review(c echo.Context) error {
+func (h *ordersHandlers) review(c *httpx.Context) error {
 	var req reviewOrderRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
 	}
 	action, ok := reviewActionValue(req.Action)
 	if !ok {
-		return echo.NewHTTPError(http.StatusBadRequest, "action must be CONFIRM, CORRECT or REJECT")
+		return httpx.NewHTTPError(http.StatusBadRequest, "action must be CONFIRM, CORRECT or REJECT")
 	}
 	res, err := h.orders.ReviewOrder(c.Request().Context(), callMeta(c), &ordersv1.ReviewOrderRequest{
 		Id:     c.Param("id"),
@@ -243,7 +243,7 @@ func (h *ordersHandlers) review(c echo.Context) error {
 }
 
 // cancel cancela un pedido propio del cliente. Un pedido ajeno llega como NOT_FOUND desde Order Service.
-func (h *ordersHandlers) cancel(c echo.Context) error {
+func (h *ordersHandlers) cancel(c *httpx.Context) error {
 	res, err := h.orders.CancelOrder(c.Request().Context(), callMeta(c), &ordersv1.CancelOrderRequest{Id: c.Param("id")})
 	if err != nil {
 		return err
@@ -251,7 +251,7 @@ func (h *ordersHandlers) cancel(c echo.Context) error {
 	return c.JSON(http.StatusOK, toOrderDTO(res.GetOrder()))
 }
 
-func (h *ordersHandlers) notifications(c echo.Context) error {
+func (h *ordersHandlers) notifications(c *httpx.Context) error {
 	res, err := h.orders.ListMyNotifications(c.Request().Context(), callMeta(c), &ordersv1.ListMyNotificationsRequest{})
 	if err != nil {
 		return err
@@ -331,15 +331,15 @@ var postalCodePattern = regexp.MustCompile(`^[A-Za-z0-9-]{4,10}$`)
 func validateOrderContact(req createOrderRequest) (reference, postalCode, phone string, err error) {
 	reference = strings.TrimSpace(req.AddressReference)
 	if n := utf8.RuneCountInString(reference); strings.ContainsRune(reference, '\x00') || n < 3 || n > 200 {
-		return "", "", "", echo.NewHTTPError(http.StatusBadRequest, "addressReference must contain 3 to 200 characters")
+		return "", "", "", httpx.NewHTTPError(http.StatusBadRequest, "addressReference must contain 3 to 200 characters")
 	}
 	postalCode = strings.TrimSpace(req.PostalCode)
 	if postalCode != "" && !postalCodePattern.MatchString(postalCode) {
-		return "", "", "", echo.NewHTTPError(http.StatusBadRequest, "postalCode must contain 4 to 10 letters, digits or hyphens")
+		return "", "", "", httpx.NewHTTPError(http.StatusBadRequest, "postalCode must contain 4 to 10 letters, digits or hyphens")
 	}
 	phone, err = normalizePhone(req.ContactPhone)
 	if err != nil {
-		return "", "", "", echo.NewHTTPError(http.StatusBadRequest, "contactPhone must have 7 to 15 digits with an optional leading +")
+		return "", "", "", httpx.NewHTTPError(http.StatusBadRequest, "contactPhone must have 7 to 15 digits with an optional leading +")
 	}
 	return reference, postalCode, phone, nil
 }

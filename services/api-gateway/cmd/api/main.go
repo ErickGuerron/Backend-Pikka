@@ -118,15 +118,19 @@ func run(log *slog.Logger) error {
 		return auth.Ready(ctx) && zones.Ready(ctx)
 	})
 
-	e.Server.ReadHeaderTimeout = 5 * time.Second
-	e.Server.ReadTimeout = 15 * time.Second
-	e.Server.WriteTimeout = cfg.RequestTimeout + 5*time.Second
-	e.Server.IdleTimeout = 60 * time.Second
+	srv := &http.Server{
+		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
+		Handler:           e,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      cfg.RequestTimeout + 5*time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 
 	errCh := make(chan error, 1)
 	go func() {
 		log.Info("http listening", "port", cfg.HTTPPort)
-		if err := e.Start(fmt.Sprintf(":%d", cfg.HTTPPort)); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
 	}()
@@ -140,5 +144,5 @@ func run(log *slog.Logger) error {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return e.Shutdown(shutdownCtx)
+	return srv.Shutdown(shutdownCtx)
 }

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/labstack/echo/v4"
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 
 	driversv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/drivers/v1"
 	trackingv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/tracking/v1"
@@ -36,22 +36,22 @@ type driverLocationRequest struct {
 
 // report responde 204 cuando Tracking acepta el fix. Un fix más antiguo que el guardado se descarta
 // sin error (contrato de Tracking), por eso también responde 204 en ese caso.
-func (h *driverLocationHandlers) report(c echo.Context) error {
+func (h *driverLocationHandlers) report(c *httpx.Context) error {
 	var req driverLocationRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
 	}
 	if req.Latitude == nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "latitude is required")
+		return httpx.NewHTTPError(http.StatusBadRequest, "latitude is required")
 	}
 	if req.Longitude == nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "longitude is required")
+		return httpx.NewHTTPError(http.StatusBadRequest, "longitude is required")
 	}
 	if req.RecordedAt == "" {
-		return echo.NewHTTPError(http.StatusBadRequest, "recordedAt is required")
+		return httpx.NewHTTPError(http.StatusBadRequest, "recordedAt is required")
 	}
 	if _, err := time.Parse(time.RFC3339, req.RecordedAt); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "recordedAt must be an RFC 3339 timestamp")
+		return httpx.NewHTTPError(http.StatusBadRequest, "recordedAt must be an RFC 3339 timestamp")
 	}
 
 	ctx := c.Request().Context()

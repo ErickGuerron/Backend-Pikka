@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
 	"golang.org/x/time/rate"
+
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 )
 
 // Options configura las políticas HTTP transversales.
@@ -56,34 +56,21 @@ type Readiness func(ctx context.Context) bool
 
 var safeRequestID = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
 
-// NewRouter arma el Echo con middlewares, rutas y manejo de errores.
-func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth AuthClient, zones ZonesClient, ready Readiness) *echo.Echo {
-	e := echo.New()
-	e.HideBanner = true
-	e.HidePort = true
+// NewRouter arma el motor HTTP con middlewares, rutas y manejo de errores.
+func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth AuthClient, zones ZonesClient, ready Readiness) *httpx.Engine {
+	e := httpx.New()
 	e.HTTPErrorHandler = ErrorHandler
 	if opts.TrustProxy {
-		e.IPExtractor = echo.ExtractIPFromXFFHeader()
+		e.IPExtractor = httpx.ExtractIPFromXFFHeader()
 	} else {
-		e.IPExtractor = echo.ExtractIPDirect()
+		e.IPExtractor = httpx.ExtractIPDirect()
 	}
 
 	e.Use(crossOriginResourcePolicy)
-	e.Use(middleware.RequestIDWithConfig(middleware.RequestIDConfig{
-		Generator: uuid.NewString,
-		Skipper: func(c echo.Context) bool {
-			// Reutiliza el id entrante solo si es seguro registrarlo en logs.
-			if rid := c.Request().Header.Get(echo.HeaderXRequestID); safeRequestID.MatchString(rid) {
-				c.Response().Header().Set(echo.HeaderXRequestID, rid)
-				return true
-			}
-			c.Request().Header.Del(echo.HeaderXRequestID)
-			return false
-		},
-	}))
+	e.Use(requestID())
 	e.Use(RequestLogger(log))
-	e.Use(middleware.RecoverWithConfig(middleware.RecoverConfig{DisableStackAll: true}))
-	e.Use(middleware.SecureWithConfig(middleware.SecureConfig{
+	e.Use(httpx.Recover())
+	e.Use(httpx.Secure(httpx.SecureConfig{
 		XSSProtection:         "0",
 		ContentTypeNosniff:    "nosniff",
 		XFrameOptions:         "DENY",
@@ -91,20 +78,20 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 		ContentSecurityPolicy: "default-src 'none'; frame-ancestors 'none'",
 		ReferrerPolicy:        "no-referrer",
 	}))
-	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+	e.Use(httpx.CORS(httpx.CORSConfig{
 		AllowOrigins:  opts.CORSAllowedOrigins,
 		AllowMethods:  []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
-		AllowHeaders:  []string{echo.HeaderAuthorization, echo.HeaderContentType, echo.HeaderXRequestID, "Idempotency-Key"},
-		ExposeHeaders: []string{echo.HeaderXRequestID},
+		AllowHeaders:  []string{httpx.HeaderAuthorization, httpx.HeaderContentType, httpx.HeaderXRequestID, "Idempotency-Key"},
+		ExposeHeaders: []string{httpx.HeaderXRequestID},
 		MaxAge:        600,
 	}))
-	e.Use(middleware.BodyLimit(opts.BodyLimit))
+	e.Use(httpx.BodyLimit(opts.BodyLimit))
 	e.Use(ContextTimeout(opts.RequestTimeout))
 
-	e.GET("/health", func(c echo.Context) error {
+	e.GET("/health", func(c *httpx.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})
-	e.GET("/ready", func(c echo.Context) error {
+	e.GET("/ready", func(c *httpx.Context) error {
 		if !ready(c.Request().Context()) {
 			return c.JSON(http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
 		}
@@ -268,14 +255,22 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 	// Cobertura: cualquier rol autenticado ve las zonas activas (ADR 0008). /zones sigue siendo de staff.
 	authed.GET("/coverage/zones", z.coverage)
 
-	// Cada Group con middleware registra su propio "ruta no encontrada" envuelto en ese middleware y
-	// la última registrada gana: el grupo del repartidor atrapaba toda ruta inexistente y respondía
-	// 403 "driver role required" a un ADMIN. Este registro final devuelve 404 para cualquiera.
-	notFound := func(echo.Context) error { return echo.ErrNotFound }
-	api.RouteNotFound("", notFound)
-	api.RouteNotFound("/*", notFound)
-
 	return e
+}
+
+// requestID reutiliza el id entrante solo si es seguro registrarlo en logs; si no, genera uno nuevo.
+func requestID() httpx.MiddlewareFunc {
+	return func(next httpx.HandlerFunc) httpx.HandlerFunc {
+		return func(c *httpx.Context) error {
+			rid := c.Request().Header.Get(httpx.HeaderXRequestID)
+			if !safeRequestID.MatchString(rid) {
+				rid = uuid.NewString()
+				c.Request().Header.Set(httpx.HeaderXRequestID, rid)
+			}
+			c.Response().Header().Set(httpx.HeaderXRequestID, rid)
+			return next(c)
+		}
+	}
 }
 
 func hstsMaxAge(enabled bool) int {
@@ -287,20 +282,6 @@ func hstsMaxAge(enabled bool) int {
 
 // rateLimiter limita por IP en memoria. Con varias réplicas del Gateway se
 // moverá a Redis (uso permitido por la sección 27 de la base técnica).
-func rateLimiter(r rate.Limit, burst int) echo.MiddlewareFunc {
-	store := middleware.NewRateLimiterMemoryStoreWithConfig(middleware.RateLimiterMemoryStoreConfig{
-		Rate: r, Burst: burst, ExpiresIn: 3 * time.Minute,
-	})
-	return middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
-		Store: store,
-		IdentifierExtractor: func(c echo.Context) (string, error) {
-			return c.RealIP(), nil
-		},
-		DenyHandler: func(_ echo.Context, _ string, _ error) error {
-			return echo.NewHTTPError(http.StatusTooManyRequests, "too many requests")
-		},
-		ErrorHandler: func(_ echo.Context, _ error) error {
-			return echo.NewHTTPError(http.StatusTooManyRequests, "too many requests")
-		},
-	})
+func rateLimiter(r rate.Limit, burst int) httpx.MiddlewareFunc {
+	return httpx.RateLimiter(httpx.NewMemoryRateLimiter(r, burst, 3*time.Minute))
 }

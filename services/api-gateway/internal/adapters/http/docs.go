@@ -3,7 +3,7 @@ package http
 import (
 	"net/http"
 
-	"github.com/labstack/echo/v4"
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 
 	"github.com/ErickGuerron/Backend-Pikka/contracts/openapi"
 )
@@ -35,11 +35,11 @@ const docsCSP = "default-src 'none'; " +
 	"frame-ancestors 'none'"
 
 // registerDocs publica el contrato OpenAPI y su referencia interactiva con Scalar.
-func registerDocs(e *echo.Echo) {
-	e.GET("/openapi.yaml", func(c echo.Context) error {
+func registerDocs(e *httpx.Engine) {
+	e.GET("/openapi.yaml", func(c *httpx.Context) error {
 		return c.Blob(http.StatusOK, "application/yaml; charset=utf-8", openapi.Spec)
 	})
-	e.GET("/docs", func(c echo.Context) error {
+	e.GET("/docs", func(c *httpx.Context) error {
 		c.Response().Header().Set("Content-Security-Policy", docsCSP)
 		return c.HTML(http.StatusOK, docsPage)
 	})

@@ -16,7 +16,7 @@ import (
 	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/grpcclient"
 )
 
-// Pruebas de caracterizacion: fijan el comportamiento HTTP transversal que hoy entrega echo.
+// Pruebas de caracterizacion: fijan el comportamiento HTTP transversal que hoy entrega httpx.
 // Deben seguir pasando, sin cambios, despues de migrar el gateway a net/http.
 
 func TestParity_CORSPreflightFromAllowedOrigin(t *testing.T) {

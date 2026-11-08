@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/labstack/echo/v4"
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -32,14 +32,14 @@ type stopStatusResponse struct {
 
 // advance responde 200 con el estado nuevo. Solo PICKED_UP e IN_TRANSIT; el resto se rechaza aquí (400)
 // porque la entrega y la no entrega van por el registro de entrega, no por este endpoint.
-func (h *driverStopHandlers) advance(c echo.Context) error {
+func (h *driverStopHandlers) advance(c *httpx.Context) error {
 	var req stopStatusRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
 	}
 	target, ok := stopTargetFromRequest(req.Status)
 	if !ok {
-		return echo.NewHTTPError(http.StatusBadRequest, "status must be PICKED_UP or IN_TRANSIT")
+		return httpx.NewHTTPError(http.StatusBadRequest, "status must be PICKED_UP or IN_TRANSIT")
 	}
 
 	ctx := c.Request().Context()
@@ -53,7 +53,7 @@ func (h *driverStopHandlers) advance(c echo.Context) error {
 	}
 	if !owned {
 		// Una ruta ajena y una inexistente responden igual: no se revela qué rutas existen.
-		return echo.NewHTTPError(http.StatusNotFound, "route not found")
+		return httpx.NewHTTPError(http.StatusNotFound, "route not found")
 	}
 
 	// El primer PICKED_UP pone al repartidor ON_ROUTE antes de avanzar el pedido. Es idempotente en Driver Service.

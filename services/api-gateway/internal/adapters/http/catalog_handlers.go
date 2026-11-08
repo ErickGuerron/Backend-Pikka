@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/labstack/echo/v4"
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 
 	catalogv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/catalog/v1"
 	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/grpcclient"
@@ -85,7 +85,7 @@ type publicProductsResponse struct {
 }
 
 // listPublic devuelve el catálogo activo a cualquiera, sin token.
-func (h *catalogHandlers) listPublic(c echo.Context) error {
+func (h *catalogHandlers) listPublic(c *httpx.Context) error {
 	res, err := h.catalog.ListPublicProducts(c.Request().Context(), callMeta(c), &catalogv1.ListPublicProductsRequest{})
 	if err != nil {
 		return err
@@ -107,12 +107,12 @@ type stockMovementsResponse struct {
 }
 
 // list devuelve el catálogo. includeInactive solo lo acepta el personal; el servicio lo decide.
-func (h *catalogHandlers) list(c echo.Context) error {
+func (h *catalogHandlers) list(c *httpx.Context) error {
 	includeInactive := false
 	if raw := c.QueryParam("includeInactive"); raw != "" {
 		v, err := strconv.ParseBool(raw)
 		if err != nil {
-			return echo.NewHTTPError(http.StatusBadRequest, "includeInactive must be true or false")
+			return httpx.NewHTTPError(http.StatusBadRequest, "includeInactive must be true or false")
 		}
 		includeInactive = v
 	}
@@ -127,7 +127,7 @@ func (h *catalogHandlers) list(c echo.Context) error {
 	return c.JSON(http.StatusOK, productsResponse{Products: out})
 }
 
-func (h *catalogHandlers) get(c echo.Context) error {
+func (h *catalogHandlers) get(c *httpx.Context) error {
 	res, err := h.catalog.GetProduct(c.Request().Context(), callMeta(c), &catalogv1.GetProductRequest{Id: c.Param("id")})
 	if err != nil {
 		return err
@@ -135,7 +135,7 @@ func (h *catalogHandlers) get(c echo.Context) error {
 	return c.JSON(http.StatusOK, toProductDTO(res.GetProduct()))
 }
 
-func (h *catalogHandlers) create(c echo.Context) error {
+func (h *catalogHandlers) create(c *httpx.Context) error {
 	var req createProductRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
@@ -152,13 +152,13 @@ func (h *catalogHandlers) create(c echo.Context) error {
 	return c.JSON(http.StatusCreated, toProductDTO(res.GetProduct()))
 }
 
-func (h *catalogHandlers) setActive(c echo.Context) error {
+func (h *catalogHandlers) setActive(c *httpx.Context) error {
 	var req setActiveRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
 	}
 	if req.Active == nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "active is required")
+		return httpx.NewHTTPError(http.StatusBadRequest, "active is required")
 	}
 	res, err := h.catalog.SetProductActive(c.Request().Context(), callMeta(c), &catalogv1.SetProductActiveRequest{
 		Id:     c.Param("id"),
@@ -171,7 +171,7 @@ func (h *catalogHandlers) setActive(c echo.Context) error {
 }
 
 // adjustStock registra una entrada (RESTOCK) o un ajuste manual con motivo (ADJUSTMENT).
-func (h *catalogHandlers) adjustStock(c echo.Context) error {
+func (h *catalogHandlers) adjustStock(c *httpx.Context) error {
 	var req adjustStockRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
@@ -192,7 +192,7 @@ func (h *catalogHandlers) adjustStock(c echo.Context) error {
 	return c.JSON(http.StatusCreated, toStockMovementDTO(res.GetMovement()))
 }
 
-func (h *catalogHandlers) movements(c echo.Context) error {
+func (h *catalogHandlers) movements(c *httpx.Context) error {
 	res, err := h.catalog.ListStockMovements(c.Request().Context(), callMeta(c), &catalogv1.ListStockMovementsRequest{ProductId: c.Param("id")})
 	if err != nil {
 		return err
@@ -212,7 +212,7 @@ func movementTypeFromREST(raw string) (catalogv1.StockMovementType, error) {
 		return catalogv1.StockMovementType_STOCK_MOVEMENT_TYPE_ADJUSTMENT, nil
 	default:
 		return catalogv1.StockMovementType_STOCK_MOVEMENT_TYPE_UNSPECIFIED,
-			echo.NewHTTPError(http.StatusBadRequest, "type must be RESTOCK or ADJUSTMENT")
+			httpx.NewHTTPError(http.StatusBadRequest, "type must be RESTOCK or ADJUSTMENT")
 	}
 }
 
