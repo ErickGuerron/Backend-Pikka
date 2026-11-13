@@ -31,7 +31,11 @@ func (ZoneCapacityPlanner) Plan(orders []PlannableOrder, maxPerRoute int) ([]Rou
 	routes := []Route{}
 	sorted := slices.Clone(orders)
 	slices.SortFunc(sorted, func(a, b PlannableOrder) int {
-		return cmp.Or(cmp.Compare(a.ZoneID, b.ZoneID), cmp.Compare(a.OrderID, b.OrderID))
+		return cmp.Or(
+			cmp.Compare(a.ZoneID, b.ZoneID),
+			cmp.Compare(deadline(a), deadline(b)),
+			cmp.Compare(a.OrderID, b.OrderID),
+		)
 	})
 
 	chunk := 0
@@ -50,6 +54,13 @@ func (ZoneCapacityPlanner) Plan(orders []PlannableOrder, maxPerRoute int) ([]Rou
 		route.Stops = append(route.Stops, RouteStop{OrderID: o.OrderID, ZoneID: o.ZoneID, Address: o.Address, Sequence: len(route.Stops) + 1})
 	}
 	return routes, nil
+}
+
+func deadline(o PlannableOrder) string {
+	if o.WindowEnd == "" {
+		return "24:00"
+	}
+	return o.WindowEnd
 }
 
 func validateOrders(orders []PlannableOrder) error {

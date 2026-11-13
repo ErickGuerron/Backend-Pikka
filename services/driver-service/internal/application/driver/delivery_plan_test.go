@@ -10,13 +10,12 @@ import (
 
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/adapters/memory"
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/application/driver"
-	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/application/ports"
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/domain"
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/domain/domaintest"
 )
 
 // Plan: "confirmación simultánea" de la misma parada.
-func TestPlan_RegisterDelivery_ConcurrentSameStop_ExactlyOneSucceeds(t *testing.T) {
+func TestPlan_RegisterDelivery_ConcurrentSameStop_PersistsOnce(t *testing.T) {
 	const callers = 16
 	repo := memory.NewDriverRepository()
 	recorder := memory.NewDeliveryRecorder()
@@ -37,17 +36,9 @@ func TestPlan_RegisterDelivery_ConcurrentSameStop_ExactlyOneSucceeds(t *testing.
 	close(start)
 	wg.Wait()
 
-	ok, dup := 0, 0
 	for _, err := range errs {
-		switch {
-		case err == nil:
-			ok++
-		case assert.ErrorIs(t, err, ports.ErrDeliveryAlreadyRecorded):
-			dup++
-		}
+		require.NoError(t, err)
 	}
-	assert.Equal(t, 1, ok)
-	assert.Equal(t, callers-1, dup)
 	assert.Equal(t, 1, recorder.Count())
 }
 

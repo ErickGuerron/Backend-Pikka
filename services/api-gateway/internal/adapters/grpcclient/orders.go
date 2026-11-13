@@ -164,6 +164,12 @@ func (o *Orders) ListDriverRouteStops(ctx context.Context, m CallMeta, req *orde
 	return o.client.ListDriverRouteStops(ctx, req)
 }
 
+func (o *Orders) ReorderDriverRoute(ctx context.Context, m CallMeta, req *ordersv1.ReorderDriverRouteRequest) (*ordersv1.ReorderDriverRouteResponse, error) {
+	ctx, cancel := o.outgoing(ctx, m)
+	defer cancel()
+	return o.client.ReorderDriverRoute(ctx, req)
+}
+
 // ListOrders devuelve los pedidos de todos los clientes para el personal.
 func (o *Orders) ListOrders(ctx context.Context, m CallMeta, req *ordersv1.ListOrdersRequest) (*ordersv1.ListOrdersResponse, error) {
 	ctx, cancel := o.outgoing(ctx, m)

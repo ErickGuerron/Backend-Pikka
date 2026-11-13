@@ -53,9 +53,12 @@ func TestADR0006_RecargoEsExactamenteElQuincePorCientoYSeAplicaUnaSolaVez(t *tes
 	assert.True(t, amount.Equal(want), "recargo %s, esperado exactamente 15 %% de %s = %s", amount, base, want)
 	assert.True(t, balanceOf(t, pool, customer).Equal(want), "el saldo es ese recargo")
 
-	// Una segunda vez por el mismo pedido: la parada ya esta cerrada y nada se vuelve a cobrar.
-	_, err = closeStop.Run(ctx, cmd)
-	assert.Error(t, err)
+	// Un reintento equivalente devuelve el mismo pedido sin cambiar su versión ni el saldo.
+	first, err := orders.GetForCustomer(ctx, placed.ID, uuid.MustParse(customer))
+	require.NoError(t, err)
+	replayed, err := closeStop.Run(ctx, cmd)
+	require.NoError(t, err)
+	assert.Equal(t, first.Version, replayed.Version)
 	assert.Equal(t, 1, countRows(t, pool, `SELECT count(*) FROM surcharges WHERE order_id = $1`, uuid.MustParse(placed.ID)))
 	assert.True(t, balanceOf(t, pool, customer).Equal(want), "el saldo no se duplica")
 

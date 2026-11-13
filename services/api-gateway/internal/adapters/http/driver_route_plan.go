@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -24,15 +25,16 @@ type RoutePlanner interface {
 }
 
 // driverRoutePlanResponse es GET /api/v1/drivers/me/route/plan. Order trae los ids de las paradas activas en
-// el orden óptimo; Geometry es el camino por calles como pares [lat, lon] para dibujarlo en el mapa.
+// el orden del recorrido; Geometry es el camino por calles como pares [lat, lon] para dibujarlo en el mapa.
 type driverRoutePlanResponse struct {
 	Order           []string     `json:"order"`
 	DistanceMeters  float64      `json:"distanceMeters"`
 	DurationSeconds float64      `json:"durationSeconds"`
 	Geometry        [][2]float64 `json:"geometry"`
+	AtRisk          []string     `json:"atRisk,omitempty"`
 }
 
-// plan responde el orden óptimo de las paradas activas del repartidor desde su posición (lat, lon de la
+// plan dibuja el recorrido de las paradas activas del repartidor desde su posición (lat, lon de la
 // consulta). El origen es un dato personal: no se registra en logs. Sin ruta o sin paradas activas la
 // respuesta es vacía y no se llama al planificador.
 func (h *driverRouteHandlers) plan(c *httpx.Context) error {
@@ -64,15 +66,17 @@ func (h *driverRouteHandlers) plan(c *httpx.Context) error {
 	if len(active) == 0 {
 		return c.JSON(http.StatusOK, emptyDriverRoutePlan())
 	}
-	if h.planner == nil {
+	if h.planner == nil && h.orderedPlanner == nil {
 		return httpx.NewHTTPError(http.StatusServiceUnavailable, "route planning is not configured")
 	}
 
-	points := make([]osrm.Point, 0, len(active))
-	for _, s := range active {
-		points = append(points, osrm.Point{Latitude: s.GetLatitude(), Longitude: s.GetLongitude()})
+	points := routeStopPoints(active)
+	var trip osrm.Trip
+	if h.orderedPlanner != nil {
+		trip, err = h.orderedPlanner.InOrder(ctx, origin, points)
+	} else {
+		trip, err = h.planner.Optimize(ctx, origin, points)
 	}
-	trip, err := h.planner.Optimize(ctx, origin, points)
 	if errors.Is(err, osrm.ErrNoRoute) || errors.Is(err, osrm.ErrInvalidPoint) {
 		return httpx.NewHTTPError(http.StatusUnprocessableEntity, "no road route between the driver and the stops")
 	}
@@ -90,11 +94,24 @@ func (h *driverRouteHandlers) plan(c *httpx.Context) error {
 	for _, p := range trip.Geometry {
 		geometry = append(geometry, [2]float64{p.Latitude, p.Longitude})
 	}
+	var atRisk []string
+	if h.orderedPlanner != nil && h.timezone != nil {
+		feasible, err := windowFeasibility(time.Now(), h.timezone, active, trip.LegSeconds)
+		if err != nil {
+			return err
+		}
+		for _, id := range order {
+			if !feasible[id] {
+				atRisk = append(atRisk, id)
+			}
+		}
+	}
 	return c.JSON(http.StatusOK, driverRoutePlanResponse{
 		Order:           order,
 		DistanceMeters:  trip.DistanceMeters,
 		DurationSeconds: trip.DurationSeconds,
 		Geometry:        geometry,
+		AtRisk:          atRisk,
 	})
 }
 

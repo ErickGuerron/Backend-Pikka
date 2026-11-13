@@ -140,6 +140,23 @@ func TestReviewCorrectAddressThatNowLocatesAndCoversBecomesPending(t *testing.T)
 	}
 }
 
+func TestReviewCorrectCanChangeUnassignedOrderBeforeDispatch(t *testing.T) {
+	uc, repo, _, _ := reviewFixture(t)
+	address := "Calle Germán Alemán 555, Quito"
+	cmd := operatorCmd(ActionCorrect, "Dirección confirmada con el cliente")
+	cmd.OrderID = repo.current.ID
+	cmd.Correction = &Correction{Address: &address}
+	saved, err := uc.Run(context.Background(), cmd)
+	if err != nil || saved.Address != address || saved.Status != domain.StatusPending {
+		t.Fatalf("corrected order: status = %s, address = %q, err = %v", saved.Status, saved.Address, err)
+	}
+
+	repo.current.Status, repo.current.RouteID = domain.StatusRouteAssigned, "route-1"
+	if _, err := uc.Run(context.Background(), cmd); !errors.Is(err, domain.ErrOrderNotInReview) {
+		t.Fatalf("assigned order: got %v, want ErrOrderNotInReview", err)
+	}
+}
+
 func TestReviewCorrectKeepsCustomerContactDetails(t *testing.T) {
 	uc, repo, _, _ := reviewFixture(t, domain.ReviewAddressNotLocated)
 	address := "Calle Germán Alemán 555, Quito"

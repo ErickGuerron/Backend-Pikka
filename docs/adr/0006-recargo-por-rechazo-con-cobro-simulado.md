@@ -35,20 +35,20 @@ de tarjeta.
   que un operador valide con el cliente, o determine por qué el repartidor no
   está en la dirección del pedido (por ejemplo, el cliente está fuera de casa y
   no hay nadie que reciba). Ningún cobro simulado se registra en este estado.
-  Si el repartidor la reporta en el punto de entrega, el recargo se cobra; si
-  el cliente la avisa antes de que el pedido salga, no se cobra y puede
-  reprogramar la fecha. Si el repartidor ya va en camino y el cliente da un
-  motivo, el pedido se reasigna con un cobro adicional por el viaje del
-  repartidor, calculado por distancia con el precio de la gasolina como
-  referencia y ajustable por un administrador. Ese cobro se incluye también en el
-  caso de dirección errónea.
+  El GPS del repartidor sirve como evidencia para la verificación, incluso
+  dentro del radio. Si el cliente avisa antes del despacho, el operador puede
+  corregir la dirección o la fecha sin cargo. Si la parada se cerró como no
+  entregada por dirección incorrecta, el operador puede reprogramarla antes
+  de resolver el recargo. Se guarda la tarifa fija de viaje vigente, configurada
+  por un administrador. El cálculo por distancia y gasolina queda pendiente.
   **Resolución del operador (decisión D4):** el operador decide una de dos
   cosas, siempre con un motivo de 5 a 300 caracteres que queda auditado junto
   con su identidad y la hora. `CONFIRM`: el cliente es responsable, el recargo
-  sale de verificación y sigue el flujo normal (el 15 % ya fijado, que entra al saldo en ese momento).
+  sale de verificación y entra al saldo en ese momento. Si hubo reprogramación,
+  el recargo incluye el 15 % y el viaje en un solo cobro.
   `WAIVE`: el cliente no es responsable y el recargo se dispensa, sin cobro. Solo
   se resuelve una vez. Mientras espera no se cobra ni se notifica como
-  definitivo. El cobro adicional por reasignación se define aparte (tarea T5).
+  definitivo.
 - **Reincidencia** (plazo de reincidencia, distinto del plazo de pago de la sección 5):
   la primera no entrega causada por el cliente inicia un plazo de 2 semanas. Una
   tercera dentro de ese plazo marca al cliente como reincidente y el operador

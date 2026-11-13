@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -81,6 +82,13 @@ func translate(err error) (int, APIError) {
 	}
 	if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {
 		if m, ok := grpcToHTTP[st.Code()]; ok {
+			if st.Code() == codes.FailedPrecondition {
+				for _, detail := range st.Details() {
+					if info, ok := detail.(*errdetails.ErrorInfo); ok && info.GetDomain() == "driver-service" {
+						m.code = info.GetReason()
+					}
+				}
+			}
 			return m.status, APIError{Code: m.code, Message: st.Message()}
 		}
 	}

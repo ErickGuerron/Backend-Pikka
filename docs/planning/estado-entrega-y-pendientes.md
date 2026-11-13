@@ -2,6 +2,16 @@
 
 Fecha de verificación: 2026-11-08. Rama de trabajo: `fix/integration-test-database` (cambios sin commit).
 
+## Actualización de implementación · 2026-11-13
+
+- La base local `last_mile_test` se prepara con `make test-db` o al ejecutar `make test-integration`. La suite de zonas usa esquemas aislados y se agregó a CI.
+- Un reintento del mismo resultado y motivo reutiliza la primera evidencia de la parada. El recargo y la promoción de la cola se procesan al cerrar el pedido.
+- Se registra una entrega fuera de horario con motivo. La ventana usa `OPERATING_TIMEZONE` y el radio sigue siendo obligatorio para `DELIVERED`.
+- El repartidor puede mover una parada activa al comienzo con motivo auditado. Se bloquea el cambio si vuelve inalcanzable una ventana que la secuencia vigente todavía puede cumplir. La estimación incluye cinco minutos de servicio por parada.
+- `WRONG_ADDRESS` requiere confirmación o dispensa de un operador, incluso si el GPS está dentro del radio. El panel está en Excepciones. El operador puede corregir un pedido aún sin asignar desde Pedidos, sin cargo. Para una parada cerrada por dirección incorrecta puede reprogramar el pedido antes de resolver el recargo. Se congela la tarifa fija de viaje configurada por ADMIN y se suma al mismo recargo al confirmarlo. Si se dispensa, no se cobra.
+- La prueba HTTP contra `last_mile_test` confirmó el login de cliente y repartidor, posición en el seguimiento, paradas anteriores, radio, reintento y justificación fuera de horario. OSRM 5.27.1 con un mapa sintético devolvió geometría y ETA, y el orden persistido cambió las paradas anteriores del cliente. Sigue pendiente el recorrido con el mapa completo de Ecuador y un dispositivo. El informe del 8 de noviembre se conserva debajo como registro histórico.
+- Pasaron las suites unitarias de Go y las de integración de Auth, Orders, Drivers y Zones en `last_mile_test`. Pasaron `buf lint`, `buf breaking`, 35 pruebas web de Playwright con Gateway simulado y 335 pruebas de la app móvil.
+
 ## 1. Incidente de datos: pedidos borrados en la base de desarrollo
 
 - Ejecutar `make test-integration` contra la base de desarrollo `last_mile` ejecutó `TRUNCATE ... orders, customers`, que es borrado físico. Resultado: `orders.orders` quedó en 0 filas.

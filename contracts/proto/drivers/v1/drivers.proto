@@ -228,6 +228,8 @@ message RegisterDeliveryRequest {
   double longitude = 8;
   // Opcional: URL de la foto, vacía si no hay.
   string photo_url = 9;
+  // Justificación del repartidor si entrega fuera de la ventana horaria.
+  string outside_window_reason = 10;
 }
 
 message RegisterDeliveryResponse {

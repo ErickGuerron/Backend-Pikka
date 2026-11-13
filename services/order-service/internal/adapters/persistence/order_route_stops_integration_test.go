@@ -74,3 +74,45 @@ func TestCountStopsBeforeDeOtroClienteNoExiste(t *testing.T) {
 
 	assert.ErrorIs(t, err, domain.ErrOrderNotFound)
 }
+
+func TestReorderDriverRoutePreservesClosedSlotsAndUpdatesCustomerPosition(t *testing.T) {
+	store, pool := setup(t)
+	ctx := context.Background()
+	customer := newCustomer(t, pool)
+	product := newProduct(t, store, "Manzana", stock(10))
+	orders := persistence.NewOrderRepository(pool)
+	zoneID := uuid.NewString()
+	var stops []domain.Order
+	for i := 1; i <= 3; i++ {
+		draft := newOrder(t, customer)
+		draft.ZoneID = zoneID
+		placed, err := store.PlaceOrder(ctx, draft, []domain.OrderLine{lineFor(t, product, 1)}, nil, nil)
+		require.NoError(t, err)
+		assigned, err := orders.AssignToRoute(ctx, []string{placed.ID}, func(o domain.Order) (domain.Order, error) {
+			return o.AssignToRoute(testRoute, i)
+		})
+		require.NoError(t, err)
+		stops = append(stops, assigned[0])
+	}
+	_, err := pool.Exec(ctx, `UPDATE orders SET status = 'DELIVERED' WHERE id = $1`, stops[1].ID)
+	require.NoError(t, err)
+
+	proposed := []uuid.UUID{uuid.MustParse(stops[2].ID), uuid.MustParse(stops[0].ID)}
+	versions := map[string]int64{stops[0].ID: stops[0].Version, stops[2].ID: stops[2].Version}
+	actor := uuid.NewString()
+	ok, err := orders.ReorderDriverRoute(ctx, testRoute, actor, "Cliente disponible ahora", proposed, versions)
+	require.NoError(t, err)
+	require.True(t, ok)
+	got, err := orders.ListDriverRouteStops(ctx, testRoute)
+	require.NoError(t, err)
+	require.Len(t, got, 3)
+	assert.Equal(t, []string{stops[2].ID, stops[1].ID, stops[0].ID}, []string{got[0].ID, got[1].ID, got[2].ID})
+	assert.Equal(t, 2, got[1].StopSequence)
+	ahead, err := orders.CountStopsBefore(ctx, stops[2].ID, uuid.MustParse(customer))
+	require.NoError(t, err)
+	assert.Zero(t, ahead)
+	ok, err = orders.ReorderDriverRoute(ctx, testRoute, actor, "Versión anterior", proposed, versions)
+	require.NoError(t, err)
+	assert.False(t, ok)
+	assert.Equal(t, 1, countRows(t, pool, `SELECT count(*) FROM driver_route_reorders WHERE actor_id = $1`, actor))
+}

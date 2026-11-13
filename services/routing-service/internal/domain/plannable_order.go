@@ -11,6 +11,8 @@ type PlannableOrder struct {
 	ZoneID  string
 	// Address is the delivery address as Order Service stored it. It is carried to the stop.
 	Address string
+	// WindowEnd is the local HH:mm delivery deadline.
+	WindowEnd string
 }
 
 // Validate comprueba que el pedido tenga order_id y zone_id no vacios.

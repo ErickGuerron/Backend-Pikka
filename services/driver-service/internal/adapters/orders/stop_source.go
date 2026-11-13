@@ -18,19 +18,20 @@ var identityKeys = []string{"x-request-id", "x-user-id", "x-user-role"}
 
 // StopSource implementa la fuente de paradas con Order Service (ListDriverRouteStops).
 type StopSource struct {
-	client  ordersv1.OrderServiceClient
-	timeout time.Duration
+	client   ordersv1.OrderServiceClient
+	timeout  time.Duration
+	timezone *time.Location
 }
 
 // NewStopSource crea la fuente sobre un cliente existente. timeout acota cada llamada.
-func NewStopSource(client ordersv1.OrderServiceClient, timeout time.Duration) *StopSource {
-	return &StopSource{client: client, timeout: timeout}
+func NewStopSource(client ordersv1.OrderServiceClient, timeout time.Duration, timezone *time.Location) *StopSource {
+	return &StopSource{client: client, timeout: timeout, timezone: timezone}
 }
 
 // Stop devuelve la parada stopID de la ruta routeID. La identidad del repartidor llega en la metadata
 // entrante y se reenvia tal cual: Order Service solo lee rutas con rol DRIVER. Una parada que no esta en
 // la ruta responde ports.ErrStopNotFound.
-func (s *StopSource) Stop(ctx context.Context, routeID, stopID string, at time.Time) (domain.Stop, error) {
+func (s *StopSource) Stop(ctx context.Context, routeID, stopID string) (domain.Stop, error) {
 	ctx, cancel := context.WithTimeout(forwardIdentity(ctx), s.timeout)
 	defer cancel()
 	res, err := s.client.ListDriverRouteStops(ctx, &ordersv1.ListDriverRouteStopsRequest{RouteId: routeID})
@@ -43,7 +44,7 @@ func (s *StopSource) Stop(ctx context.Context, routeID, stopID string, at time.T
 		}
 		stop, err := domain.NewStop(
 			domain.GeoPoint{Latitude: row.GetLatitude(), Longitude: row.GetLongitude()},
-			row.GetDeliveryDate(), row.GetWindowStart(), row.GetWindowEnd(), at,
+			row.GetDeliveryDate(), row.GetWindowStart(), row.GetWindowEnd(), s.timezone,
 		)
 		if err != nil {
 			return domain.Stop{}, fmt.Errorf("order service sent an invalid stop: %w", err)

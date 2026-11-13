@@ -223,7 +223,7 @@ func (h *ordersHandlers) review(c *httpx.Context) error {
 	}
 	action, ok := reviewActionValue(req.Action)
 	if !ok {
-		return httpx.NewHTTPError(http.StatusBadRequest, "action must be CONFIRM, CORRECT or REJECT")
+		return httpx.NewHTTPError(http.StatusBadRequest, "invalid review action")
 	}
 	res, err := h.orders.ReviewOrder(c.Request().Context(), callMeta(c), &ordersv1.ReviewOrderRequest{
 		Id:     c.Param("id"),
@@ -286,6 +286,8 @@ func reviewActionValue(action string) (ordersv1.ReviewAction, bool) {
 		return ordersv1.ReviewAction_REVIEW_ACTION_CORRECT, true
 	case "REJECT":
 		return ordersv1.ReviewAction_REVIEW_ACTION_REJECT, true
+	case "REASSIGN_WRONG_ADDRESS":
+		return ordersv1.ReviewAction_REVIEW_ACTION_REASSIGN_WRONG_ADDRESS, true
 	default:
 		return ordersv1.ReviewAction_REVIEW_ACTION_UNSPECIFIED, false
 	}

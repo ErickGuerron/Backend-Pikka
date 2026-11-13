@@ -102,6 +102,49 @@ func TestSegundoCobroPorReasignacionDelMismoPedidoSeRechazaYNoSumaSaldo(t *testi
 	assert.True(t, balanceOf(t, pool, customer).Equal(decimal.RequireFromString("2.50")))
 }
 
+func TestReprogramacionPorDireccionIncorrectaSumaElViajeEnUnSoloRecargo(t *testing.T) {
+	store, pool := setup(t)
+	ctx := context.Background()
+	orders := persistence.NewOrderRepository(pool)
+	reassignments := persistence.NewReassignmentRepository(pool)
+	surcharges := persistence.NewSurchargeRepository(pool)
+	customer := newCustomer(t, pool)
+	id := placedOrder(t, store, pool, customer)
+	_, err := orders.AssignToRoute(ctx, []string{id}, func(current domain.Order) (domain.Order, error) {
+		return current.AssignToRoute(testRoute, 1)
+	})
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `UPDATE orders SET status = 'NOT_DELIVERED' WHERE id = $1`, id)
+	require.NoError(t, err)
+	setFee(t, reassignments, "2.50")
+	at := time.Now().UTC()
+	pending, _, err := surcharges.RecordSurchargeIncident(ctx, domain.Surcharge{
+		CustomerID: customer, OrderID: id, Reason: "WRONG_ADDRESS", Status: domain.SurchargePendingVerification,
+		Amount: decimal.NewNullDecimal(decimal.RequireFromString("3.00")), CreatedAt: at,
+	})
+	require.NoError(t, err)
+
+	saved, err := orders.ReassignWrongAddress(ctx, id, uuid.MustParse(reassignmentAdmin), "Nueva dirección acordada",
+		func(current domain.Order) (domain.Order, *domain.Notification, error) {
+			current.Status = domain.StatusPending
+			return current, nil, nil
+		})
+	require.NoError(t, err)
+	assert.Empty(t, saved.RouteID)
+	assert.Zero(t, saved.StopSequence)
+	assert.True(t, balanceOf(t, pool, customer).IsZero())
+
+	_, err = reassignments.ApplyReassignmentCharge(ctx, id, buildReassignment(id))
+	assert.ErrorIs(t, err, domain.ErrReassignmentChargeExists)
+	resolved, err := surcharges.ResolveSurchargeVerification(ctx, pending.ID, func(current domain.Surcharge) (domain.Surcharge, error) {
+		return current.Resolve(domain.DecisionConfirm, reassignmentAdmin, "Cliente confirmó la dirección", at)
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "5.50", resolved.Amount.Decimal.StringFixed(2))
+	assert.Equal(t, "5.50", balanceOf(t, pool, customer).StringFixed(2))
+	assert.Equal(t, 0, countRows(t, pool, `SELECT count(*) FROM reassignment_charges`))
+}
+
 func TestCobroPorReasignacionDePedidoInexistente(t *testing.T) {
 	_, pool := setup(t)
 	repo := persistence.NewReassignmentRepository(pool)

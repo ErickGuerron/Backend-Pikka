@@ -70,6 +70,26 @@ func TestRegisterDeliveryNoEntregaLejosNoSeRechaza(t *testing.T) {
 	assert.False(t, got.Arrival.Valid())
 }
 
+func TestRegisterDeliveryOutsideWindowRequiresAnAuditedReason(t *testing.T) {
+	repo := memory.NewDriverRepository()
+	recorder := memory.NewDeliveryRecorder()
+	onRoute(t, repo, "d1", "route-1")
+	uc := driver.NewDeliveries(repo, recorder, 50)
+	ctx := context.Background()
+	in := deliveryInput("stop-1", nearStop)
+	for _, at := range []time.Time{stop.Window.Start.Add(-time.Second), stop.Window.End} {
+		in.At = at
+		_, err := uc.RegisterDelivery(ctx, "d1", "route-1", stop, in)
+		require.ErrorIs(t, err, domain.ErrOutsideWindowReasonRequired)
+		assert.Zero(t, recorder.Count())
+	}
+	in.OutsideWindowReason = "  El cliente pidió esperar.  "
+	saved, err := uc.RegisterDelivery(ctx, "d1", "route-1", stop, in)
+	require.NoError(t, err)
+	assert.False(t, saved.Arrival.WithinWindow)
+	assert.Equal(t, "El cliente pidió esperar.", saved.Record.OutsideWindowReason)
+}
+
 func TestRegisterDeliveryUsaElRadioConfigurado(t *testing.T) {
 	repo := memory.NewDriverRepository()
 	onRoute(t, repo, "d1", "route-1")
@@ -108,16 +128,22 @@ func TestRegisterDeliveryRutaDistinta(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrRouteMismatch)
 }
 
-func TestRegisterDeliveryParadaDuplicada(t *testing.T) {
+func TestRegisterDeliveryReutilizaLaEvidenciaOriginal(t *testing.T) {
 	repo := memory.NewDriverRepository()
 	onRoute(t, repo, "d1", "route-1")
 	uc := driver.NewDeliveries(repo, memory.NewDeliveryRecorder(), 50)
 	ctx := context.Background()
-	_, err := uc.RegisterDelivery(ctx, "d1", "route-1", stop, deliveryInput("stop-1", nearStop))
+	first, err := uc.RegisterDelivery(ctx, "d1", "route-1", stop, deliveryInput("stop-1", nearStop))
 	require.NoError(t, err)
 
-	_, err = uc.RegisterDelivery(ctx, "d1", "route-1", stop, deliveryInput("stop-1", nearStop))
+	retry := deliveryInput("stop-1", domain.GeoPoint{Latitude: 0, Longitude: 0})
+	retry.At = retry.At.Add(time.Hour)
+	saved, err := uc.RegisterDelivery(ctx, "d1", "route-1", stop, retry)
+	require.NoError(t, err)
+	assert.Equal(t, first, saved)
 
+	retry.Outcome, retry.Reason = domain.OutcomeNotDelivered, domain.ReasonClientAbsent
+	_, err = uc.RegisterDelivery(ctx, "d1", "route-1", stop, retry)
 	assert.ErrorIs(t, err, ports.ErrDeliveryAlreadyRecorded)
 }
 

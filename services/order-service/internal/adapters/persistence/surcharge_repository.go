@@ -154,11 +154,20 @@ func (r *SurchargeRepository) ResolveSurchargeVerification(ctx context.Context, 
 	if err != nil {
 		return domain.Surcharge{}, err
 	}
+	if next.Status == domain.SurchargePending && current.Reason == "WRONG_ADDRESS" {
+		var fee decimal.Decimal
+		err := tx.QueryRow(ctx, `SELECT travel_fee FROM wrong_address_reassignments WHERE order_id = $1`, current.OrderID).Scan(&fee)
+		if err == nil {
+			next.Amount = decimal.NewNullDecimal(next.Amount.Decimal.Add(fee))
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return domain.Surcharge{}, err
+		}
+	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE surcharges
-		   SET status = $2, resolved_by = $3, resolution_reason = $4, resolved_at = $5
+		   SET status = $2, resolved_by = $3, resolution_reason = $4, resolved_at = $5, amount = $6
 		 WHERE id = $1`,
-		id, string(next.Status), next.ResolvedBy, next.ResolutionReason, next.ResolvedAt); err != nil {
+		id, string(next.Status), next.ResolvedBy, next.ResolutionReason, next.ResolvedAt, next.Amount); err != nil {
 		return domain.Surcharge{}, fmt.Errorf("resolve surcharge: update: %w", err)
 	}
 	// Confirming a priced incident makes it owed now, in the same transaction as the decision.

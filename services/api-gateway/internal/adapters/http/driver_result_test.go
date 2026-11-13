@@ -168,6 +168,14 @@ func TestDriverResult_OrderFailureAfterDriverAcceptedIsReportedNotSwallowed(t *t
 	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	require.NotNil(t, drivers.registerReq, "the delivery was accepted by driver service before the failure")
 	assert.NotEqual(t, http.StatusOK, rec.Code)
+
+	orders.outcomeErr = nil
+	rec = do(stopRouter(orders, drivers), http.MethodPost, resultPath, resultDeliveredBody, driverStopHeaders(t))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	orders.routeStopsRes = stopsWith(ordersv1.OrderStatus_ORDER_STATUS_DELIVERED)
+	rec = do(stopRouter(orders, drivers), http.MethodPost, resultPath, resultDeliveredBody, driverStopHeaders(t))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 }
 
 func TestDriverResult_NonDriverRolesAre403(t *testing.T) {

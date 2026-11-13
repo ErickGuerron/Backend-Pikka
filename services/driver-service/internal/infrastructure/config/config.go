@@ -19,6 +19,7 @@ type Config struct {
 	// ArrivalRadiusMeters es la distancia máxima, en metros, entre el GPS del repartidor y
 	// la dirección de la parada para que la llegada cuente como válida.
 	ArrivalRadiusMeters float64
+	OperatingTimezone   string
 	// OrdersGRPCAddr es la direccion de Order Service (ListDriverRouteStops). Vacia deja la
 	// fuente de paradas sin configurar y RegisterDelivery responde UNIMPLEMENTED.
 	OrdersGRPCAddr string
@@ -58,6 +59,7 @@ func Load() (Config, error) {
 		HTTPPort:            httpPort,
 		GRPCPort:            grpcPort,
 		ArrivalRadiusMeters: radius,
+		OperatingTimezone:   getEnv("OPERATING_TIMEZONE", "America/Guayaquil"),
 		OrdersGRPCAddr:      os.Getenv("ORDERS_GRPC_ADDR"),
 		Postgres: PostgresConfig{
 			Host:     getEnv("POSTGRES_HOST", "localhost"),

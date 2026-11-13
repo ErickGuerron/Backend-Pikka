@@ -174,6 +174,12 @@ queda auditado y no borra los recargos extra ya cobrados.
 
 ## F6. Cobro adicional por reasignación (T5)
 
+**Actualización 2026-11-13.** Si el operador reprograma una entrega fallida por
+`WRONG_ADDRESS`, se conserva la tarifa fija vigente como evidencia de la
+reasignación. Al confirmar la incidencia, el viaje se incluye en el mismo
+recargo. Dispensarla elimina el cobro. La fórmula por distancia y gasolina
+sigue sin definirse.
+
 **Estado:** implementada (Backend-Pikka#100) con el enfoque simple: **monto fijo**, sin gasolina ni distancias. Un ADMIN define la tarifa con motivo auditado (`PUT /api/v1/settings/reassignment-fee`, historial en `reassignment_fees`); ADMIN u OPERATOR la cobran una vez por pedido (`POST /api/v1/orders/{id}/reassignment-charge`). El monto nunca se envía y sin tarifa definida no se cobra. El cobro suma al saldo, entra al barrido de 14 días y se paga con el resto. Pendiente: aviso al cliente de este cobro y un posible tope de la tarifa.
 
 **Qué es.** El ADR 0006 (dirección incorrecta) dice que si el repartidor ya va en camino y el cliente da un motivo, el

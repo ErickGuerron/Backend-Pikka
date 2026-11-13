@@ -17,19 +17,20 @@ import (
 // stopResultRequest es el resultado que el repartidor registra al cerrar una parada. La ubicación GPS
 // es obligatoria: Driver Service la compara con la dirección de la parada (ADR 0007, decisión D1).
 type stopResultRequest struct {
-	Outcome   string   `json:"outcome"`
-	Reason    string   `json:"reason"`
-	Latitude  *float64 `json:"latitude"`
-	Longitude *float64 `json:"longitude"`
+	Outcome             string   `json:"outcome"`
+	Reason              string   `json:"reason"`
+	Latitude            *float64 `json:"latitude"`
+	Longitude           *float64 `json:"longitude"`
+	OutsideWindowReason string   `json:"outsideWindowReason"`
 }
 
 // result cierra una parada de la ruta del repartidor autenticado como DELIVERED o NOT_DELIVERED.
 // Orden fijo, pensado para no dejar un registro de entrega aceptado sin cierre del pedido:
-//  1. la parada debe estar IN_TRANSIT (si no, nada se registra);
+//  1. la parada debe estar IN_TRANSIT o tener el mismo resultado ya registrado;
 //  2. Driver Service registra y verifica la llegada (si rechaza, el pedido no se toca);
 //  3. Order Service cierra el pedido.
 //
-// Si el paso 3 falla después del 2, la respuesta es de error y no se reintenta a ciegas.
+// Si el paso 3 falla, un reintento equivalente reutiliza el registro original.
 func (h *driverStopHandlers) result(c *httpx.Context) error {
 	var req stopResultRequest
 	if err := bindJSON(c, &req); err != nil {
@@ -64,7 +65,10 @@ func (h *driverStopHandlers) result(c *httpx.Context) error {
 	if !found {
 		return httpx.NewHTTPError(http.StatusNotFound, "stop not found")
 	}
-	if st != ordersv1.OrderStatus_ORDER_STATUS_IN_TRANSIT {
+	if st != ordersv1.OrderStatus_ORDER_STATUS_IN_TRANSIT && st != outcome {
+		if st == ordersv1.OrderStatus_ORDER_STATUS_DELIVERED || st == ordersv1.OrderStatus_ORDER_STATUS_NOT_DELIVERED {
+			return status.Error(codes.AlreadyExists, "delivery already recorded for this stop")
+		}
 		return status.Error(codes.FailedPrecondition, "stop must be IN_TRANSIT to record its result")
 	}
 
@@ -72,16 +76,18 @@ func (h *driverStopHandlers) result(c *httpx.Context) error {
 	if err != nil {
 		return err
 	}
-	if _, err := h.drivers.RegisterDelivery(ctx, m, &driversv1.RegisterDeliveryRequest{
-		DriverId:   me.GetDriver().GetId(),
-		RouteId:    routeID,
-		StopId:     stopID,
-		Outcome:    req.Outcome,
-		Reason:     req.Reason,
-		RecordedAt: time.Now().UTC().Format(time.RFC3339),
-		Latitude:   *req.Latitude,
-		Longitude:  *req.Longitude,
-	}); err != nil {
+	registration, err := h.drivers.RegisterDelivery(ctx, m, &driversv1.RegisterDeliveryRequest{
+		DriverId:            me.GetDriver().GetId(),
+		RouteId:             routeID,
+		StopId:              stopID,
+		Outcome:             req.Outcome,
+		Reason:              req.Reason,
+		RecordedAt:          time.Now().UTC().Format(time.RFC3339),
+		Latitude:            *req.Latitude,
+		Longitude:           *req.Longitude,
+		OutsideWindowReason: req.OutsideWindowReason,
+	})
+	if err != nil {
 		if status.Code(err) == codes.Unimplemented {
 			// Driver Service no tiene aún el origen de paradas: el resultado no se registra ni se cierra el pedido.
 			return c.JSON(http.StatusNotImplemented, errorBody{Error: APIError{
@@ -97,7 +103,7 @@ func (h *driverStopHandlers) result(c *httpx.Context) error {
 		RouteId: routeID,
 		OrderId: stopID,
 		Outcome: outcome,
-		Reason:  req.Reason,
+		Reason:  registration.GetReason(),
 	})
 	if err != nil {
 		return err

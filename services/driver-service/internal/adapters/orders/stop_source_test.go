@@ -53,7 +53,7 @@ func newSource(t *testing.T, fake *fakeOrders) *orders.StopSource {
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
-	return orders.NewStopSource(ordersv1.NewOrderServiceClient(conn), 2*time.Second)
+	return orders.NewStopSource(ordersv1.NewOrderServiceClient(conn), 2*time.Second, recordedAt.Location())
 }
 
 // driverCtx simula la identidad que el Gateway propaga al Driver Service.
@@ -76,12 +76,13 @@ func TestStopSourceBuildsTheStopAndForwardsTheDriverIdentity(t *testing.T) {
 	fake := &fakeOrders{stops: []*ordersv1.DriverRouteStop{stopRow("stop-1")}}
 	source := newSource(t, fake)
 
-	stop, err := source.Stop(driverCtx(), "route-1", "stop-1", recordedAt)
+	stop, err := source.Stop(driverCtx(), "route-1", "stop-1")
 
 	require.NoError(t, err)
 	assert.Equal(t, domain.GeoPoint{Latitude: -0.18, Longitude: -78.48}, stop.Location)
 	assert.True(t, stop.Window.Start.Equal(time.Date(2026, 10, 25, 10, 0, 0, 0, recordedAt.Location())))
 	assert.True(t, stop.Window.End.Equal(time.Date(2026, 10, 25, 12, 0, 0, 0, recordedAt.Location())))
+	assert.Equal(t, 15, stop.Window.Start.UTC().Hour())
 	assert.Equal(t, "route-1", fake.gotRoute)
 	assert.Equal(t, []string{"user-d1"}, fake.gotMD.Get("x-user-id"))
 	assert.Equal(t, []string{"DRIVER"}, fake.gotMD.Get("x-user-role"))
@@ -91,7 +92,7 @@ func TestStopSourceParadaAjenaORecordadaEsStopNotFound(t *testing.T) {
 	fake := &fakeOrders{stops: []*ordersv1.DriverRouteStop{stopRow("stop-2")}}
 	source := newSource(t, fake)
 
-	_, err := source.Stop(driverCtx(), "route-1", "stop-1", recordedAt)
+	_, err := source.Stop(driverCtx(), "route-1", "stop-1")
 
 	assert.ErrorIs(t, err, ports.ErrStopNotFound)
 }
@@ -100,7 +101,7 @@ func TestStopSourceFallaOrderServiceNoSeTraduceAParada(t *testing.T) {
 	fake := &fakeOrders{err: status.Error(codes.Unavailable, "down")}
 	source := newSource(t, fake)
 
-	_, err := source.Stop(driverCtx(), "route-1", "stop-1", recordedAt)
+	_, err := source.Stop(driverCtx(), "route-1", "stop-1")
 
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, ports.ErrStopNotFound)

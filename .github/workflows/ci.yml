@@ -82,7 +82,7 @@ jobs:
           bash infrastructure/postgres/init/01-schemas-and-users.sh
           # Each integration test runs in its own schema of this disposable database, so the service
           # users need CREATE on it. Scoped to last_mile_ci only; the development database never gets this.
-          psql -v ON_ERROR_STOP=1 -U postgres -d last_mile_ci -c "GRANT CREATE ON DATABASE last_mile_ci TO auth_service_user, order_service_user, driver_service_user;"
+          psql -v ON_ERROR_STOP=1 -U postgres -d last_mile_ci -c "GRANT CREATE ON DATABASE last_mile_ci TO auth_service_user, order_service_user, driver_service_user, zone_service_user;"
       - name: Auth Service integration tests
         working-directory: services/auth-service
         env:
@@ -110,6 +110,12 @@ jobs:
         env:
           DRIVER_TEST_DATABASE_URL: postgres://driver_service_user:x@localhost:5432/last_mile_ci?sslmode=disable&search_path=drivers,public
         run: go test -race -p 1 -tags integration -count=1 ./...
+
+      - name: Zone Service integration tests
+        working-directory: services/zone-service
+        env:
+          ZONE_TEST_DATABASE_URL: postgres://zone_service_user:x@localhost:5432/last_mile_ci?sslmode=disable
+        run: go test -race -tags integration -count=1 ./...
 
   contracts:
     name: Contracts (proto + OpenAPI)

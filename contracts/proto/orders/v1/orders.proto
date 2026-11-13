@@ -67,8 +67,8 @@ service OrderService {
   // line with its reason and its due date (ADR 0006, sections 4 and 5). A blocked account can still call
   // it. Any role other than CUSTOMER returns PERMISSION_DENIED.
   rpc GetMyBalance(GetMyBalanceRequest) returns (GetMyBalanceResponse);
-  // ReviewOrder only accepts PENDING_REVIEW; another state returns
-  // ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
+  // ReviewOrder accepts PENDING_REVIEW or CORRECT on a PENDING unassigned order.
+  // A disallowed state returns ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
   rpc ReviewOrder(ReviewOrderRequest) returns (ReviewOrderResponse);
   // ListMyOrders returns the orders of the customer identified by the
   // propagated user metadata. Only the CUSTOMER role can call it.
@@ -107,6 +107,7 @@ service OrderService {
   // ListDriverRouteStops returns the stops of a route for its DRIVER, ordered by stop_sequence.
   // Only DRIVER. Customer data (name, phone) is never in DriverRouteStop.
   rpc ListDriverRouteStops(ListDriverRouteStopsRequest) returns (ListDriverRouteStopsResponse);
+  rpc ReorderDriverRoute(ReorderDriverRouteRequest) returns (ReorderDriverRouteResponse);
 }
 
 enum OrderStatus {
@@ -136,6 +137,7 @@ enum ReviewAction {
   REVIEW_ACTION_CONFIRM = 1;
   REVIEW_ACTION_CORRECT = 2;
   REVIEW_ACTION_REJECT = 3;
+  REVIEW_ACTION_REASSIGN_WRONG_ADDRESS = 4;
 }
 
 message Order {
@@ -410,7 +412,21 @@ message DriverRouteStop {
   OrderStatus status = 8;
   // Planned delivery day, YYYY-MM-DD. The window above applies to this day.
   string delivery_date = 9;
+  int64 version = 10;
 }
+
+message RouteStopVersion {
+  string order_id = 1;
+  int64 version = 2;
+}
+
+message ReorderDriverRouteRequest {
+  string route_id = 1;
+  repeated RouteStopVersion stops = 2;
+  string reason = 3;
+}
+
+message ReorderDriverRouteResponse {}
 
 // Surcharge is one penalty incident (ADR 0006).
 message Surcharge {

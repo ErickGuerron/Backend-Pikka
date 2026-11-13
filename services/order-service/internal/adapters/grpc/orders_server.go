@@ -41,6 +41,7 @@ type OrderUseCases struct {
 	StopsBefore *orderapp.StopsBeforeForOrder
 	// DriverRouteStops lista las paradas de la ruta del conductor (ListDriverRouteStops).
 	DriverRouteStops *orderapp.DriverRouteStops
+	ReorderRoutes    RouteReorderer
 	// RecordOutcome cierra una parada de la ruta del conductor: DELIVERED o NOT_DELIVERED (RecordRouteStopOutcome).
 	RecordOutcome *orderapp.RecordStopOutcome
 	// Surcharges lets an operator list and resolve surcharges waiting for verification (ADR 0006).
@@ -221,7 +222,7 @@ func (s *OrderServer) ReviewOrder(ctx context.Context, req *ordersv1.ReviewOrder
 	if s.useCases.Review == nil {
 		return nil, status.Error(codes.Unimplemented, "review order is not wired")
 	}
-	_, role, err := identityFrom(ctx)
+	actor, role, err := identityFrom(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -230,6 +231,7 @@ func (s *OrderServer) ReviewOrder(ctx context.Context, req *ordersv1.ReviewOrder
 		return nil, err
 	}
 	order, err := s.useCases.Review.Run(ctx, orderapp.ReviewCommand{
+		ActorID:    actor,
 		Role:       role,
 		OrderID:    req.GetId(),
 		Action:     action,
@@ -319,8 +321,10 @@ func reviewActionFromProto(action ordersv1.ReviewAction) (string, error) {
 		return orderapp.ActionCorrect, nil
 	case ordersv1.ReviewAction_REVIEW_ACTION_REJECT:
 		return orderapp.ActionReject, nil
+	case ordersv1.ReviewAction_REVIEW_ACTION_REASSIGN_WRONG_ADDRESS:
+		return orderapp.ActionReassignWrongAddress, nil
 	default:
-		return "", status.Error(codes.InvalidArgument, "action must be CONFIRM, CORRECT or REJECT")
+		return "", status.Error(codes.InvalidArgument, "invalid review action")
 	}
 }
 

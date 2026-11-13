@@ -4,7 +4,9 @@ package persistence_test
 
 import (
 	"context"
+	"net/url"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -17,19 +19,42 @@ import (
 	"github.com/ErickGuerron/Backend-Pikka/services/zone-service/internal/infrastructure/postgres"
 )
 
-// Requiere ZONE_TEST_DATABASE_URL apuntando al PostgreSQL del compose con el
-// usuario zone_service_user y search_path=zones,public (PostGIS vive en public).
-// Sin la variable, se omite.
+const zoneTestDSN = "ZONE_TEST_DATABASE_URL"
+
 func setupRepo(t *testing.T) (*persistence.ZoneRepository, *pgxpool.Pool) {
 	t.Helper()
-	dsn := os.Getenv("ZONE_TEST_DATABASE_URL")
+	dsn := os.Getenv(zoneTestDSN)
 	if dsn == "" {
-		t.Skip("ZONE_TEST_DATABASE_URL no definida")
+		t.Skip(zoneTestDSN + " no definida")
 	}
-
 	ctx := testCtx()
-	require.NoError(t, postgres.Migrate(dsn))
+	cfg, err := pgxpool.ParseConfig(dsn)
+	require.NoError(t, err)
+	require.Contains(t, []string{"last_mile_test", "last_mile_ci"}, cfg.ConnConfig.Database)
 
+	u, err := url.Parse(dsn)
+	require.NoError(t, err)
+	require.Contains(t, []string{"postgres", "postgresql"}, u.Scheme)
+	admin, err := pgxpool.NewWithConfig(ctx, cfg)
+	require.NoError(t, err)
+	t.Cleanup(admin.Close)
+	var database string
+	require.NoError(t, admin.QueryRow(ctx, "SELECT current_database()").Scan(&database))
+	require.Equal(t, cfg.ConnConfig.Database, database)
+
+	schema := "t_" + strings.ReplaceAll(uuid.NewString(), "-", "_")
+	_, err = admin.Exec(ctx, `CREATE SCHEMA "`+schema+`"`)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, err := admin.Exec(ctx, `DROP SCHEMA "`+schema+`" CASCADE`)
+		assert.NoError(t, err)
+	})
+
+	q := u.Query()
+	q.Set("search_path", schema+",public")
+	u.RawQuery = q.Encode()
+	dsn = u.String()
+	require.NoError(t, postgres.Migrate(dsn))
 	pool, err := postgres.Connect(ctx, dsn)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
@@ -48,8 +73,8 @@ func coord(t *testing.T, lat, lng float64) domain.Coordinate {
 	return c
 }
 
-// squareZone crea una zona de prueba con código único y la borra al terminar.
-func squareZone(t *testing.T, repo *persistence.ZoneRepository, pool *pgxpool.Pool, minLat, minLng, size float64) domain.Zone {
+// squareZone crea una zona de prueba con código único.
+func squareZone(t *testing.T, repo *persistence.ZoneRepository, minLat, minLng, size float64) domain.Zone {
 	t.Helper()
 	ring := []domain.Coordinate{
 		coord(t, minLat, minLng),
@@ -64,15 +89,12 @@ func squareZone(t *testing.T, repo *persistence.ZoneRepository, pool *pgxpool.Po
 
 	saved, err := repo.Save(testCtx(), zone)
 	require.NoError(t, err)
-	t.Cleanup(func() {
-		_, _ = pool.Exec(testCtx(), `DELETE FROM zones WHERE id = $1`, saved.ID)
-	})
 	return saved
 }
 
 func TestZoneRepository_SaveAndFindByID_RoundTripsRing(t *testing.T) {
-	repo, pool := setupRepo(t)
-	saved := squareZone(t, repo, pool, -0.20, -78.50, 0.10)
+	repo, _ := setupRepo(t)
+	saved := squareZone(t, repo, -0.20, -78.50, 0.10)
 
 	found, err := repo.FindByID(testCtx(), saved.ID)
 
@@ -83,8 +105,8 @@ func TestZoneRepository_SaveAndFindByID_RoundTripsRing(t *testing.T) {
 }
 
 func TestZoneRepository_FindContaining_ClassifiesInsideAndOutside(t *testing.T) {
-	repo, pool := setupRepo(t)
-	zone := squareZone(t, repo, pool, -0.20, -78.50, 0.10)
+	repo, _ := setupRepo(t)
+	zone := squareZone(t, repo, -0.20, -78.50, 0.10)
 	ctx := testCtx()
 
 	inside, err := repo.FindContaining(ctx, coord(t, -0.15, -78.45))
@@ -96,9 +118,9 @@ func TestZoneRepository_FindContaining_ClassifiesInsideAndOutside(t *testing.T) 
 }
 
 func TestZoneRepository_FindContaining_PicksSmallestZoneOnOverlap(t *testing.T) {
-	repo, pool := setupRepo(t)
-	big := squareZone(t, repo, pool, -0.30, -78.60, 0.30)
-	small := squareZone(t, repo, pool, -0.20, -78.50, 0.10)
+	repo, _ := setupRepo(t)
+	big := squareZone(t, repo, -0.30, -78.60, 0.30)
+	small := squareZone(t, repo, -0.20, -78.50, 0.10)
 
 	got, err := repo.FindContaining(testCtx(), coord(t, -0.15, -78.45))
 
@@ -108,8 +130,8 @@ func TestZoneRepository_FindContaining_PicksSmallestZoneOnOverlap(t *testing.T) 
 }
 
 func TestZoneRepository_Save_RejectsDuplicateCode(t *testing.T) {
-	repo, pool := setupRepo(t)
-	saved := squareZone(t, repo, pool, -0.20, -78.50, 0.10)
+	repo, _ := setupRepo(t)
+	saved := squareZone(t, repo, -0.20, -78.50, 0.10)
 
 	dup, err := domain.NewZoneWithHoles(saved.Code, "Otra", saved.Ring, nil, testSettings())
 	require.NoError(t, err)
@@ -120,7 +142,7 @@ func TestZoneRepository_Save_RejectsDuplicateCode(t *testing.T) {
 
 // Una dona: el hueco se guarda, se lee de vuelta y un punto dentro del hueco no pertenece a la zona.
 func TestZoneRepository_DonutRoundTripsAndExcludesHole(t *testing.T) {
-	repo, pool := setupRepo(t)
+	repo, _ := setupRepo(t)
 	ctx := testCtx()
 
 	square := func(minLat, minLng, size float64) []domain.Coordinate {
@@ -141,9 +163,6 @@ func TestZoneRepository_DonutRoundTripsAndExcludesHole(t *testing.T) {
 
 	saved, err := repo.Save(ctx, zone)
 	require.NoError(t, err)
-	t.Cleanup(func() {
-		_, _ = pool.Exec(testCtx(), `DELETE FROM zones WHERE id = $1`, saved.ID)
-	})
 
 	found, err := repo.FindByID(ctx, saved.ID)
 	require.NoError(t, err)
@@ -162,7 +181,7 @@ func TestZoneRepository_DonutRoundTripsAndExcludesHole(t *testing.T) {
 }
 
 func TestZoneRepository_ListAllIncludesHoles(t *testing.T) {
-	repo, pool := setupRepo(t)
+	repo, _ := setupRepo(t)
 	ctx := testCtx()
 	outer := []domain.Coordinate{coord(t, 41, -3), coord(t, 41, -1), coord(t, 43, -1), coord(t, 43, -3), coord(t, 41, -3)}
 	hole := []domain.Coordinate{coord(t, 41.5, -2.5), coord(t, 41.5, -1.5), coord(t, 42.5, -1.5), coord(t, 42.5, -2.5), coord(t, 41.5, -2.5)}
@@ -170,7 +189,6 @@ func TestZoneRepository_ListAllIncludesHoles(t *testing.T) {
 	require.NoError(t, err)
 	saved, err := repo.Save(ctx, zone)
 	require.NoError(t, err)
-	t.Cleanup(func() { _, _ = pool.Exec(testCtx(), `DELETE FROM zones WHERE id = $1`, saved.ID) })
 
 	zones, err := repo.ListAll(ctx)
 	require.NoError(t, err)
@@ -187,9 +205,9 @@ func TestZoneRepository_ListAllIncludesHoles(t *testing.T) {
 }
 
 func TestZoneRepository_UpdateReplacesGeometryAndKeepsID(t *testing.T) {
-	repo, pool := setupRepo(t)
+	repo, _ := setupRepo(t)
 	ctx := testCtx()
-	saved := squareZone(t, repo, pool, -0.20, -78.50, 0.10)
+	saved := squareZone(t, repo, -0.20, -78.50, 0.10)
 
 	bigger := domain.Zone{
 		ID:       saved.ID,
@@ -210,16 +228,16 @@ func TestZoneRepository_UpdateReplacesGeometryAndKeepsID(t *testing.T) {
 }
 
 func TestZoneRepository_UpdateMissingZoneIsNotFound(t *testing.T) {
-	repo, pool := setupRepo(t)
-	first := squareZone(t, repo, pool, -0.20, -78.50, 0.10)
+	repo, _ := setupRepo(t)
+	first := squareZone(t, repo, -0.20, -78.50, 0.10)
 
 	_, err := repo.Update(testCtx(), domain.Zone{ID: "11111111-1111-1111-1111-111111111111", Code: first.Code, Name: "X", Ring: first.Ring, Settings: testSettings(), Version: 1})
 	assert.ErrorIs(t, err, domain.ErrZoneNotFound)
 }
 
 func TestZoneRepository_UpdateWithStaleVersionIsConflict(t *testing.T) {
-	repo, pool := setupRepo(t)
-	saved := squareZone(t, repo, pool, -0.20, -78.50, 0.10)
+	repo, _ := setupRepo(t)
+	saved := squareZone(t, repo, -0.20, -78.50, 0.10)
 
 	stale := saved
 	stale.Name = "Versión vieja"
@@ -248,8 +266,8 @@ func testSettings() domain.Settings {
 	}
 }
 func TestZoneRepository_InactiveZoneDoesNotClassifyAndCanBeReactivated(t *testing.T) {
-	repo, pool := setupRepo(t)
-	zone := squareZone(t, repo, pool, -0.20, -78.50, 0.10)
+	repo, _ := setupRepo(t)
+	zone := squareZone(t, repo, -0.20, -78.50, 0.10)
 	ctx := testCtx()
 
 	_, err := repo.SetStatus(ctx, zone.ID, domain.StatusInactive, "Obras en la avenida principal")
@@ -271,8 +289,8 @@ func TestZoneRepository_InactiveZoneDoesNotClassifyAndCanBeReactivated(t *testin
 }
 
 func TestZoneRepository_DeleteOnlyInactiveZones(t *testing.T) {
-	repo, pool := setupRepo(t)
-	zone := squareZone(t, repo, pool, -0.20, -78.50, 0.10)
+	repo, _ := setupRepo(t)
+	zone := squareZone(t, repo, -0.20, -78.50, 0.10)
 	ctx := testCtx()
 
 	err := repo.Delete(ctx, zone.ID, "Zona creada por error de captura")
@@ -288,7 +306,7 @@ func TestZoneRepository_DeleteOnlyInactiveZones(t *testing.T) {
 
 func TestZoneRepository_RecordsAuditEventsWithActor(t *testing.T) {
 	repo, pool := setupRepo(t)
-	zone := squareZone(t, repo, pool, -0.20, -78.50, 0.10)
+	zone := squareZone(t, repo, -0.20, -78.50, 0.10)
 	ctx := testCtx()
 	_, err := repo.SetStatus(ctx, zone.ID, domain.StatusInactive, "Motivo de prueba")
 	require.NoError(t, err)
@@ -324,7 +342,7 @@ func TestZoneRepository_SpatialIndexExists(t *testing.T) {
 
 	var count int
 	err := pool.QueryRow(testCtx(),
-		`SELECT count(*) FROM pg_indexes WHERE schemaname = 'zones' AND indexname = 'zones_area_gist'`,
+		`SELECT count(*) FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'zones_area_gist'`,
 	).Scan(&count)
 
 	require.NoError(t, err)

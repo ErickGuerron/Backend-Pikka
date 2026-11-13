@@ -44,3 +44,13 @@ func (r *DeliveryRecorder) Record(_ context.Context, routeID string, rec domain.
 	r.deliveries[key] = Delivery{RouteID: routeID, Record: rec, Arrival: arrival}
 	return nil
 }
+
+func (r *DeliveryRecorder) Find(_ context.Context, routeID, stopID string) (domain.DeliveryRecord, domain.ArrivalCheck, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	saved, ok := r.deliveries[routeID+"|"+stopID]
+	if !ok {
+		return domain.DeliveryRecord{}, domain.ArrivalCheck{}, ports.ErrDeliveryNotFound
+	}
+	return saved.Record, saved.Arrival, nil
+}

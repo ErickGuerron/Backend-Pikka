@@ -42,7 +42,10 @@ type Options struct {
 	// Tracking, si no es nil, habilita PUT /drivers/me/location (rol DRIVER). Requiere Drivers.
 	Tracking TrackingClient
 	// Planner, si no es nil, habilita GET /drivers/me/route/plan (ruta óptima por OSRM). Requiere Orders.
-	Planner RoutePlanner
+	Planner           RoutePlanner
+	OrderedPlanner    OrderedRoutePlanner
+	ReorderRoutes     RouteReorderClient
+	OperatingTimezone *time.Location
 	// Routing, if not nil, enables POST /routes/plan (ADMIN and OPERATOR).
 	Routing RoutingClient
 	// TrackingPollInterval es cada cuánto el WebSocket de seguimiento consulta el snapshot. Cero usa 5 s.
@@ -198,9 +201,10 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 		authed.GET("/drivers", driverAdmin.list, StaffOnly())
 		driverOnly := authed.Group("", DriverOnly())
 		if opts.Orders != nil {
-			routes := &driverRouteHandlers{drivers: opts.Drivers, orders: opts.Orders, planner: opts.Planner}
+			routes := &driverRouteHandlers{drivers: opts.Drivers, orders: opts.Orders, planner: opts.Planner, orderedPlanner: opts.OrderedPlanner, reorderRoutes: opts.ReorderRoutes, timezone: opts.OperatingTimezone}
 			driverOnly.GET("/drivers/me/route", routes.get)
 			driverOnly.GET("/drivers/me/route/plan", routes.plan)
+			driverOnly.PATCH("/drivers/me/routes/:routeId/order", routes.reorder)
 		} else {
 			driverOnly.GET("/drivers/me/route", driverRouteNotImplemented)
 		}

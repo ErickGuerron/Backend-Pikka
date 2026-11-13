@@ -33,12 +33,15 @@ Documentación interactiva de la API (Scalar): `http://localhost:8080/docs`.
 El contrato está en `http://localhost:8080/openapi.yaml`. Se desactiva con
 `ENABLE_API_DOCS=false`.
 
-Iniciar sesión con el administrador inicial (definido en `.env`):
+La migración de desarrollo crea el administrador `admin@pikka.com` con
+`Password123` en una base nueva. El administrador de `BOOTSTRAP_ADMIN_*` solo
+se crea si la tabla de usuarios queda vacía después de las migraciones.
+En las URLs de ejemplo, usa el `GATEWAY_PORT` de tu `.env` (8080 por defecto).
 
 ```bash
 curl -s -X POST localhost:8080/api/v1/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@lastmile.local.dev","password":"change_me_admin_password"}'
+  -d '{"email":"admin@pikka.com","password":"Password123"}'
 ```
 
 Crear un repartidor con el token obtenido:
@@ -68,12 +71,18 @@ docker compose up -d --build
 
 ```text
 make test               pruebas unitarias (go test -race)
-make test-integration   pruebas contra el PostgreSQL de docker compose
+make test-db            prepara la base desechable last_mile_test en PostgreSQL
+make test-integration   prepara last_mile_test y prueba Auth, Orders, Drivers y Zones
 make lint               go vet + golangci-lint
 make proto              regenera el código de los contratos gRPC
 make openapi-lint       valida contracts/openapi/openapi.yaml
 make logs / make down
 ```
+
+Las pruebas de integración requieren el PostgreSQL de Compose en ejecución.
+`make test-db` crea la base de pruebas y sus permisos sin copiar la base de
+desarrollo. La zona horaria operativa de los pedidos y del repartidor se
+configura con `OPERATING_TIMEZONE` (por defecto `America/Guayaquil`).
 
 ## Estructura
 

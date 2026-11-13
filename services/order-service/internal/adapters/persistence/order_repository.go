@@ -131,6 +131,10 @@ func (r *OrderRepository) ListExceptions(ctx context.Context) ([]domain.Order, e
 // Review aplica la decisión dentro de una transacción con bloqueo de fila
 // (SELECT ... FOR UPDATE): dos operadores no pueden decidir el mismo pedido a la vez.
 func (r *OrderRepository) Review(ctx context.Context, orderID string, decide func(domain.Order) (domain.Order, *domain.Notification, error)) (domain.Order, error) {
+	return r.review(ctx, orderID, decide, nil)
+}
+
+func (r *OrderRepository) review(ctx context.Context, orderID string, decide func(domain.Order) (domain.Order, *domain.Notification, error), reassign func(pgx.Tx, domain.Order) error) (domain.Order, error) {
 	id, err := uuid.Parse(orderID)
 	if err != nil {
 		return domain.Order{}, domain.ErrOrderNotFound
@@ -153,6 +157,14 @@ func (r *OrderRepository) Review(ctx context.Context, orderID string, decide fun
 	if err != nil {
 		return domain.Order{}, err
 	}
+	if reassign != nil {
+		if next.Status != domain.StatusPending {
+			return domain.Order{}, domain.ErrInvalidTransition
+		}
+		if err := reassign(tx, current); err != nil {
+			return domain.Order{}, err
+		}
+	}
 	zoneID, err := optionalUUID(next.ZoneID)
 	if err != nil {
 		return domain.Order{}, fmt.Errorf("review order: zone id: %w", err)
@@ -162,12 +174,14 @@ func (r *OrderRepository) Review(ctx context.Context, orderID string, decide fun
 		    SET address = $2, latitude = $3, longitude = $4, delivery_date = $5::date,
 		        window_start = $6::time, window_end = $7::time, zone_id = $8,
 		        status = $9, review_reasons = $10, address_reference = $11, postal_code = $12,
-		        contact_phone = $13, version = version + 1, updated_at = now()
+		        contact_phone = $13, version = version + 1, updated_at = now(),
+		        route_id = CASE WHEN $14 THEN NULL ELSE route_id END,
+		        stop_sequence = CASE WHEN $14 THEN NULL ELSE stop_sequence END
 		  WHERE id = $1
 		RETURNING `+orderColumns,
 		id, next.Address, next.Latitude, next.Longitude, next.DeliveryDate.String(),
 		next.Window.Start(), next.Window.End(), zoneID, string(next.Status), reasonStrings(next.ReviewReasons),
-		next.AddressReference, next.PostalCode, next.ContactPhone,
+		next.AddressReference, next.PostalCode, next.ContactPhone, reassign != nil,
 	))
 	if err != nil {
 		return domain.Order{}, fmt.Errorf("review order: update: %w", err)
@@ -260,6 +274,9 @@ func (r *OrderRepository) AdvanceRouteStop(ctx context.Context, orderID, routeID
 	next, err := decide(current)
 	if err != nil {
 		return domain.Order{}, err
+	}
+	if current.Status == next.Status {
+		return current, nil
 	}
 	out, err := scanOrder(tx.QueryRow(ctx,
 		`UPDATE orders

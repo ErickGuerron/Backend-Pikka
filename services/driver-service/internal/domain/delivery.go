@@ -51,7 +51,9 @@ var (
 	ErrInvalidWindow    = errors.New("window start must be before window end")
 	ErrInvalidRadius    = errors.New("radius must be positive")
 	// ErrOutsideRadius: a successful delivery must be made within the arrival radius (decisión D1).
-	ErrOutsideRadius = errors.New("delivery outside the arrival radius")
+	ErrOutsideRadius               = errors.New("delivery outside the arrival radius")
+	ErrOutsideWindowReasonRequired = errors.New("a reason is required to deliver outside the time window")
+	ErrInvalidOutsideWindowReason  = errors.New("outside_window_reason must contain at most 300 characters")
 )
 
 // ImputableOf devuelve de quién es el motivo, o false si el motivo no pertenece a la lista.
@@ -68,7 +70,8 @@ type DeliveryRecord struct {
 	At       time.Time
 	Location GeoPoint
 	// PhotoURL es opcional y vacío si no se adjuntó foto.
-	PhotoURL string
+	PhotoURL            string
+	OutsideWindowReason string
 }
 
 // NewDeliveryRecord valida un registro de entrega. Un DELIVERED no lleva motivo; un

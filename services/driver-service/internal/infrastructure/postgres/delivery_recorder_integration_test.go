@@ -41,6 +41,12 @@ func TestDeliveryRecorderGuardaYRechazaDuplicado(t *testing.T) {
 	err = rec.Record(ctx, "route-1", entrega, arrival)
 
 	assert.ErrorIs(t, err, ports.ErrDeliveryAlreadyRecorded)
+	saved, savedArrival, err := rec.Find(ctx, "route-1", "stop-1")
+	require.NoError(t, err)
+	assert.True(t, entrega.At.Equal(saved.At))
+	saved.At = entrega.At
+	assert.Equal(t, entrega, saved)
+	assert.Equal(t, arrival, savedArrival)
 	var count int
 	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM deliveries WHERE route_id = 'route-1'`).Scan(&count))
 	assert.Equal(t, 1, count)

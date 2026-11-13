@@ -58,7 +58,9 @@ func (g *OrderGateway) PendingByDate(ctx context.Context, deliveryDate string) (
 	}
 	out := make([]domain.PlannableOrder, 0, len(res.GetOrders()))
 	for _, order := range res.GetOrders() {
-		out = append(out, domain.PlannableOrder{OrderID: order.GetId(), ZoneID: order.GetZoneId(), Address: order.GetAddress()})
+		out = append(out, domain.PlannableOrder{
+			OrderID: order.GetId(), ZoneID: order.GetZoneId(), Address: order.GetAddress(), WindowEnd: order.GetWindowEnd(),
+		})
 	}
 	return out, nil
 }

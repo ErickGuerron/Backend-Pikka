@@ -98,7 +98,8 @@ func run(log *slog.Logger) error {
 	catalogStore := persistence.NewStore(pool)
 	createOrder := orderapp.NewCreateOrder(customerRepo, zoneClassifier, geocoder, catalogStore, catalogStore, location).WithZoneQueue(zoneQueue)
 	listMyOrders := orderapp.NewListMyOrders(customerRepo, orderRepo).WithZoneQueue(zoneQueue)
-	reviewOrder := orderapp.NewReviewOrder(customerRepo, zoneClassifier, geocoder, orderRepo, location)
+	reviewOrder := orderapp.NewReviewOrder(customerRepo, zoneClassifier, geocoder, orderRepo, location).
+		WithZoneQueue(zoneQueue).WithWrongAddressReassignment(orderRepo)
 	listExceptions := orderapp.NewListExceptions(orderRepo)
 	listAllOrders := orderapp.NewListOrders(orderRepo)
 	listMyNotifications := orderapp.NewListMyNotifications(customerRepo, notificationRepo)
@@ -130,6 +131,7 @@ func run(log *slog.Logger) error {
 		RouteAssignment:         routeAssignment,
 		AdvanceStop:             advanceRouteStop,
 		StopsBefore:             stopsBefore,
+		ReorderRoutes:           orderRepo,
 		DriverRouteStops:        driverRouteStops,
 		RecordOutcome:           recordStopOutcome,
 		Surcharges:              orderapp.NewResolveSurchargeVerification(surchargeRepo).WithReincidence(reincidence),

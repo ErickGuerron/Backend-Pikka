@@ -67,6 +67,9 @@ El sistema decide si corresponde recargo, no el repartidor:
 
 - Verifica que la llegada cuenta como válida: GPS dentro de un radio de la
   dirección y dentro de la ventana.
+- Para registrar `DELIVERED` dentro del radio pero fuera del horario, la app
+  avisa al repartidor y pide un motivo. El backend conserva la hora, el GPS,
+  el resultado de la verificación y la justificación.
 - Con cada resultado (`DELIVERED` o `NOT_DELIVERED`), la posición del repartidor
   se envía con la información del pedido. Sirve para confirmar la entrega y
   alimenta las métricas de auditoría del operador. No se exige foto.

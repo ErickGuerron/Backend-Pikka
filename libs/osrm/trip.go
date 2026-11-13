@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -20,6 +21,8 @@ type Trip struct {
 	DurationSeconds float64
 	// Geometry is the road the tour follows, origin first, one point per road vertex.
 	Geometry []Point
+	// LegSeconds holds travel time to each stop in visiting order.
+	LegSeconds []float64
 }
 
 // Tripper asks OSRM's trip service (the traveling-salesman solver) for the best order of a set of stops.
@@ -48,6 +51,68 @@ type tripResponse struct {
 			Coordinates [][2]float64 `json:"coordinates"`
 		} `json:"geometry"`
 	} `json:"trips"`
+}
+
+// InOrder asks OSRM for a road path through the exact sequence supplied by the caller.
+func (t *Tripper) InOrder(ctx context.Context, origin Point, stops []Point) (Trip, error) {
+	if len(stops) == 0 {
+		return Trip{}, nil
+	}
+	coords, radiuses := make([]string, 0, len(stops)+1), make([]string, 0, len(stops)+1)
+	for _, point := range append([]Point{origin}, stops...) {
+		if !point.Valid() {
+			return Trip{}, ErrInvalidPoint
+		}
+		coords = append(coords, lonLat(point))
+		radiuses = append(radiuses, snapRadiusMeters)
+	}
+	url := t.baseURL + "/route/v1/driving/" + strings.Join(coords, ";") +
+		"?overview=full&geometries=geojson&radiuses=" + strings.Join(radiuses, ";")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return Trip{}, err
+	}
+	resp, err := t.client.Do(req)
+	if err != nil {
+		return Trip{}, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var result struct {
+		Code   string
+		Routes []struct {
+			Distance, Duration float64
+			Geometry           struct{ Coordinates [][2]float64 }
+			Legs               []struct{ Duration float64 }
+		}
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxBodyBytes*4)).Decode(&result); err != nil {
+		return Trip{}, fmt.Errorf("osrm ordered route: %w", err)
+	}
+	if result.Code == "NoRoute" || result.Code == "NoSegment" {
+		return Trip{}, ErrNoRoute
+	}
+	if resp.StatusCode != http.StatusOK || result.Code != "Ok" {
+		return Trip{}, fmt.Errorf("osrm ordered route: HTTP %d, code %q", resp.StatusCode, result.Code)
+	}
+	if len(result.Routes) == 0 || len(result.Routes[0].Legs) != len(stops) {
+		return Trip{}, ErrNoRoute
+	}
+	route := result.Routes[0]
+	trip := Trip{
+		Order: make([]int, len(stops)), LegSeconds: make([]float64, len(stops)),
+		DistanceMeters: route.Distance, DurationSeconds: route.Duration,
+		Geometry: make([]Point, 0, len(route.Geometry.Coordinates)),
+	}
+	for i, leg := range route.Legs {
+		if leg.Duration < 0 || math.IsNaN(leg.Duration) || math.IsInf(leg.Duration, 0) || leg.Duration > (31*24*time.Hour).Seconds() {
+			return Trip{}, ErrNoRoute
+		}
+		trip.Order[i], trip.LegSeconds[i] = i, leg.Duration
+	}
+	for _, p := range route.Geometry.Coordinates {
+		trip.Geometry = append(trip.Geometry, Point{Latitude: p[1], Longitude: p[0]})
+	}
+	return trip, nil
 }
 
 // Optimize returns the visiting order of the stops that minimizes the driving time from the origin, with

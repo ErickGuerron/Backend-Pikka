@@ -1,9 +1,8 @@
 GO_MODULES := services/auth-service services/api-gateway services/order-service services/zone-service services/driver-service services/routing-service services/tracking-service
 LINT := golangci-lint
 
-# Base desechable para pruebas de integración. Nunca usar la base de desarrollo (last_mile): las
-# pruebas vacían tablas y cada paquete lo rechaza con un guard propio.
-TEST_DB ?= last_mile_test
+# Base reservada para pruebas de integración locales.
+override TEST_DB := last_mile_test
 
 # Carga las variables de .env (igual que docker compose) para que las recetas
 # usen las mismas contraseñas que el contenedor. Sin .env no falla.
@@ -17,7 +16,7 @@ ifeq ($(OS),Windows_NT)
 SHELL := C:/PROGRA~1/Git/bin/sh.exe
 endif
 
-.PHONY: help up down logs test test-integration lint fmt proto openapi-lint perf-smoke security-scan osrm-prepare osrm-up osrm-down osrm-test
+.PHONY: help up down logs test test-db test-integration lint fmt proto openapi-lint perf-smoke security-scan osrm-prepare osrm-up osrm-down osrm-test
 
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
@@ -35,10 +34,14 @@ logs: ## Sigue los logs de los servicios Go
 test: ## Pruebas unitarias de todos los módulos
 	@for m in $(GO_MODULES); do echo "== $$m"; (cd $$m && go test -race ./...) || exit 1; done
 
-test-integration: ## Pruebas de integración contra el PostgreSQL de docker compose
+test-db: ## Prepara last_mile_test en el PostgreSQL de Docker Compose
+	docker compose exec -T postgres sh -ec 'test "$${POSTGRES_DB:-last_mile}" != "$(TEST_DB)" || { echo "POSTGRES_DB uses the reserved test database name" >&2; exit 1; }; exec psql -X -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d postgres' < infrastructure/postgres/test-database.sql
+
+test-integration: test-db ## Pruebas de integración contra last_mile_test
 	cd services/auth-service && AUTH_TEST_DATABASE_URL="postgres://auth_service_user:$${AUTH_DB_PASSWORD:-change_me_auth}@localhost:5432/$(TEST_DB)?sslmode=disable&search_path=auth" go test -tags integration -count=1 ./...
 	cd services/order-service && ORDER_TEST_DATABASE_URL="postgres://order_service_user:$${ORDER_DB_PASSWORD:-change_me_orders}@localhost:5432/$(TEST_DB)?sslmode=disable&search_path=orders,public" go test -tags integration -count=1 ./...
 	cd services/driver-service && DRIVER_TEST_DATABASE_URL="postgres://driver_service_user:$${DRIVER_DB_PASSWORD:-change_me_drivers}@localhost:5432/$(TEST_DB)?sslmode=disable&search_path=drivers,public" go test -p 1 -tags integration -count=1 ./...
+	cd services/zone-service && ZONE_TEST_DATABASE_URL="postgres://zone_service_user:$${ZONE_DB_PASSWORD:-change_me_zones}@localhost:5432/$(TEST_DB)?sslmode=disable" go test -tags integration -count=1 ./...
 
 lint: ## go vet + golangci-lint
 	@for m in $(GO_MODULES); do echo "== $$m"; (cd $$m && go vet ./... && $(LINT) run --config ../../.golangci.yml ./...) || exit 1; done

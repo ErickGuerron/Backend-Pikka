@@ -48,6 +48,7 @@ func (c *Correction) empty() bool {
 // ReviewCommand es una decisión del operador sobre un pedido en revisión.
 type ReviewCommand struct {
 	Role       string
+	ActorID    uuid.UUID
 	OrderID    string
 	Action     string
 	Reason     string
@@ -57,11 +58,13 @@ type ReviewCommand struct {
 // ReviewOrder aplica la decisión del operador. Todo queda con motivo y el cliente
 // recibe un aviso en la misma transacción.
 type ReviewOrder struct {
-	customers ports.CustomerRepository
-	orders    ports.OrderRepository
-	place     placement
-	location  *time.Location
-	clock     func() time.Time
+	customers     ports.CustomerRepository
+	orders        ports.OrderRepository
+	place         placement
+	location      *time.Location
+	clock         func() time.Time
+	queue         *ZoneQueue
+	reassignments WrongAddressReassigner
 }
 
 // NewReviewOrder inyecta dependencias.
@@ -74,6 +77,22 @@ func NewReviewOrder(customers ports.CustomerRepository, zones ports.ZoneClassifi
 		clock:     time.Now,
 	}
 }
+
+func (uc *ReviewOrder) WithZoneQueue(queue *ZoneQueue) *ReviewOrder {
+	uc.queue = queue
+	return uc
+}
+
+type WrongAddressReassigner interface {
+	ReassignWrongAddress(ctx context.Context, orderID string, actorID uuid.UUID, reason string, decide func(domain.Order) (domain.Order, *domain.Notification, error)) (domain.Order, error)
+}
+
+func (uc *ReviewOrder) WithWrongAddressReassignment(reassignments WrongAddressReassigner) *ReviewOrder {
+	uc.reassignments = reassignments
+	return uc
+}
+
+const ActionReassignWrongAddress = "REASSIGN_WRONG_ADDRESS"
 
 // Run valida la acción y la aplica dentro de la transacción del repositorio.
 func (uc *ReviewOrder) Run(ctx context.Context, cmd ReviewCommand) (domain.Order, error) {
@@ -101,12 +120,33 @@ func (uc *ReviewOrder) Run(ctx context.Context, cmd ReviewCommand) (domain.Order
 			n := domain.NewNotification(current.CustomerID, current.ID, domain.NotificationRejected, reason)
 			return next, &n, nil
 		case ActionCorrect:
+			if current.Status != domain.StatusPendingReview && (current.Status != domain.StatusPending || current.RouteID != "") {
+				return domain.Order{}, nil, domain.ErrOrderNotInReview
+			}
 			return uc.correct(ctx, current, cmd.Correction, reason)
 		default:
 			return domain.Order{}, nil, ErrUnknownAction
 		}
 	}
-	return uc.orders.Review(ctx, cmd.OrderID, decide)
+	var saved domain.Order
+	if cmd.Action == ActionReassignWrongAddress {
+		if uc.reassignments == nil || cmd.ActorID == uuid.Nil {
+			return domain.Order{}, domain.ErrInvalidTransition
+		}
+		saved, err = uc.reassignments.ReassignWrongAddress(ctx, cmd.OrderID, cmd.ActorID, reason,
+			func(current domain.Order) (domain.Order, *domain.Notification, error) {
+				if cmd.Correction == nil || cmd.Correction.DeliveryDate == nil || *cmd.Correction.DeliveryDate <= current.DeliveryDate.String() {
+					return domain.Order{}, nil, domain.ErrInvalidDate
+				}
+				return uc.correct(ctx, current, cmd.Correction, reason)
+			})
+	} else {
+		saved, err = uc.orders.Review(ctx, cmd.OrderID, decide)
+	}
+	if err == nil && (cmd.Action == ActionCorrect || cmd.Action == ActionReassignWrongAddress) && saved.Status == domain.StatusPending {
+		uc.queue.fillNonFatal(ctx, saved.ZoneID, saved.DeliveryDate.String())
+	}
+	return saved, err
 }
 
 // correct vuelve a validar el pedido con los datos corregidos. Si ya cumple las

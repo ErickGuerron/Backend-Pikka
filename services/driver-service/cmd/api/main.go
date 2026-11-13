@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc"
@@ -66,12 +67,16 @@ func run(log *slog.Logger) error {
 	// UNIMPLEMENTED en lugar de aceptar una ubicacion de parada del llamador.
 	var stops grpcadapter.StopSource
 	if cfg.OrdersGRPCAddr != "" {
+		timezone, err := time.LoadLocation(cfg.OperatingTimezone)
+		if err != nil {
+			return fmt.Errorf("operating timezone: %w", err)
+		}
 		conn, err := grpc.NewClient(cfg.OrdersGRPCAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			return fmt.Errorf("orders grpc client: %w", err)
 		}
 		defer func() { _ = conn.Close() }()
-		stops = orders.NewStopSource(ordersv1.NewOrderServiceClient(conn), ordersCallTimeout)
+		stops = orders.NewStopSource(ordersv1.NewOrderServiceClient(conn), ordersCallTimeout, timezone)
 	}
 	log.Info("driver service wired", "arrivalRadiusMeters", cfg.ArrivalRadiusMeters, "stopSource", stops != nil)
 

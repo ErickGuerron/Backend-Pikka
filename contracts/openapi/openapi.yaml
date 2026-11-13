@@ -477,7 +477,7 @@ paths:
       tags: [orders]
       operationId: reviewOrder
       summary: Confirma, corrige o rechaza un pedido en revisión (ADMIN u OPERATOR)
-      description: Solo aplica a pedidos en estado PENDING_REVIEW. Toda decisión queda registrada con motivo.
+      description: CORRECT permite corregir un pedido PENDING sin asignación. REASSIGN_WRONG_ADDRESS reprograma un pedido NOT_DELIVERED con recargo por verificar y añade la tarifa de viaje al recargo si se confirma. Toda decisión requiere un motivo.
       parameters:
         - name: id
           in: path
@@ -1452,16 +1452,54 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/drivers/me/routes/{routeId}/order:
+    patch:
+      tags: [drivers]
+      operationId: reorderMyDriverRoute
+      summary: Mueve una parada activa al comienzo de la ruta del repartidor
+      parameters:
+        - name: routeId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [firstStopId, reason, latitude, longitude]
+              properties:
+                firstStopId: { type: string, format: uuid }
+                reason: { type: string, minLength: 5, maxLength: 300 }
+                latitude: { type: number, minimum: -90, maximum: 90 }
+                longitude: { type: number, minimum: -180, maximum: 180 }
+      responses:
+        "204": { description: Orden guardado }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422":
+          description: El orden propuesto compromete una ventana alcanzable o no hay ruta por carretera
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: Planificador de rutas no disponible
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /api/v1/drivers/me/routes/{routeId}/stops/{stopId}/result:
     post:
       tags: [drivers]
       operationId: registerMyStopResult
       summary: Registra el resultado de una parada (solo DRIVER)
       description: |
-        NO IMPLEMENTADO. Responde 501 porque la dirección y la ventana de la parada las aporta el
-        Routing Service, que aún no existe. El cliente nunca envía la ubicación de la parada: el
-        sistema comprueba la llegada (ADR 0007, sección 5). Cuando exista la fuente, el cuerpo
-        será el de este contrato.
+        Registra el resultado de una parada en tránsito. DELIVERED requiere estar dentro del radio.
+        Fuera de la ventana se acepta DELIVERED con una justificación. Repetir el mismo resultado
+        y motivo reutiliza el registro original.
       parameters:
         - name: routeId
           in: path
@@ -1477,23 +1515,32 @@ paths:
           application/json:
             schema:
               type: object
-              required: [outcome, location]
+              required: [outcome, latitude, longitude]
               properties:
                 outcome: { type: string, enum: [DELIVERED, NOT_DELIVERED] }
                 reason:
                   type: string
                   description: Obligatorio con NOT_DELIVERED y ausente con DELIVERED
                   enum: [CLIENT_REFUSED, CLIENT_ABSENT, OUT_OF_WINDOW, PRODUCT_DAMAGED, WRONG_ADDRESS, DUPLICATE_ORDER]
-                location:
-                  type: object
-                  required: [latitude, longitude]
-                  description: Posición GPS del repartidor al registrar (ADR 0007, sección 4)
-                  properties:
-                    latitude: { type: number, minimum: -90, maximum: 90 }
-                    longitude: { type: number, minimum: -180, maximum: 180 }
+                latitude: { type: number, minimum: -90, maximum: 90, description: Latitud GPS del repartidor }
+                longitude: { type: number, minimum: -180, maximum: 180, description: Longitud GPS del repartidor }
+                outsideWindowReason: { type: string, maxLength: 300, description: Motivo obligatorio si se entrega fuera de la ventana }
       responses:
+        "200":
+          description: Resultado registrado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StopStatusResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422":
+          description: Parada en estado inválido, GPS fuera del radio o justificación fuera de horario requerida
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "501": { $ref: "#/components/responses/NotImplemented" }
   /api/v1/drivers/me/location:
     put:
@@ -1613,7 +1660,7 @@ components:
       enum: [ZONE_NOT_COVERED, INVALID_WINDOW, CAPACITY_EXCEEDED, CUSTOMER_BLOCKED, ADDRESS_NOT_LOCATED]
     OrderReviewAction:
       type: string
-      enum: [CONFIRM, CORRECT, REJECT]
+      enum: [CONFIRM, CORRECT, REJECT, REASSIGN_WRONG_ADDRESS]
     RecidivismChargeRequest:
       type: object
       required: [amount, reason]

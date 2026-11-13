@@ -1,0 +1,1 @@
+DROP TABLE wrong_address_reassignments;

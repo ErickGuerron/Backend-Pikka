@@ -3,10 +3,9 @@ package domain
 import "time"
 
 // NewStop construye la parada a partir de lo que entrega Order Service: la ubicacion y la ventana
-// en horas locales (HH:mm) de la fecha de entrega. La ventana se interpreta en el desfase horario del
-// instante del registro, que es el reloj del repartidor. Una fecha u hora invalidas responden ErrInvalidWindow.
-func NewStop(location GeoPoint, deliveryDate, start, end string, recordedAt time.Time) (Stop, error) {
-	day, err := time.ParseInLocation(time.DateOnly, deliveryDate, recordedAt.Location())
+// en horas locales (HH:mm) de la fecha de entrega y zona horaria operativa.
+func NewStop(location GeoPoint, deliveryDate, start, end string, timezone *time.Location) (Stop, error) {
+	day, err := time.ParseInLocation(time.DateOnly, deliveryDate, timezone)
 	if err != nil {
 		return Stop{}, ErrInvalidWindow
 	}

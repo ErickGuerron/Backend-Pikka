@@ -131,6 +131,7 @@ func (s *OrderServer) ListDriverRouteStops(ctx context.Context, req *ordersv1.Li
 			WindowEnd:    o.Window.End(),
 			Status:       orderToProto(o).GetStatus(),
 			DeliveryDate: o.DeliveryDate.String(),
+			Version:      o.Version,
 		})
 	}
 	return &ordersv1.ListDriverRouteStopsResponse{Stops: stops, MaxOrders: s.routeMaxOrders(ctx, orders)}, nil

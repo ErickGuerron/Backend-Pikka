@@ -67,14 +67,21 @@ func (r *ReassignmentRepository) ApplyReassignmentCharge(ctx context.Context, or
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var customerID string
-	err = tx.QueryRow(ctx, `SELECT customer_id::text FROM orders WHERE id = $1`, orderID).Scan(&customerID)
+	err = tx.QueryRow(ctx, `SELECT customer_id::text FROM orders WHERE id = $1 FOR UPDATE`, orderID).Scan(&customerID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.ReassignmentCharge{}, domain.ErrOrderNotFound
 	}
 	if err != nil {
 		return domain.ReassignmentCharge{}, fmt.Errorf("apply reassignment charge: load order: %w", err)
 	}
-	// Lock the customer first, like a payment does, so a charge and a payment cannot interleave.
+	var included bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM wrong_address_reassignments WHERE order_id = $1)`, orderID).Scan(&included); err != nil {
+		return domain.ReassignmentCharge{}, err
+	}
+	if included {
+		return domain.ReassignmentCharge{}, domain.ErrReassignmentChargeExists
+	}
+	// Lock the customer before changing the balance so a charge and payment cannot interleave.
 	if _, err := tx.Exec(ctx, `SELECT 1 FROM customers WHERE id = $1 FOR UPDATE`, customerID); err != nil {
 		return domain.ReassignmentCharge{}, fmt.Errorf("apply reassignment charge: lock customer: %w", err)
 	}

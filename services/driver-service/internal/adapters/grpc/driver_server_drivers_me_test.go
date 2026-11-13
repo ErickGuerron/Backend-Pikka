@@ -29,7 +29,7 @@ type fakeStops struct {
 	err  error
 }
 
-func (f fakeStops) Stop(_ context.Context, _, _ string, _ time.Time) (domain.Stop, error) {
+func (f fakeStops) Stop(_ context.Context, _, _ string) (domain.Stop, error) {
 	return f.stop, f.err
 }
 
@@ -127,14 +127,14 @@ func TestRegisterDeliveryRegistraConLaParadaDelRouting(t *testing.T) {
 	assert.True(t, res.GetWithinWindow())
 }
 
-func TestRegisterDeliveryNoSeAceptaDosVeces(t *testing.T) {
+func TestRegisterDeliveryRechazaUnResultadoDistinto(t *testing.T) {
 	repo := memory.NewDriverRepository()
 	seedOnRoute(t, repo, "d1", "route-1")
 	client := serveDeliveries(t, repo, fakeStops{stop: stopInfo})
 
 	_, err := client.RegisterDelivery(context.Background(), deliveryReq("DELIVERED", ""))
 	require.NoError(t, err)
-	_, err = client.RegisterDelivery(context.Background(), deliveryReq("DELIVERED", ""))
+	_, err = client.RegisterDelivery(context.Background(), deliveryReq("NOT_DELIVERED", "CLIENT_ABSENT"))
 	assert.Equal(t, codes.AlreadyExists, status.Code(err))
 }
 

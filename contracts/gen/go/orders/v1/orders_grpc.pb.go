@@ -47,6 +47,7 @@ const (
 	OrderService_RecordRouteStopOutcome_FullMethodName            = "/orders.v1.OrderService/RecordRouteStopOutcome"
 	OrderService_StopsBeforeForOrder_FullMethodName               = "/orders.v1.OrderService/StopsBeforeForOrder"
 	OrderService_ListDriverRouteStops_FullMethodName              = "/orders.v1.OrderService/ListDriverRouteStops"
+	OrderService_ReorderDriverRoute_FullMethodName                = "/orders.v1.OrderService/ReorderDriverRoute"
 )
 
 // OrderServiceClient is the client API for OrderService service.
@@ -116,8 +117,8 @@ type OrderServiceClient interface {
 	// line with its reason and its due date (ADR 0006, sections 4 and 5). A blocked account can still call
 	// it. Any role other than CUSTOMER returns PERMISSION_DENIED.
 	GetMyBalance(ctx context.Context, in *GetMyBalanceRequest, opts ...grpc.CallOption) (*GetMyBalanceResponse, error)
-	// ReviewOrder only accepts PENDING_REVIEW; another state returns
-	// ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
+	// ReviewOrder accepts PENDING_REVIEW or CORRECT on a PENDING unassigned order.
+	// A disallowed state returns ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
 	ReviewOrder(ctx context.Context, in *ReviewOrderRequest, opts ...grpc.CallOption) (*ReviewOrderResponse, error)
 	// ListMyOrders returns the orders of the customer identified by the
 	// propagated user metadata. Only the CUSTOMER role can call it.
@@ -156,6 +157,7 @@ type OrderServiceClient interface {
 	// ListDriverRouteStops returns the stops of a route for its DRIVER, ordered by stop_sequence.
 	// Only DRIVER. Customer data (name, phone) is never in DriverRouteStop.
 	ListDriverRouteStops(ctx context.Context, in *ListDriverRouteStopsRequest, opts ...grpc.CallOption) (*ListDriverRouteStopsResponse, error)
+	ReorderDriverRoute(ctx context.Context, in *ReorderDriverRouteRequest, opts ...grpc.CallOption) (*ReorderDriverRouteResponse, error)
 }
 
 type orderServiceClient struct {
@@ -446,6 +448,16 @@ func (c *orderServiceClient) ListDriverRouteStops(ctx context.Context, in *ListD
 	return out, nil
 }
 
+func (c *orderServiceClient) ReorderDriverRoute(ctx context.Context, in *ReorderDriverRouteRequest, opts ...grpc.CallOption) (*ReorderDriverRouteResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReorderDriverRouteResponse)
+	err := c.cc.Invoke(ctx, OrderService_ReorderDriverRoute_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // OrderServiceServer is the server API for OrderService service.
 // All implementations must embed UnimplementedOrderServiceServer
 // for forward compatibility.
@@ -513,8 +525,8 @@ type OrderServiceServer interface {
 	// line with its reason and its due date (ADR 0006, sections 4 and 5). A blocked account can still call
 	// it. Any role other than CUSTOMER returns PERMISSION_DENIED.
 	GetMyBalance(context.Context, *GetMyBalanceRequest) (*GetMyBalanceResponse, error)
-	// ReviewOrder only accepts PENDING_REVIEW; another state returns
-	// ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
+	// ReviewOrder accepts PENDING_REVIEW or CORRECT on a PENDING unassigned order.
+	// A disallowed state returns ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
 	ReviewOrder(context.Context, *ReviewOrderRequest) (*ReviewOrderResponse, error)
 	// ListMyOrders returns the orders of the customer identified by the
 	// propagated user metadata. Only the CUSTOMER role can call it.
@@ -553,6 +565,7 @@ type OrderServiceServer interface {
 	// ListDriverRouteStops returns the stops of a route for its DRIVER, ordered by stop_sequence.
 	// Only DRIVER. Customer data (name, phone) is never in DriverRouteStop.
 	ListDriverRouteStops(context.Context, *ListDriverRouteStopsRequest) (*ListDriverRouteStopsResponse, error)
+	ReorderDriverRoute(context.Context, *ReorderDriverRouteRequest) (*ReorderDriverRouteResponse, error)
 	mustEmbedUnimplementedOrderServiceServer()
 }
 
@@ -646,6 +659,9 @@ func (UnimplementedOrderServiceServer) StopsBeforeForOrder(context.Context, *Sto
 }
 func (UnimplementedOrderServiceServer) ListDriverRouteStops(context.Context, *ListDriverRouteStopsRequest) (*ListDriverRouteStopsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListDriverRouteStops not implemented")
+}
+func (UnimplementedOrderServiceServer) ReorderDriverRoute(context.Context, *ReorderDriverRouteRequest) (*ReorderDriverRouteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReorderDriverRoute not implemented")
 }
 func (UnimplementedOrderServiceServer) mustEmbedUnimplementedOrderServiceServer() {}
 func (UnimplementedOrderServiceServer) testEmbeddedByValue()                      {}
@@ -1172,6 +1188,24 @@ func _OrderService_ListDriverRouteStops_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _OrderService_ReorderDriverRoute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReorderDriverRouteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).ReorderDriverRoute(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_ReorderDriverRoute_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).ReorderDriverRoute(ctx, req.(*ReorderDriverRouteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // OrderService_ServiceDesc is the grpc.ServiceDesc for OrderService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1290,6 +1324,10 @@ var OrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListDriverRouteStops",
 			Handler:    _OrderService_ListDriverRouteStops_Handler,
+		},
+		{
+			MethodName: "ReorderDriverRoute",
+			Handler:    _OrderService_ReorderDriverRoute_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

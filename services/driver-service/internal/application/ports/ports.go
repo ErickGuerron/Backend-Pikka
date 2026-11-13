@@ -39,8 +39,11 @@ type DriverRepository interface {
 // ErrDeliveryAlreadyRecorded indica que la parada ya tiene un registro de entrega en esa ruta.
 var ErrDeliveryAlreadyRecorded = errors.New("delivery already recorded for this stop")
 
+var ErrDeliveryNotFound = errors.New("delivery record not found")
+
 // DeliveryRecorder guarda el registro de entrega de una parada. Record rechaza un segundo
 // registro de la misma parada dentro de la misma ruta.
 type DeliveryRecorder interface {
 	Record(ctx context.Context, routeID string, rec domain.DeliveryRecord, arrival domain.ArrivalCheck) error
+	Find(ctx context.Context, routeID, stopID string) (domain.DeliveryRecord, domain.ArrivalCheck, error)
 }

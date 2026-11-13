@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -16,10 +17,9 @@ import (
 	"github.com/ErickGuerron/Backend-Pikka/services/driver-service/internal/domain"
 )
 
-// StopSource entrega la dirección y la ventana de una parada de una ruta. Su origen es el
-// Routing Service, que aún no existe.
+// StopSource entrega la dirección y ventana de una parada.
 type StopSource interface {
-	Stop(ctx context.Context, routeID, stopID string, at time.Time) (domain.Stop, error)
+	Stop(ctx context.Context, routeID, stopID string) (domain.Stop, error)
 }
 
 // DriverServer implementa driversv1.DriverServiceServer delegando en la capa de aplicación.
@@ -81,17 +81,18 @@ func (s *DriverServer) RegisterDelivery(ctx context.Context, req *driversv1.Regi
 	}
 	routeID := strings.TrimSpace(req.GetRouteId())
 	stopID := strings.TrimSpace(req.GetStopId())
-	stop, err := s.stops.Stop(ctx, routeID, stopID, recordedAt)
+	stop, err := s.stops.Stop(ctx, routeID, stopID)
 	if err != nil {
 		return nil, toStatus(err)
 	}
 	in := driver.DeliveryInput{
-		StopID:   stopID,
-		Outcome:  domain.Outcome(req.GetOutcome()),
-		Reason:   domain.NotDeliveredReason(req.GetReason()),
-		At:       recordedAt,
-		Location: domain.GeoPoint{Latitude: req.GetLatitude(), Longitude: req.GetLongitude()},
-		PhotoURL: req.GetPhotoUrl(),
+		StopID:              stopID,
+		Outcome:             domain.Outcome(req.GetOutcome()),
+		Reason:              domain.NotDeliveredReason(req.GetReason()),
+		At:                  recordedAt,
+		Location:            domain.GeoPoint{Latitude: req.GetLatitude(), Longitude: req.GetLongitude()},
+		PhotoURL:            req.GetPhotoUrl(),
+		OutsideWindowReason: req.GetOutsideWindowReason(),
 	}
 	reg, err := s.deliveries.RegisterDelivery(ctx, strings.TrimSpace(req.GetDriverId()), routeID, stop, in)
 	if err != nil {
@@ -231,7 +232,11 @@ func toStatus(err error) error {
 	case errors.Is(err, domain.ErrDriverAlreadyReserved):
 		return status.Error(codes.FailedPrecondition, "driver is already reserved for another route")
 	case errors.Is(err, domain.ErrOutsideRadius):
-		return status.Error(codes.FailedPrecondition, err.Error())
+		return deliveryPrecondition("OUTSIDE_ARRIVAL_RADIUS", err)
+	case errors.Is(err, domain.ErrOutsideWindowReasonRequired):
+		return deliveryPrecondition("OUTSIDE_WINDOW_REASON_REQUIRED", err)
+	case errors.Is(err, domain.ErrInvalidOutsideWindowReason):
+		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, domain.ErrRouteMismatch), errors.Is(err, domain.ErrInvalidTransition):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, domain.ErrInvalidRouteID), errors.Is(err, domain.ErrInvalidDriverID):
@@ -258,6 +263,15 @@ func toStatus(err error) error {
 	default:
 		return status.Error(codes.Internal, "internal error")
 	}
+}
+
+func deliveryPrecondition(reason string, err error) error {
+	st := status.New(codes.FailedPrecondition, err.Error())
+	withDetails, detailErr := st.WithDetails(&errdetails.ErrorInfo{Reason: reason, Domain: "driver-service"})
+	if detailErr != nil {
+		return st.Err()
+	}
+	return withDetails.Err()
 }
 
 func toProto(d *domain.Driver) *driversv1.Driver {

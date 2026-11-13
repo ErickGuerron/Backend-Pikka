@@ -2,6 +2,7 @@ package http
 
 import (
 	"net/http"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -15,9 +16,12 @@ import (
 // driverRouteHandlers sirve la ruta del repartidor autenticado. El rol lo fija DriverOnly. La ruta sale
 // de su propio perfil en Driver Service, así que nunca se consulta una ruta ajena (ADR 0008).
 type driverRouteHandlers struct {
-	drivers DriverClient
-	orders  OrderClient
-	planner RoutePlanner
+	drivers        DriverClient
+	orders         OrderClient
+	planner        RoutePlanner
+	orderedPlanner OrderedRoutePlanner
+	reorderRoutes  RouteReorderClient
+	timezone       *time.Location
 }
 
 // driverRouteResponse es GET /api/v1/drivers/me/route. Sin ruta: id vacío y paradas vacías (200).

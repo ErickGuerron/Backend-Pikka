@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/ErickGuerron/Backend-Pikka/libs/osrm"
 	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/grpcclient"
@@ -88,12 +89,21 @@ func run(log *slog.Logger) error {
 
 	// La ruta óptima es opcional: sin OSRM_URL el endpoint de plan responde 503 y el resto sigue igual.
 	var planner httpapi.RoutePlanner
+	var orderedPlanner httpapi.OrderedRoutePlanner
 	if cfg.OSRMURL != "" {
-		planner = osrm.NewTripper(cfg.OSRMURL, osrmCallTimeout)
+		tripper := osrm.NewTripper(cfg.OSRMURL, osrmCallTimeout)
+		planner, orderedPlanner = tripper, tripper
+	}
+	timezone, err := time.LoadLocation(cfg.OperatingTimezone)
+	if err != nil {
+		return fmt.Errorf("operating timezone: %w", err)
 	}
 
 	e := httpapi.NewRouter(log, httpapi.Options{
 		Planner:              planner,
+		OrderedPlanner:       orderedPlanner,
+		ReorderRoutes:        orders,
+		OperatingTimezone:    timezone,
 		CORSAllowedOrigins:   cfg.CORSAllowedOrigins,
 		RateLimitPerSecond:   cfg.RateLimitPerSecond,
 		RateLimitBurst:       cfg.RateLimitBurst,

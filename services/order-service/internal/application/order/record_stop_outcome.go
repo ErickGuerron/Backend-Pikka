@@ -59,7 +59,7 @@ func (uc *RecordStopOutcome) WithReincidence(r *Reincidence) *RecordStopOutcome 
 }
 
 // recordSurchargeNonFatal runs after the stop is already closed. A failure is logged and not returned: the driver
-// cannot retry a closed stop. The reason was stored with the close, so the reconciliation sweep recovers it.
+// need not retry a closed stop. The reason was stored with the close, so the reconciliation sweep recovers it.
 func (uc *RecordStopOutcome) recordSurchargeNonFatal(ctx context.Context, closed domain.Order, reason string) {
 	if uc.surcharges == nil || closed.Status != domain.StatusNotDelivered || !domain.NotDeliveredReason(reason).CreatesIncident() {
 		return
@@ -85,7 +85,12 @@ func (uc *RecordStopOutcome) Run(ctx context.Context, cmd RecordStopOutcomeComma
 	if !domain.IsStopOutcome(cmd.Outcome) {
 		return domain.Order{}, domain.ErrInvalidStopOutcome
 	}
+	replayed := false
 	closed, err := uc.orders.AdvanceRouteStop(ctx, id.String(), routeID, func(current domain.Order) (domain.Order, error) {
+		if current.Status == cmd.Outcome {
+			replayed = true
+			return current, nil
+		}
 		next, err := current.RecordStopOutcome(cmd.Outcome)
 		if err != nil {
 			return next, err
@@ -99,8 +104,10 @@ func (uc *RecordStopOutcome) Run(ctx context.Context, cmd RecordStopOutcomeComma
 	if err != nil {
 		return domain.Order{}, err
 	}
-	uc.recordSurchargeNonFatal(ctx, closed, cmd.Reason)
-	// The closed stop frees a slot of the route's zone: the oldest waiting order can take it.
-	uc.queue.fillNonFatal(ctx, closed.ZoneID, closed.DeliveryDate.String())
+	if !replayed {
+		uc.recordSurchargeNonFatal(ctx, closed, cmd.Reason)
+		// The closed stop frees a slot of the route's zone.
+		uc.queue.fillNonFatal(ctx, closed.ZoneID, closed.DeliveryDate.String())
+	}
 	return closed, nil
 }
