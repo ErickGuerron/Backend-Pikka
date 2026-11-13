@@ -11,3 +11,14 @@ func (s Status) OccupiesRouteSlot() bool {
 		return false
 	}
 }
+
+// ZoneLimits separates the zone's daily capacity from the capacity of one route.
+type ZoneLimits struct {
+	Daily    int
+	PerRoute int
+}
+
+type ZoneDay struct {
+	ZoneID       string
+	DeliveryDate string
+}

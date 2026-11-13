@@ -6,4 +6,5 @@ type RouteStop struct {
 	ZoneID   string
 	Address  string
 	Sequence int
+	Version  int64
 }

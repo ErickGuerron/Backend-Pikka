@@ -98,7 +98,7 @@ func TestListMyOrdersAttachesQueuePosition(t *testing.T) {
 	}
 	customers := &queueCustomers{customer: domain.Customer{ID: uuid.New()}}
 	orders := &queueListRepo{orders: []domain.Order{waiting}}
-	zoneRepo := &fakeQueueRepo{position: 2}
+	zoneRepo := &fakeQueueRepo{position: 2, active: 2}
 
 	got, err := NewListMyOrders(customers, orders).WithZoneQueue(NewZoneQueue(zoneRepo, &fakeCapacity{max: 2})).Run(context.Background(), Command{
 		UserID: uuid.New(), Role: RoleCustomer,

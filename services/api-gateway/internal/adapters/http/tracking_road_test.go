@@ -18,7 +18,7 @@ func freshFix() *trackingv1.GetDriverPositionResponse {
 }
 
 func TestTrackingSnapshot_DrawsTheRoadFromTheDriverToTheCustomersDeliveryPoint(t *testing.T) {
-	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_ROUTE_ASSIGNED, trackedRouteID)}
+	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP, trackedRouteID)}
 	drivers := &routeDriversFake{byRoute: trackedDriverID}
 	tracking := &positionTrackingFake{pos: freshFix()}
 	planner := &fakePlanner{trip: osrm.Trip{Geometry: []osrm.Point{{Latitude: -0.19, Longitude: -78.49}, {Latitude: -0.185, Longitude: -78.485}}}}
@@ -34,7 +34,7 @@ func TestTrackingSnapshot_DrawsTheRoadFromTheDriverToTheCustomersDeliveryPoint(t
 }
 
 func TestTrackingSnapshot_RoadFailureDegradesToNullAndStillServes(t *testing.T) {
-	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_ROUTE_ASSIGNED, trackedRouteID)}
+	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP, trackedRouteID)}
 	tracking := &positionTrackingFake{pos: freshFix()}
 	opts := trackingOptions(orders, &routeDriversFake{byRoute: trackedDriverID}, tracking)
 	opts.Planner = &fakePlanner{err: errors.New("osrm down")}
@@ -59,7 +59,7 @@ func TestTrackingSnapshot_NoRoadWithoutAFreshDriverPosition(t *testing.T) {
 }
 
 func TestTrackingSnapshot_NoRoadWhenRoutePlanningIsNotConfigured(t *testing.T) {
-	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_ROUTE_ASSIGNED, trackedRouteID)}
+	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP, trackedRouteID)}
 	tracking := &positionTrackingFake{pos: freshFix()}
 	opts := trackingOptions(orders, &routeDriversFake{byRoute: trackedDriverID}, tracking)
 	opts.Planner = nil

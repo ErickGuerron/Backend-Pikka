@@ -7,11 +7,13 @@ import (
 
 // Route assignment errors. The messages are safe to return to the caller.
 var (
-	ErrInvalidRouteID   = errors.New("route id is required")
-	ErrNoOrdersToAssign = errors.New("at least one order id is required")
-	ErrDuplicateOrderID = errors.New("order ids must be unique")
-	ErrInvalidOrderID   = errors.New("order id must be a UUID")
-	ErrOrderNotPending  = errors.New("only PENDING orders can be assigned to a route")
+	ErrInvalidRouteID       = errors.New("route id is required")
+	ErrNoOrdersToAssign     = errors.New("at least one order id is required")
+	ErrDuplicateOrderID     = errors.New("order ids must be unique")
+	ErrInvalidOrderID       = errors.New("order id must be a UUID")
+	ErrZoneCapacityChanged  = errors.New("zone capacity or waiting orders changed; request a new plan")
+	ErrRouteCapacityChanged = errors.New("route has no capacity for this assignment")
+	ErrOrderNotPending      = errors.New("only PENDING orders can be assigned to a route")
 	// ErrInvalidStopSequence: a stop sequence is a position, so it cannot be negative.
 	// Callers that send stops require 1 or more; 0 is reserved for "unassigned".
 	ErrInvalidStopSequence   = errors.New("stop sequence must be at least 1")

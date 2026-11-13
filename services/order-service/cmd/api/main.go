@@ -17,10 +17,13 @@ import (
 	_ "time/tzdata" // zona horaria operativa disponible sin depender del sistema operativo
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 
 	catalogv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/catalog/v1"
 	customerv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/customer/v1"
+	driversv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/drivers/v1"
 	ordersv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/orders/v1"
 	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/adapters/geocoding"
 	grpcadapter "github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/adapters/grpc"
@@ -90,7 +93,21 @@ func run(log *slog.Logger) error {
 		return fmt.Errorf("dial zone service: %w", err)
 	}
 	defer func() { _ = zoneConn.Close() }()
-	orderRepo := persistence.NewOrderRepository(pool)
+	driverConn, err := grpc.NewClient(cfg.DriverServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return fmt.Errorf("dial driver service: %w", err)
+	}
+	defer func() { _ = driverConn.Close() }()
+	drivers := driversv1.NewDriverServiceClient(driverConn)
+	orderRepo := persistence.NewOrderRepository(pool).WithRouteReservation(func(ctx context.Context, routeID string) (bool, error) {
+		ctx, cancel := context.WithTimeout(ctx, cfg.ZoneTimeout)
+		defer cancel()
+		response, err := drivers.GetDriverByRouteID(ctx, &driversv1.GetDriverByRouteIDRequest{RouteId: routeID})
+		if status.Code(err) == codes.NotFound {
+			return false, nil
+		}
+		return response.GetDriverId() != "", err
+	})
 	notificationRepo := persistence.NewNotificationRepository(pool)
 	zoneClassifier := zonesclient.NewClassifier(zoneConn, cfg.ZoneTimeout)
 	zoneQueue := orderapp.NewZoneQueue(orderRepo, zoneClassifier)
@@ -105,7 +122,7 @@ func run(log *slog.Logger) error {
 	listMyNotifications := orderapp.NewListMyNotifications(customerRepo, notificationRepo)
 	cancelOrder := orderapp.NewCancelOrder(customerRepo, orderRepo).WithZoneQueue(zoneQueue)
 	getMyOrder := orderapp.NewGetMyOrder(customerRepo, orderRepo).WithZoneQueue(zoneQueue)
-	routeAssignment := orderapp.NewRouteAssignment(orderRepo).WithZoneQueue(zoneQueue)
+	routeAssignment := orderapp.NewRouteAssignment(orderRepo).WithZoneQueue(zoneQueue, orderRepo)
 	advanceRouteStop := orderapp.NewAdvanceRouteStop(orderRepo)
 	stopsBefore := orderapp.NewStopsBeforeForOrder(customerRepo, orderRepo)
 	driverRouteStops := orderapp.NewDriverRouteStops(orderRepo)
@@ -128,6 +145,8 @@ func run(log *slog.Logger) error {
 		Notifications:           listMyNotifications,
 		Cancel:                  cancelOrder,
 		GetMine:                 getMyOrder,
+		EditMine:                orderapp.NewEditMyOrder(customerRepo, orderRepo, zoneClassifier, location, zoneQueue),
+		ZoneQueue:               zoneQueue,
 		RouteAssignment:         routeAssignment,
 		AdvanceStop:             advanceRouteStop,
 		StopsBefore:             stopsBefore,
@@ -171,6 +190,8 @@ func run(log *slog.Logger) error {
 	// runs at start so a restart never leaves a late account open; a failure is logged and the next pass retries.
 	go runBalanceSweep(ctx, log, orderapp.NewReconcileIncidents(surchargeRepo, orderapp.NewIncidentRecorder(surchargeRepo, reincidence)),
 		orderapp.NewBlockOverdueBalances(persistence.NewBalanceRepository(pool)), cfg.BalanceSweepInterval)
+
+	go runZoneQueueSweep(ctx, log, zoneQueue)
 
 	errCh := make(chan error, 2)
 	go func() {
@@ -236,6 +257,21 @@ func runBalanceSweep(ctx context.Context, log *slog.Logger, reconcile *orderapp.
 			return
 		case <-ticker.C:
 			run()
+		}
+	}
+}
+
+func runZoneQueueSweep(ctx context.Context, log *slog.Logger, queue *orderapp.ZoneQueue) {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for ctx.Err() == nil {
+		if _, err := queue.Sweep(ctx); err != nil && ctx.Err() == nil {
+			log.Warn("zone queue sweep failed", "error", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
 		}
 	}
 }

@@ -31,66 +31,18 @@ func (failingListRepo) ListByCustomer(context.Context, uuid.UUID) ([]domain.Orde
 	return nil, errQueueDown
 }
 
-// After routing, each zone and delivery date is filled once, not once per order.
-func TestAssignFillsEachZoneDayOnce(t *testing.T) {
+func TestPlanningAdmitsOnlyOldestOrdersWithinZoneCapacity(t *testing.T) {
 	date := mustDeliveryDate(t, "2030-04-12")
 	first := domain.Order{ID: uuid.NewString(), ZoneID: "zone-1", DeliveryDate: date}
 	second := domain.Order{ID: uuid.NewString(), ZoneID: "zone-1", DeliveryDate: date}
+	third := domain.Order{ID: uuid.NewString(), ZoneID: "zone-1", DeliveryDate: date}
 	other := domain.Order{ID: uuid.NewString(), ZoneID: "zone-2", DeliveryDate: date}
-	repo := &routeRepo{result: []domain.Order{first, second, other}}
-	zoneRepo := &fakeQueueRepo{}
-	uc := NewRouteAssignment(repo).WithZoneQueue(NewZoneQueue(zoneRepo, &fakeCapacity{max: 2}))
-
-	_, err := uc.Assign(context.Background(), AssignToRouteCommand{
-		Role: RoleOperator, RouteID: "zone-1#1", OrderIDs: []string{first.ID, second.ID, other.ID},
-	})
-	if err != nil {
-		t.Fatalf("Assign: %v", err)
-	}
-	want := []fillCall{{"zone-1", "2030-04-12", 2}, {"zone-2", "2030-04-12", 2}}
-	if len(zoneRepo.fillCalls) != len(want) {
-		t.Fatalf("fill calls = %+v, want %+v", zoneRepo.fillCalls, want)
-	}
-	for i := range want {
-		if zoneRepo.fillCalls[i] != want[i] {
-			t.Fatalf("fill call %d = %+v, want %+v", i, zoneRepo.fillCalls[i], want[i])
-		}
-	}
-}
-
-// A repository failure while assigning must not fill any zone: nothing was routed.
-func TestAssignRepositoryErrorFillsNothing(t *testing.T) {
-	repo := &routeRepo{err: errQueueDown}
-	zoneRepo := &fakeQueueRepo{}
-	uc := NewRouteAssignment(repo).WithZoneQueue(NewZoneQueue(zoneRepo, &fakeCapacity{max: 2}))
-
-	_, err := uc.Assign(context.Background(), AssignToRouteCommand{
-		Role: RoleOperator, RouteID: "zone-1#1", OrderIDs: []string{uuid.NewString()},
-	})
-	if !errors.Is(err, errQueueDown) {
-		t.Fatalf("Assign err = %v, want errQueueDown", err)
-	}
-	if len(zoneRepo.fillCalls) != 0 {
-		t.Fatalf("fill calls = %+v, want none", zoneRepo.fillCalls)
-	}
-}
-
-// The assignment is already committed when the fill runs, so a failed fill is logged and
-// the assignment still succeeds; the next freeing event retries the fill.
-func TestAssignSucceedsWhenZoneFillFails(t *testing.T) {
-	order := domain.Order{ID: uuid.NewString(), ZoneID: "zone-1", DeliveryDate: mustDeliveryDate(t, "2030-04-12")}
-	repo := &routeRepo{result: []domain.Order{order}}
-	capacity := &fakeCapacity{err: errQueueDown}
-	uc := NewRouteAssignment(repo).WithZoneQueue(NewZoneQueue(&fakeQueueRepo{}, capacity))
-
-	got, err := uc.Assign(context.Background(), AssignToRouteCommand{
-		Role: RoleOperator, RouteID: "zone-1#1", OrderIDs: []string{order.ID},
-	})
-	if err != nil {
-		t.Fatalf("Assign: %v, want success despite the failed fill", err)
-	}
-	if len(got) != 1 || got[0].ID != order.ID {
-		t.Fatalf("assigned = %+v, want the routed order", got)
+	repo := &routeRepo{result: []domain.Order{first, second, third, other}}
+	queue := NewZoneQueue(&fakeQueueRepo{active: 1}, &fakeCapacity{max: 3})
+	uc := NewRouteAssignment(repo).WithZoneQueue(queue, nil)
+	got, err := uc.PendingByDate(context.Background(), RoleOperator, date.String())
+	if err != nil || len(got) != 3 || got[0].ID != first.ID || got[1].ID != second.ID || got[2].ID != other.ID {
+		t.Fatalf("eligible orders = %+v, error = %v", got, err)
 	}
 }
 
@@ -135,7 +87,7 @@ func TestListMyOrdersReportsFailures(t *testing.T) {
 // A new order that waits for zone capacity is filled once and reports its place in line.
 func TestCreateOrderAttachesQueueWhenWired(t *testing.T) {
 	f := newCreate(activeCustomer(), &fakeZones{zoneID: zoneUUID}, &fakeGeocoder{found: true})
-	zoneRepo := &fakeQueueRepo{position: 3}
+	zoneRepo := &fakeQueueRepo{position: 3, active: 2}
 	uc := f.uc.WithZoneQueue(NewZoneQueue(zoneRepo, &fakeCapacity{max: 2}))
 
 	got, err := uc.Run(context.Background(), knownPoint())

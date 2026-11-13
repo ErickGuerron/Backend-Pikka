@@ -55,7 +55,7 @@ func snapshotJSON(t *testing.T, h http.Handler) map[string]any {
 }
 
 func TestTrackingSnapshot_IncludesTheFreshDriverPosition(t *testing.T) {
-	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_ROUTE_ASSIGNED, trackedRouteID)}
+	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP, trackedRouteID)}
 	drivers := &routeDriversFake{byRoute: trackedDriverID}
 	tracking := &positionTrackingFake{pos: &trackingv1.GetDriverPositionResponse{Latitude: -0.19, Longitude: -78.49, RecordedAt: "2026-10-16T11:59:30Z"}}
 	h := routerFor(trackingOptions(orders, drivers, tracking), io.Discard)
@@ -72,7 +72,7 @@ func TestTrackingSnapshot_IncludesTheFreshDriverPosition(t *testing.T) {
 }
 
 func TestTrackingSnapshot_NoFreshPositionIsNullAndTheSnapshotStillServes(t *testing.T) {
-	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_ROUTE_ASSIGNED, trackedRouteID)}
+	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP, trackedRouteID)}
 	drivers := &routeDriversFake{byRoute: trackedDriverID}
 	tracking := &positionTrackingFake{posErr: status.Error(codes.NotFound, "stale")}
 	h := routerFor(trackingOptions(orders, drivers, tracking), io.Discard)
@@ -85,7 +85,7 @@ func TestTrackingSnapshot_NoFreshPositionIsNullAndTheSnapshotStillServes(t *test
 }
 
 func TestTrackingSnapshot_DriverPositionCarriesNoIdentity(t *testing.T) {
-	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_ROUTE_ASSIGNED, trackedRouteID)}
+	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP, trackedRouteID)}
 	drivers := &routeDriversFake{byRoute: trackedDriverID}
 	tracking := &positionTrackingFake{pos: &trackingv1.GetDriverPositionResponse{Latitude: -0.19, Longitude: -78.49, RecordedAt: "2026-10-16T11:59:30Z"}}
 	h := routerFor(trackingOptions(orders, drivers, tracking), io.Discard)

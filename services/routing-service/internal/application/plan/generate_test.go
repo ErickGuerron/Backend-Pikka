@@ -125,7 +125,9 @@ func (f fakeZones) MaxOrdersPerRoute(_ context.Context, zoneID string) (int, err
 }
 
 func newUseCase(orders *fakeOrders, zones fakeZones, drivers *fakeDrivers) *Generate {
-	return New(orders, zones, drivers, fakeLocations{}, domain.ZoneCapacityPlanner{})
+	uc := New(orders, zones, drivers, fakeLocations{}, domain.ZoneCapacityPlanner{})
+	uc.newRunID = func() string { return "run" }
+	return uc
 }
 
 func TestGenerateSplitsEachZoneByItsOwnCapacity(t *testing.T) {
@@ -153,7 +155,7 @@ func TestGenerateSplitsEachZoneByItsOwnCapacity(t *testing.T) {
 		route string
 		size  int
 	}{
-		{"2026-10-15-A-1", 2}, {"2026-10-15-A-2", 1}, {"2026-10-15-B-1", 2},
+		{"2026-10-15-A-1-run", 2}, {"2026-10-15-A-2-run", 1}, {"2026-10-15-B-1-run", 2},
 	}
 	for i, want := range wantIDs {
 		call := orders.assigned[i]
@@ -167,9 +169,9 @@ func TestGenerateSplitsEachZoneByItsOwnCapacity(t *testing.T) {
 		}
 	}
 	wantRoutes := []AssignedRoute{
-		{RouteID: "2026-10-15-A-1", DriverID: "d1", DriverName: "name-d1", OrderCount: 2},
-		{RouteID: "2026-10-15-A-2", DriverID: "d2", DriverName: "name-d2", OrderCount: 1},
-		{RouteID: "2026-10-15-B-1", DriverID: "d3", DriverName: "name-d3", OrderCount: 2},
+		{RouteID: "2026-10-15-A-1-run", DriverID: "d1", DriverName: "name-d1", OrderCount: 2},
+		{RouteID: "2026-10-15-A-2-run", DriverID: "d2", DriverName: "name-d2", OrderCount: 1},
+		{RouteID: "2026-10-15-B-1-run", DriverID: "d3", DriverName: "name-d3", OrderCount: 2},
 	}
 	if !slices.Equal(got.Routes, wantRoutes) {
 		t.Fatalf("routes = %+v, want %+v", got.Routes, wantRoutes)
@@ -273,15 +275,15 @@ func TestGenerateReservesDriverBeforeAssigningEachRoute(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	want := []string{
-		"reserve d1 2026-10-15-A-1", "assign 2026-10-15-A-1",
-		"reserve d2 2026-10-15-A-2", "assign 2026-10-15-A-2",
+		"reserve d1 2026-10-15-A-1-run", "assign 2026-10-15-A-1-run",
+		"reserve d2 2026-10-15-A-2-run", "assign 2026-10-15-A-2-run",
 	}
 	if !slices.Equal(tr.steps, want) {
 		t.Fatalf("steps = %v, want %v", tr.steps, want)
 	}
 	wantRoutes := []AssignedRoute{
-		{RouteID: "2026-10-15-A-1", DriverID: "d1", DriverName: "name-d1", OrderCount: 2},
-		{RouteID: "2026-10-15-A-2", DriverID: "d2", DriverName: "name-d2", OrderCount: 1},
+		{RouteID: "2026-10-15-A-1-run", DriverID: "d1", DriverName: "name-d1", OrderCount: 2},
+		{RouteID: "2026-10-15-A-2-run", DriverID: "d2", DriverName: "name-d2", OrderCount: 1},
 	}
 	if !slices.Equal(got.Routes, wantRoutes) {
 		t.Fatalf("routes = %+v, want %+v", got.Routes, wantRoutes)
@@ -299,10 +301,10 @@ func TestGenerateStopsWhenNoDriverForLaterRoute(t *testing.T) {
 	if !errors.Is(err, ErrNoDriverAvailable) {
 		t.Fatalf("err = %v, want ErrNoDriverAvailable", err)
 	}
-	if len(got.Routes) != 1 || got.Routes[0].RouteID != "2026-10-15-A-1" || got.Routes[0].DriverID != "d1" {
+	if len(got.Routes) != 1 || got.Routes[0].RouteID != "2026-10-15-A-1-run" || got.Routes[0].DriverID != "d1" {
 		t.Fatalf("routes before failure = %+v, want only A#1 with d1", got.Routes)
 	}
-	if len(orders.assigned) != 1 || orders.assigned[0].routeID != "2026-10-15-A-1" {
+	if len(orders.assigned) != 1 || orders.assigned[0].routeID != "2026-10-15-A-1-run" {
 		t.Fatalf("assignments = %+v, want only A#1", orders.assigned)
 	}
 	for _, stop := range orders.assigned[0].stops {
@@ -338,7 +340,7 @@ func TestGenerateStopsWhenReserveFails(t *testing.T) {
 	if !errors.Is(err, reserveErr) {
 		t.Fatalf("err = %v, want the reserve error", err)
 	}
-	if len(got.Routes) != 1 || got.Routes[0].RouteID != "2026-10-15-A-1" {
+	if len(got.Routes) != 1 || got.Routes[0].RouteID != "2026-10-15-A-1-run" {
 		t.Fatalf("routes before failure = %+v, want only A#1", got.Routes)
 	}
 	if len(orders.assigned) != 1 {
@@ -386,7 +388,7 @@ func TestGenerateReportsRoutesAssignedBeforeAFailure(t *testing.T) {
 		t.Fatalf("assignments after failure: %+v", orders.assigned)
 	}
 	// The failing route's driver is released, so it is not left reserved for a route with no orders.
-	want := []reservation{{driverID: "d2", routeID: "2026-10-15-A-2"}}
+	want := []reservation{{driverID: "d2", routeID: "2026-10-15-A-2-run"}}
 	if !slices.Equal(drivers.released, want) {
 		t.Fatalf("released = %+v, want %+v", drivers.released, want)
 	}
@@ -405,7 +407,7 @@ func TestGenerateReleasesDriverWhenAssignFails(t *testing.T) {
 	if !errors.Is(err, assignErr) {
 		t.Fatalf("err = %v, want it to wrap the assign error", err)
 	}
-	want := []reservation{{driverID: "d1", routeID: "2026-10-15-A-1"}}
+	want := []reservation{{driverID: "d1", routeID: "2026-10-15-A-1-run"}}
 	if !slices.Equal(drivers.released, want) {
 		t.Fatalf("released = %+v, want %+v", drivers.released, want)
 	}
@@ -429,8 +431,8 @@ func TestGenerateReleasesBeforeStoppingAfterAssignFails(t *testing.T) {
 		t.Fatalf("err = %v, want the assign error", err)
 	}
 	want := []string{
-		"reserve d1 2026-10-15-A-1", "assign 2026-10-15-A-1",
-		"reserve d2 2026-10-15-A-2", "release d2 2026-10-15-A-2",
+		"reserve d1 2026-10-15-A-1-run", "assign 2026-10-15-A-1-run",
+		"reserve d2 2026-10-15-A-2-run", "release d2 2026-10-15-A-2-run",
 	}
 	if !slices.Equal(tr.steps, want) {
 		t.Fatalf("steps = %v, want %v", tr.steps, want)

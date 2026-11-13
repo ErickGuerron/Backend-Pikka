@@ -23,7 +23,8 @@ const orderColumns = `id::text, COALESCE(customer_id::text, ''), COALESCE(zone_i
 
 // OrderRepository es la implementación PostgreSQL de ports.OrderRepository.
 type OrderRepository struct {
-	pool *pgxpool.Pool
+	pool          *pgxpool.Pool
+	routeReserved func(context.Context, string) (bool, error)
 }
 
 var _ ports.OrderRepository = (*OrderRepository)(nil)
@@ -31,6 +32,12 @@ var _ ports.OrderRepository = (*OrderRepository)(nil)
 // NewOrderRepository inyecta el pool pgx.
 func NewOrderRepository(pool *pgxpool.Pool) *OrderRepository {
 	return &OrderRepository{pool: pool}
+}
+
+// WithRouteReservation verifies that a historical route still has an assigned driver before queueing into it.
+func (r *OrderRepository) WithRouteReservation(check func(context.Context, string) (bool, error)) *OrderRepository {
+	r.routeReserved = check
+	return r
 }
 
 // Create inserta el pedido y, si hay notificación, la guarda en la misma transacción.
@@ -175,6 +182,7 @@ func (r *OrderRepository) review(ctx context.Context, orderID string, decide fun
 		        window_start = $6::time, window_end = $7::time, zone_id = $8,
 		        status = $9, review_reasons = $10, address_reference = $11, postal_code = $12,
 		        contact_phone = $13, version = version + 1, updated_at = now(),
+		        queued_at = CASE WHEN zone_id IS DISTINCT FROM $8 OR delivery_date <> $5::date THEN clock_timestamp() ELSE queued_at END,
 		        route_id = CASE WHEN $14 THEN NULL ELSE route_id END,
 		        stop_sequence = CASE WHEN $14 THEN NULL ELSE stop_sequence END
 		  WHERE id = $1

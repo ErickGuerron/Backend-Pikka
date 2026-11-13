@@ -127,6 +127,12 @@ func (o *Orders) CancelOrder(ctx context.Context, m CallMeta, req *ordersv1.Canc
 	return o.client.CancelOrder(ctx, req)
 }
 
+func (o *Orders) EditMyOrder(ctx context.Context, m CallMeta, req *ordersv1.EditMyOrderRequest) (*ordersv1.EditMyOrderResponse, error) {
+	ctx, cancel := o.outgoing(ctx, m)
+	defer cancel()
+	return o.client.EditMyOrder(ctx, req)
+}
+
 // GetMyOrder lee un pedido del cliente autenticado. Un pedido ajeno o inexistente llega como NOT_FOUND.
 func (o *Orders) GetMyOrder(ctx context.Context, m CallMeta, req *ordersv1.GetMyOrderRequest) (*ordersv1.GetMyOrderResponse, error) {
 	ctx, cancel := o.outgoing(ctx, m)

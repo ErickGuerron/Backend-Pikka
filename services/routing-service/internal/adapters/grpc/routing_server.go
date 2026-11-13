@@ -117,6 +117,8 @@ func mapGenerateError(err error, assigned int) error {
 		code = codes.InvalidArgument
 	case errors.Is(err, plan.ErrNoDriverAvailable):
 		code = codes.FailedPrecondition
+	case status.Code(err) == codes.Aborted:
+		code = codes.Aborted
 	default:
 		code = codes.Internal
 	}

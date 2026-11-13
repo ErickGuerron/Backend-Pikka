@@ -65,13 +65,9 @@ func NewOrder(input NewOrderInput, registeredAt time.Time) (Order, error) {
 	if registeredAt.IsZero() || registeredAt.Year() < 1 || registeredAt.Year() > 9999 {
 		return Order{}, ErrInvalidCreatedAt
 	}
-	address := strings.TrimSpace(input.Address)
-	length := utf8.RuneCountInString(address)
-	if !utf8.ValidString(address) || strings.ContainsRune(address, '\x00') || length < 5 || length > 300 {
-		return Order{}, ErrInvalidAddress
-	}
-	if !validCoordinates(input.Latitude, input.Longitude) {
-		return Order{}, ErrInvalidCoordinate
+	address, err := deliveryAddress(input.Address, input.Latitude, input.Longitude)
+	if err != nil {
+		return Order{}, err
 	}
 	date, err := ParseDeliveryDate(input.DeliveryDate)
 	if err != nil {
@@ -84,13 +80,13 @@ func NewOrder(input NewOrderInput, registeredAt time.Time) (Order, error) {
 	if err != nil {
 		return Order{}, err
 	}
-	reference := strings.TrimSpace(input.AddressReference)
-	if n := utf8.RuneCountInString(reference); !utf8.ValidString(reference) || strings.ContainsRune(reference, '\x00') || n < 3 || n > 200 {
-		return Order{}, ErrInvalidAddressReference
+	reference, err := addressReference(input.AddressReference)
+	if err != nil {
+		return Order{}, err
 	}
-	postalCode := strings.TrimSpace(input.PostalCode)
-	if postalCode != "" && !validPostalCode(postalCode) {
-		return Order{}, ErrInvalidPostalCode
+	postalCode, err := postalCode(input.PostalCode)
+	if err != nil {
+		return Order{}, err
 	}
 	phone, err := NormalizePhone(input.ContactPhone)
 	if err != nil {
@@ -142,4 +138,32 @@ func validCoordinates(latitude, longitude float64) bool {
 	return !math.IsNaN(latitude) && !math.IsNaN(longitude) &&
 		!math.IsInf(latitude, 0) && !math.IsInf(longitude, 0) &&
 		latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180
+}
+
+func deliveryAddress(value string, latitude, longitude float64) (string, error) {
+	address := strings.TrimSpace(value)
+	length := utf8.RuneCountInString(address)
+	if !utf8.ValidString(address) || strings.ContainsRune(address, '\x00') || length < 5 || length > 300 {
+		return "", ErrInvalidAddress
+	}
+	if !validCoordinates(latitude, longitude) {
+		return "", ErrInvalidCoordinate
+	}
+	return address, nil
+}
+
+func addressReference(value string) (string, error) {
+	reference := strings.TrimSpace(value)
+	if n := utf8.RuneCountInString(reference); !utf8.ValidString(reference) || strings.ContainsRune(reference, '\x00') || n < 3 || n > 200 {
+		return "", ErrInvalidAddressReference
+	}
+	return reference, nil
+}
+
+func postalCode(value string) (string, error) {
+	code := strings.TrimSpace(value)
+	if code != "" && !validPostalCode(code) {
+		return "", ErrInvalidPostalCode
+	}
+	return code, nil
 }

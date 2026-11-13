@@ -102,7 +102,7 @@ func dialTracking(t *testing.T, srv *httptest.Server, orderID string, subprotoco
 }
 
 func TestTrackingWS_RejectsMissingOrInvalidCredentialsBeforeUpgrade(t *testing.T) {
-	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_ROUTE_ASSIGNED, trackedRouteID)}
+	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP, trackedRouteID)}
 	srv := trackingWSServer(t, orders, &routeDriversFake{byRoute: trackedDriverID}, &trackingETAFake{}, newFakeTicker(t), io.Discard)
 	driverTok := token(t, "u-driver", "DRIVER")
 
@@ -148,7 +148,7 @@ func TestTrackingWS_ForeignOrderIsNotFoundBeforeUpgrade(t *testing.T) {
 }
 
 func TestTrackingWS_AcceptsCustomerAndSendsSnapshotOnConnect(t *testing.T) {
-	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_ROUTE_ASSIGNED, trackedRouteID)}
+	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP, trackedRouteID)}
 	ft := newFakeTicker(t)
 	srv := trackingWSServer(t, orders, &routeDriversFake{byRoute: trackedDriverID},
 		&trackingETAFake{res: &trackingv1.EstimateArrivalResponse{DistanceMeters: 800, DurationSeconds: 90}}, ft, io.Discard)
@@ -163,7 +163,7 @@ func TestTrackingWS_AcceptsCustomerAndSendsSnapshotOnConnect(t *testing.T) {
 	assert.Equal(t, "pikka.v1", conn.Subprotocol(), "the server echoes the protocol, never the token")
 	first := readSnapshotMessage(t, conn)
 	assert.Equal(t, trackedOrderID, first.OrderID)
-	assert.Equal(t, "ROUTE_ASSIGNED", first.Status)
+	assert.Equal(t, "PICKED_UP", first.Status)
 	require.NotNil(t, first.ETA)
 	assert.Equal(t, 90.0, first.ETA.DurationSeconds)
 	assert.Equal(t, 5*time.Second, <-ft.started, "the default poll interval is 5 s")
@@ -195,6 +195,13 @@ func TestTrackingWS_PushesOnlyWhenSnapshotChanges(t *testing.T) {
 	ft.tick() // cambio: se envía
 	// Si los sondeos sin cambio hubieran enviado un duplicado de PICKED_UP, aparecería aquí primero.
 	assert.Equal(t, "IN_TRANSIT", readSnapshotMessage(t, conn).Status)
+
+	orders.setStatus(ordersv1.OrderStatus_ORDER_STATUS_DELIVERED)
+	ft.tick()
+	closed := readSnapshotMessage(t, conn)
+	assert.Equal(t, "DELIVERED", closed.Status)
+	assert.Nil(t, closed.ETA)
+	assert.Nil(t, closed.StopsBefore)
 }
 
 // El timeout global de petición (RequestTimeout) no debe cortar un socket vivo: un seguimiento dura
@@ -224,7 +231,7 @@ func TestTrackingWS_SurvivesRequestTimeout(t *testing.T) {
 
 func TestTrackingWS_LogsNeverContainTokenOrCoordinates(t *testing.T) {
 	var logs syncBuffer
-	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_ROUTE_ASSIGNED, trackedRouteID)}
+	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP, trackedRouteID)}
 	ft := newFakeTicker(t)
 	srv := trackingWSServer(t, orders, &routeDriversFake{byRoute: trackedDriverID}, &trackingETAFake{}, ft, &logs)
 	tok := token(t, "u-customer", "CUSTOMER")

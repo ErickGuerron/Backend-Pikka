@@ -55,7 +55,7 @@ func (s *OrderServer) AssignOrdersToRoute(ctx context.Context, req *ordersv1.Ass
 func routeStopsFromProto(stops []*ordersv1.OrderStop) []orderapp.RouteStop {
 	out := make([]orderapp.RouteStop, 0, len(stops))
 	for _, stop := range stops {
-		out = append(out, orderapp.RouteStop{OrderID: stop.GetOrderId(), Sequence: int(stop.GetSequence())})
+		out = append(out, orderapp.RouteStop{OrderID: stop.GetOrderId(), Sequence: int(stop.GetSequence()), Version: stop.GetVersion()})
 	}
 	return out
 }
@@ -134,7 +134,20 @@ func (s *OrderServer) ListDriverRouteStops(ctx context.Context, req *ordersv1.Li
 			Version:      o.Version,
 		})
 	}
-	return &ordersv1.ListDriverRouteStopsResponse{Stops: stops, MaxOrders: s.routeMaxOrders(ctx, orders)}, nil
+	response := &ordersv1.ListDriverRouteStopsResponse{Stops: stops}
+	if len(orders) > 0 && orders[0].ZoneID != "" && s.useCases.ZoneQueue != nil {
+		first := orders[0]
+		active, limits, err := s.useCases.ZoneQueue.Occupancy(ctx, first.ZoneID, first.DeliveryDate.String())
+		if err == nil {
+			response.MaxOrders = int32(limits.PerRoute)
+			response.ZoneOccupancy = &ordersv1.ZoneOccupancy{
+				ActiveOrders: int32(active), DailyOrderLimit: int32(limits.Daily), DeliveryDate: first.DeliveryDate.String(),
+			}
+		}
+	} else {
+		response.MaxOrders = s.routeMaxOrders(ctx, orders)
+	}
+	return response, nil
 }
 
 // routeMaxOrders is the capacity of the route's zone. A route is planned inside one zone, so the first stop

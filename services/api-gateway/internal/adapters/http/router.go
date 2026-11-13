@@ -153,6 +153,7 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 		authed.GET("/orders/exceptions", o.listExceptions)
 		authed.POST("/orders/:id/review", o.review)
 		authed.POST("/orders/:id/cancel", o.cancel)
+		authed.PATCH("/orders/:id", o.edit, CustomerOnly())
 		authed.GET("/notifications/mine", o.notifications)
 	}
 

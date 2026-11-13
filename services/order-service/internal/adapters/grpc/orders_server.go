@@ -32,7 +32,9 @@ type OrderUseCases struct {
 	Notifications *orderapp.ListMyNotifications
 	Cancel        *orderapp.CancelOrder
 	// GetMine lee un pedido del cliente autenticado (GetMyOrder).
-	GetMine *orderapp.GetMyOrder
+	GetMine   *orderapp.GetMyOrder
+	EditMine  *orderapp.EditMyOrder
+	ZoneQueue *orderapp.ZoneQueue
 	// RouteAssignment atiende a Routing: pedidos pendientes por fecha y asignación a ruta.
 	RouteAssignment *orderapp.RouteAssignment
 	// AdvanceStop mueve un pedido de su ruta por PICKED_UP e IN_TRANSIT (AdvanceRouteStop).
@@ -344,6 +346,10 @@ func correctionFromProto(c *ordersv1.OrderCorrection) *orderapp.Correction {
 // Los mensajes de validación del dominio son seguros para el cliente.
 func mapOrderError(err error) error {
 	switch {
+	case errors.Is(err, domain.ErrZoneNotCovered):
+		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, domain.ErrZoneCapacityChanged), errors.Is(err, domain.ErrRouteCapacityChanged), errors.Is(err, domain.ErrOrderEditState):
+		return status.Error(codes.Aborted, err.Error())
 	case errors.Is(err, domain.ErrNotCustomer), errors.Is(err, domain.ErrNotOperator), errors.Is(err, domain.ErrNotAdmin):
 		return status.Error(codes.PermissionDenied, err.Error())
 	case errors.Is(err, orderapp.ErrInvalidDeliveryDate):
@@ -402,6 +408,8 @@ func mapOrderError(err error) error {
 	case errors.Is(err, domain.ErrReasonRequired),
 		errors.Is(err, orderapp.ErrUnknownAction),
 		errors.Is(err, orderapp.ErrNothingToCorrect),
+		errors.Is(err, domain.ErrEmptyOrderEdit),
+		errors.Is(err, domain.ErrIncompleteDeliveryPoint),
 		errors.Is(err, domain.ErrInvalidAddress),
 		errors.Is(err, domain.ErrInvalidAddressReference),
 		errors.Is(err, domain.ErrInvalidPostalCode),
@@ -452,6 +460,7 @@ func orderToProto(o domain.Order) *ordersv1.Order {
 		ZoneId:        o.ZoneID,
 		RouteId:       o.RouteID,
 		QueuePosition: int32(o.QueuePosition),
+		Version:       o.Version,
 
 		AddressReference: o.AddressReference,
 		PostalCode:       o.PostalCode,

@@ -59,7 +59,7 @@ func (g *OrderGateway) PendingByDate(ctx context.Context, deliveryDate string) (
 	out := make([]domain.PlannableOrder, 0, len(res.GetOrders()))
 	for _, order := range res.GetOrders() {
 		out = append(out, domain.PlannableOrder{
-			OrderID: order.GetId(), ZoneID: order.GetZoneId(), Address: order.GetAddress(), WindowEnd: order.GetWindowEnd(),
+			OrderID: order.GetId(), ZoneID: order.GetZoneId(), Address: order.GetAddress(), WindowEnd: order.GetWindowEnd(), Version: order.GetVersion(),
 		})
 	}
 	return out, nil
@@ -73,6 +73,7 @@ func (g *OrderGateway) AssignToRoute(ctx context.Context, routeID string, stops 
 		orderStops = append(orderStops, &ordersv1.OrderStop{
 			OrderId:  stop.OrderID,
 			Sequence: int32(stop.Sequence),
+			Version:  stop.Version,
 		})
 	}
 	_, err := g.client.AssignOrdersToRoute(forwardIdentity(ctx), &ordersv1.AssignOrdersToRouteRequest{

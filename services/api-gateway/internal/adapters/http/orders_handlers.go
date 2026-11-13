@@ -23,6 +23,7 @@ type OrderClient interface {
 	ReviewOrder(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ReviewOrderRequest) (*ordersv1.ReviewOrderResponse, error)
 	CancelOrder(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.CancelOrderRequest) (*ordersv1.CancelOrderResponse, error)
 	GetMyOrder(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.GetMyOrderRequest) (*ordersv1.GetMyOrderResponse, error)
+	EditMyOrder(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.EditMyOrderRequest) (*ordersv1.EditMyOrderResponse, error)
 	StopsBeforeForOrder(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.StopsBeforeForOrderRequest) (*ordersv1.StopsBeforeForOrderResponse, error)
 	AdvanceRouteStop(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.AdvanceRouteStopRequest) (*ordersv1.AdvanceRouteStopResponse, error)
 	ListDriverRouteStops(ctx context.Context, m grpcclient.CallMeta, req *ordersv1.ListDriverRouteStopsRequest) (*ordersv1.ListDriverRouteStopsResponse, error)

@@ -107,10 +107,15 @@ func (h *customerTrackingHandlers) build(ctx context.Context, m grpcclient.CallM
 		Status:          strings.TrimPrefix(order.GetStatus().String(), "ORDER_STATUS_"),
 		DeliveryAddress: order.GetAddress(),
 		DeliveryWindow:  trackingWindow{Start: order.GetWindowStart(), End: order.GetWindowEnd()},
-		StopsBefore:     h.stopsBefore(ctx, m, order),
 		DeliveryPoint:   &trackingPoint{Latitude: order.GetLatitude(), Longitude: order.GetLongitude()},
 		UpdatedAt:       h.now().UTC().Format(time.RFC3339),
 	}
+	switch order.GetStatus() {
+	case ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP, ordersv1.OrderStatus_ORDER_STATUS_IN_TRANSIT:
+	default:
+		return snap, nil
+	}
+	snap.StopsBefore = h.stopsBefore(ctx, m, order)
 	snap.ETA, snap.ETAUnavailableReason = h.eta(ctx, m, order)
 	snap.DriverPosition = h.driverPosition(ctx, m, order)
 	snap.Road = h.road(ctx, snap.DriverPosition, order)

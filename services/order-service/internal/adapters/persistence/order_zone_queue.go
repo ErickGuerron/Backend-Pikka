@@ -16,8 +16,8 @@ import (
 // The whole fill runs in one transaction under an advisory lock keyed by zone and day, so two events
 // that free slots at the same time cannot route the same order or overfill a route. Fills of other
 // zones or days, and every other order operation, keep running in parallel.
-func (r *OrderRepository) FillZoneQueue(ctx context.Context, zoneID, deliveryDate string, maxPerRoute int) (int, error) {
-	if maxPerRoute <= 0 {
+func (r *OrderRepository) FillZoneQueue(ctx context.Context, zoneID, deliveryDate string, limits domain.ZoneLimits) (int, error) {
+	if limits.Daily <= 0 || limits.PerRoute <= 0 {
 		return 0, nil
 	}
 	tx, err := r.pool.Begin(ctx)
@@ -31,13 +31,26 @@ func (r *OrderRepository) FillZoneQueue(ctx context.Context, zoneID, deliveryDat
 	}
 
 	routed := 0
+	var unavailableRoutes []string
+	verified := make(map[string]bool)
 	for {
-		routeID, sequence, found, err := routeWithRoom(ctx, tx, zoneID, deliveryDate, maxPerRoute)
+		routeID, sequence, found, err := routeWithRoom(ctx, tx, zoneID, deliveryDate, limits, unavailableRoutes)
 		if err != nil {
 			return 0, err
 		}
 		if !found {
 			break
+		}
+		if r.routeReserved != nil && !verified[routeID] {
+			reserved, err := r.routeReserved(ctx, routeID)
+			if err != nil {
+				return 0, fmt.Errorf("zone queue: check route reservation: %w", err)
+			}
+			if !reserved {
+				unavailableRoutes = append(unavailableRoutes, routeID)
+				continue
+			}
+			verified[routeID] = true
 		}
 		waiting, found, err := oldestWaiting(ctx, tx, zoneID, deliveryDate)
 		if err != nil {
@@ -78,8 +91,12 @@ func (r *OrderRepository) QueuePosition(ctx context.Context, order domain.Order)
 		`SELECT count(*) FROM orders
 		  WHERE deleted_at IS NULL AND zone_id = $1::uuid AND delivery_date = $2::date
 		    AND status = 'PENDING' AND route_id IS NULL
-		    AND (created_at, id) <= ($3::timestamptz, $4::uuid)`,
-		order.ZoneID, order.DeliveryDate.String(), order.CreatedAt, order.ID,
+		    AND (queued_at, id) <= (
+		         SELECT queued_at, id FROM orders
+		          WHERE id = $3::uuid AND deleted_at IS NULL AND status = 'PENDING'
+		            AND route_id IS NULL AND zone_id = $1::uuid AND delivery_date = $2::date
+		        )`,
+		order.ZoneID, order.DeliveryDate.String(), order.ID,
 	).Scan(&position)
 	if err != nil {
 		return 0, fmt.Errorf("zone queue: position: %w", err)
@@ -91,32 +108,29 @@ func (r *OrderRepository) QueuePosition(ctx context.Context, order domain.Order)
 // sequence it would use, as long as the zone as a whole still has room. The capacity is the zone's total
 // of active orders per day, shared by all its routes. Closed orders keep their sequence, so the next
 // sequence comes from the highest one ever used on the route.
-func routeWithRoom(ctx context.Context, tx pgx.Tx, zoneID, deliveryDate string, maxPerZone int) (string, int, bool, error) {
-	var zoneActive int
-	if err := tx.QueryRow(ctx,
-		`SELECT count(*) FROM orders
-		  WHERE deleted_at IS NULL AND zone_id = $1::uuid AND delivery_date = $2::date
-		    AND status IN ('ROUTE_ASSIGNED', 'PICKED_UP', 'IN_TRANSIT')`,
-		zoneID, deliveryDate,
-	).Scan(&zoneActive); err != nil {
+func routeWithRoom(ctx context.Context, tx pgx.Tx, zoneID, deliveryDate string, limits domain.ZoneLimits, unavailableRoutes []string) (string, int, bool, error) {
+	zoneActive, err := activeInZone(ctx, tx, zoneID, deliveryDate)
+	if err != nil {
 		return "", 0, false, fmt.Errorf("zone queue: zone active: %w", err)
 	}
-	if zoneActive >= maxPerZone {
+	if zoneActive >= limits.Daily {
 		return "", 0, false, nil
 	}
 
 	var routeID string
 	var lastSequence, active int
-	err := tx.QueryRow(ctx,
+	err = tx.QueryRow(ctx,
 		`SELECT route_id,
 		        COALESCE(max(stop_sequence), 0),
 		        count(*) FILTER (WHERE status IN ('ROUTE_ASSIGNED', 'PICKED_UP', 'IN_TRANSIT')) AS active
 		   FROM orders
 		  WHERE deleted_at IS NULL AND zone_id = $1::uuid AND delivery_date = $2::date AND route_id IS NOT NULL
+		    AND NOT (route_id = ANY(COALESCE($4::text[], ARRAY[]::text[])))
 		  GROUP BY route_id
+		  HAVING count(*) FILTER (WHERE status IN ('ROUTE_ASSIGNED', 'PICKED_UP', 'IN_TRANSIT')) < $3
 		  ORDER BY active ASC, route_id ASC
 		  LIMIT 1`,
-		zoneID, deliveryDate,
+		zoneID, deliveryDate, limits.PerRoute, unavailableRoutes,
 	).Scan(&routeID, &lastSequence, &active)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", 0, false, nil
@@ -127,16 +141,15 @@ func routeWithRoom(ctx context.Context, tx pgx.Tx, zoneID, deliveryDate string, 
 	return routeID, lastSequence + 1, true, nil
 }
 
-// oldestWaiting locks the oldest PENDING order of the zone and day that has no route. Rows locked by
-// another transaction, such as a customer cancelling, are skipped rather than waited for.
+// oldestWaiting locks the oldest PENDING order of the zone and day that has no route. Waiting for row locks preserves FIFO during concurrent edits or cancellations.
 func oldestWaiting(ctx context.Context, tx pgx.Tx, zoneID, deliveryDate string) (domain.Order, bool, error) {
 	order, err := scanOrder(tx.QueryRow(ctx,
 		`SELECT `+orderColumns+` FROM orders
 		  WHERE deleted_at IS NULL AND zone_id = $1::uuid AND delivery_date = $2::date
 		    AND status = 'PENDING' AND route_id IS NULL
-		  ORDER BY created_at ASC, id ASC
+		  ORDER BY queued_at ASC, id ASC
 		  LIMIT 1
-		  FOR UPDATE SKIP LOCKED`,
+		  FOR UPDATE`,
 		zoneID, deliveryDate,
 	))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -146,4 +159,30 @@ func oldestWaiting(ctx context.Context, tx pgx.Tx, zoneID, deliveryDate string) 
 		return domain.Order{}, false, fmt.Errorf("zone queue: oldest waiting: %w", err)
 	}
 	return order, true, nil
+}
+
+func (r *OrderRepository) WaitingZoneDays(ctx context.Context) ([]domain.ZoneDay, error) {
+	rows, err := r.pool.Query(ctx, `SELECT DISTINCT zone_id::text, to_char(delivery_date, 'YYYY-MM-DD') AS day FROM orders
+		WHERE deleted_at IS NULL AND status = 'PENDING' AND route_id IS NULL AND zone_id IS NOT NULL
+		ORDER BY day, zone_id::text`)
+	if err != nil {
+		return nil, fmt.Errorf("zone queue: waiting zone days: %w", err)
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[domain.ZoneDay])
+}
+
+func (r *OrderRepository) ZoneActiveCount(ctx context.Context, zoneID, deliveryDate string) (int, error) {
+	return activeInZone(ctx, r.pool, zoneID, deliveryDate)
+}
+
+const activeOrderStatuses = "('ROUTE_ASSIGNED', 'PICKED_UP', 'IN_TRANSIT')"
+
+func activeInZone(ctx context.Context, db interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}, zoneID, deliveryDate string) (int, error) {
+	var active int
+	err := db.QueryRow(ctx, `SELECT count(*) FROM orders
+		WHERE deleted_at IS NULL AND zone_id = $1::uuid AND delivery_date = $2::date
+		AND status IN `+activeOrderStatuses, zoneID, deliveryDate).Scan(&active)
+	return active, err
 }

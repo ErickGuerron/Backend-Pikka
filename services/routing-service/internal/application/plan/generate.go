@@ -3,6 +3,7 @@ package plan
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"maps"
@@ -60,11 +61,12 @@ type Generate struct {
 	drivers   ports.DriverPool
 	locations ports.DriverLocations
 	planner   domain.RoutePlanner
+	newRunID  func() string
 }
 
 // New injects the gateways, the driver pool, the driver locations and the planner.
 func New(orders ports.OrderGateway, zones ports.ZoneCapacities, drivers ports.DriverPool, locations ports.DriverLocations, planner domain.RoutePlanner) *Generate {
-	return &Generate{orders: orders, zones: zones, drivers: drivers, locations: locations, planner: planner}
+	return &Generate{orders: orders, zones: zones, drivers: drivers, locations: locations, planner: planner, newRunID: rand.Text}
 }
 
 // Run generates and assigns the routes for deliveryDate (YYYY-MM-DD).
@@ -82,9 +84,10 @@ func (uc *Generate) Run(ctx context.Context, deliveryDate string) (Result, error
 		return Result{}, err
 	}
 
+	runID := uc.newRunID()
 	var result Result
 	for _, route := range planned {
-		routeID := scopedRouteID(deliveryDate, route.ID)
+		routeID := scopedRouteID(deliveryDate, route.ID, runID)
 		// The route goes to the available driver nearest to its zone. A zone without geometry ranks nobody.
 		center, hasCenter := centers[route.ZoneID]
 		driverID, driverName, err := uc.reserveDriver(ctx, routeID, center, hasCenter)
@@ -204,19 +207,30 @@ func (uc *Generate) planByZone(ctx context.Context, pending []domain.PlannableOr
 		if ok {
 			centers[zoneID] = center
 		}
-		routes, err := uc.planner.Plan(groups[zoneID], capacity)
-		if err != nil {
-			return nil, nil, fmt.Errorf("plan zone %s: %w", zoneID, err)
+		if capacity < 1 {
+			return nil, nil, fmt.Errorf("plan zone %s: %w", zoneID, domain.ErrInvalidCapacity)
 		}
-		planned = append(planned, routes...)
+		// Admit orders in the FIFO order supplied by Order Service. The planner may sort
+		// by delivery window inside each route, so a scarce driver still takes the oldest batch.
+		nextRoute := 1
+		for batch := range slices.Chunk(groups[zoneID], capacity) {
+			routes, err := uc.planner.Plan(batch, capacity)
+			if err != nil {
+				return nil, nil, fmt.Errorf("plan zone %s: %w", zoneID, err)
+			}
+			for _, route := range routes {
+				route.ID = fmt.Sprintf("%s#%d", zoneID, nextRoute)
+				nextRoute++
+				planned = append(planned, route)
+			}
+		}
 	}
 	return planned, centers, nil
 }
 
 // scopedRouteID prefixes the planner id with the delivery date. Planner ids are
-// {zone}#{n} and repeat on every date, so the date keeps them unique in Order Service.
-// The result is {date}-{zone}-{n}: it must stay URL-path safe, because the driver
-// stop endpoint carries the route id in the path (no "/" and no "#").
-func scopedRouteID(deliveryDate, plannerID string) string {
-	return deliveryDate + "-" + strings.ReplaceAll(plannerID, "#", "-")
+// {zone}#{n} and repeat on every run, so each plan also has a unique suffix.
+// The driver stop endpoint carries the route id in the path.
+func scopedRouteID(deliveryDate, plannerID, runID string) string {
+	return deliveryDate + "-" + strings.ReplaceAll(plannerID, "#", "-") + "-" + runID
 }

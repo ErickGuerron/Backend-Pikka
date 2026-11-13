@@ -18,6 +18,7 @@ const deliveryDateLayout = "2006-01-02"
 type RouteStop struct {
 	OrderID  string
 	Sequence int
+	Version  int64
 }
 
 // AssignToRouteCommand pide asignar pedidos PENDING a una ruta. Role es la identidad
@@ -33,8 +34,9 @@ type AssignToRouteCommand struct {
 
 // RouteAssignment expone los pedidos pendientes por fecha y su asignación a ruta.
 type RouteAssignment struct {
-	orders ports.RouteAssignmentRepository
-	queue  *ZoneQueue
+	orders         ports.RouteAssignmentRepository
+	queue          *ZoneQueue
+	capacityOrders ports.CapacityRouteAssignmentRepository
 }
 
 // NewRouteAssignment inyecta el repositorio.
@@ -42,9 +44,10 @@ func NewRouteAssignment(orders ports.RouteAssignmentRepository) *RouteAssignment
 	return &RouteAssignment{orders: orders}
 }
 
-// WithZoneQueue hace que, tras planificar rutas, los pedidos en espera de cada zona ocupen los cupos que queden libres.
-func (uc *RouteAssignment) WithZoneQueue(queue *ZoneQueue) *RouteAssignment {
+// WithZoneQueue connects planning to the same zone capacity used for queue fills.
+func (uc *RouteAssignment) WithZoneQueue(queue *ZoneQueue, orders ports.CapacityRouteAssignmentRepository) *RouteAssignment {
 	uc.queue = queue
+	uc.capacityOrders = orders
 	return uc
 }
 
@@ -56,7 +59,33 @@ func (uc *RouteAssignment) PendingByDate(ctx context.Context, role, deliveryDate
 	if _, err := time.Parse(deliveryDateLayout, deliveryDate); err != nil {
 		return nil, domain.ErrInvalidDate
 	}
-	return uc.orders.ListPendingByDate(ctx, deliveryDate)
+	pending, err := uc.orders.ListPendingByDate(ctx, deliveryDate)
+	if err != nil || uc.queue == nil {
+		return pending, err
+	}
+	remaining := make(map[string]int)
+	eligible := make([]domain.Order, 0, len(pending))
+	for _, o := range pending {
+		if o.ZoneID == "" {
+			continue
+		}
+		free, seen := remaining[o.ZoneID]
+		if !seen {
+			limits, count, err := uc.queue.capacityForDay(ctx, o.ZoneID, deliveryDate)
+			if err != nil {
+				return nil, err
+			}
+			if limits.PerRoute > 0 {
+				free = count
+			}
+			remaining[o.ZoneID] = free
+		}
+		if free > 0 {
+			eligible = append(eligible, o)
+			remaining[o.ZoneID]--
+		}
+	}
+	return eligible, nil
 }
 
 // Assign valida la entrada y mueve todos los pedidos a ROUTE_ASSIGNED, o ninguno.
@@ -73,29 +102,24 @@ func (uc *RouteAssignment) Assign(ctx context.Context, cmd AssignToRouteCommand)
 		return nil, err
 	}
 	ids := make([]string, 0, len(stops))
-	sequences := make(map[string]int, len(stops))
+	byID := make(map[string]RouteStop, len(stops))
 	for _, stop := range stops {
 		ids = append(ids, stop.OrderID)
-		sequences[stop.OrderID] = stop.Sequence
+		byID[stop.OrderID] = stop
 	}
-	assigned, err := uc.orders.AssignToRoute(ctx, ids, func(current domain.Order) (domain.Order, error) {
-		return current.AssignToRoute(routeID, sequences[current.ID])
-	})
-	if err != nil {
-		return nil, err
-	}
-	// A planned route can leave room in its zone; the waiting orders of that zone may take it.
-	type zoneDay struct{ zone, date string }
-	filled := make(map[zoneDay]bool, len(assigned))
-	for _, order := range assigned {
-		key := zoneDay{order.ZoneID, order.DeliveryDate.String()}
-		if filled[key] {
-			continue
+	decide := func(current domain.Order) (domain.Order, error) {
+		stop := byID[current.ID]
+		if stop.Version > 0 && stop.Version != current.Version {
+			return domain.Order{}, domain.ErrZoneCapacityChanged
 		}
-		filled[key] = true
-		uc.queue.fillNonFatal(ctx, key.zone, key.date)
+		return current.AssignToRoute(routeID, stop.Sequence)
 	}
-	return assigned, nil
+	if uc.queue != nil && uc.capacityOrders != nil {
+		// The sweep and other hooks can fill later. Filling here could claim orders from
+		// another route in the same routing plan before Routing commits that route.
+		return uc.capacityOrders.AssignWithinCapacity(ctx, ids, routeID, uc.queue.capacity, decide)
+	}
+	return uc.orders.AssignToRoute(ctx, ids, decide)
 }
 
 // normalizeStops validates the stops (or the legacy order ids) before any repository call.
@@ -133,7 +157,7 @@ func normalizeStops(cmd AssignToRouteCommand) ([]RouteStop, error) {
 			}
 			seenSequences[stop.Sequence] = struct{}{}
 		}
-		out = append(out, RouteStop{OrderID: id.String(), Sequence: stop.Sequence})
+		out = append(out, RouteStop{OrderID: id.String(), Sequence: stop.Sequence, Version: stop.Version})
 	}
 	return out, nil
 }

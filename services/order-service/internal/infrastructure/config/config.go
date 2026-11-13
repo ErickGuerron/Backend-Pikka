@@ -17,7 +17,8 @@ type Config struct {
 	// GRPCPort expone el dominio Customer y Order al API Gateway.
 	GRPCPort int
 	// ZoneServiceAddr es el destino gRPC de Zone Service (validación de zona).
-	ZoneServiceAddr string
+	ZoneServiceAddr   string
+	DriverServiceAddr string
 	// ZoneTimeout acota cada llamada a Zone Service.
 	ZoneTimeout time.Duration
 	// OperatingTimezone fija el día local de registro de pedidos (IANA).
@@ -85,6 +86,7 @@ func Load() (Config, error) {
 		HTTPPort:          httpPort,
 		GRPCPort:          grpcPort,
 		ZoneServiceAddr:   getEnv("ZONE_SERVICE_ADDR", "localhost:9090"),
+		DriverServiceAddr: getEnv("DRIVER_SERVICE_ADDR", "localhost:9092"),
 		ZoneTimeout:       time.Duration(zoneTimeoutMs) * time.Millisecond,
 		OperatingTimezone: getEnv("OPERATING_TIMEZONE", "America/Guayaquil"),
 		PhotonURL:         getEnv("PHOTON_URL", "https://photon.komoot.io"),

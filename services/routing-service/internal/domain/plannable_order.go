@@ -9,6 +9,7 @@ import (
 type PlannableOrder struct {
 	OrderID string
 	ZoneID  string
+	Version int64
 	// Address is the delivery address as Order Service stored it. It is carried to the stop.
 	Address string
 	// WindowEnd is the local HH:mm delivery deadline.

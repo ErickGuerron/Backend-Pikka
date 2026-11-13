@@ -16,8 +16,10 @@ type fakeQueueRepo struct {
 	ports.ZoneQueueRepository
 	fillCalls []fillCall
 	assigned  int
+	active    int
 	position  int
 	positions int
+	days      []domain.ZoneDay
 }
 
 type fillCall struct {
@@ -25,8 +27,8 @@ type fillCall struct {
 	maxPerRoute          int
 }
 
-func (r *fakeQueueRepo) FillZoneQueue(_ context.Context, zoneID, deliveryDate string, maxPerRoute int) (int, error) {
-	r.fillCalls = append(r.fillCalls, fillCall{zoneID, deliveryDate, maxPerRoute})
+func (r *fakeQueueRepo) FillZoneQueue(_ context.Context, zoneID, deliveryDate string, limits domain.ZoneLimits) (int, error) {
+	r.fillCalls = append(r.fillCalls, fillCall{zoneID, deliveryDate, limits.PerRoute})
 	return r.assigned, nil
 }
 
@@ -41,9 +43,9 @@ type fakeCapacity struct {
 	zone string
 }
 
-func (c *fakeCapacity) MaxOrdersPerRoute(_ context.Context, zoneID string) (int, error) {
+func (c *fakeCapacity) ZoneLimits(_ context.Context, zoneID string) (domain.ZoneLimits, error) {
 	c.zone = zoneID
-	return c.max, c.err
+	return domain.ZoneLimits{Daily: c.max, PerRoute: c.max}, c.err
 }
 
 func TestZoneQueueFillPassesZoneDateAndCapacity(t *testing.T) {
@@ -107,7 +109,7 @@ func TestZoneQueueFillReturnsCapacityError(t *testing.T) {
 // Only a PENDING order without route and with a zone is waiting in line. Anything else has
 // position 0 and must not reach the repository.
 func TestZoneQueuePositionOnlyForWaitingOrders(t *testing.T) {
-	repo := &fakeQueueRepo{position: 3}
+	repo := &fakeQueueRepo{position: 3, active: 3}
 	queue := NewZoneQueue(repo, &fakeCapacity{max: 3})
 	ctx := context.Background()
 
@@ -128,5 +130,30 @@ func TestZoneQueuePositionOnlyForWaitingOrders(t *testing.T) {
 	}
 	if repo.positions != 1 {
 		t.Fatalf("repository asked %d times, want 1 (only the waiting order)", repo.positions)
+	}
+}
+
+func (r *fakeQueueRepo) WaitingZoneDays(context.Context) ([]domain.ZoneDay, error) {
+	return r.days, nil
+}
+
+func (r *fakeQueueRepo) ZoneActiveCount(context.Context, string, string) (int, error) {
+	return r.active, nil
+}
+
+func TestZoneQueueSweepFillsEachPendingScope(t *testing.T) {
+	repo := &fakeQueueRepo{assigned: 1, days: []domain.ZoneDay{
+		{ZoneID: "a", DeliveryDate: "2030-04-12"}, {ZoneID: "a", DeliveryDate: "2030-04-13"},
+		{ZoneID: "b", DeliveryDate: "2030-04-12"},
+	}}
+	queue := NewZoneQueue(repo, &fakeCapacity{max: 4})
+	count, err := queue.Sweep(context.Background())
+	if err != nil || count != 3 || len(repo.fillCalls) != 3 {
+		t.Fatalf("sweep returned %d, %v; calls: %+v", count, err, repo.fillCalls)
+	}
+	for i, call := range repo.fillCalls {
+		if call.zoneID != repo.days[i].ZoneID || call.deliveryDate != repo.days[i].DeliveryDate {
+			t.Fatalf("scope %d = %+v", i, call)
+		}
 	}
 }

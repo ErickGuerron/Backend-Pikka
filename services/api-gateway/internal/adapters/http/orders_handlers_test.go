@@ -22,6 +22,7 @@ type fakeOrderClient struct {
 	createRes *ordersv1.CreateOrderResponse
 	reviewReq *ordersv1.ReviewOrderRequest
 	cancelReq *ordersv1.CancelOrderRequest
+	editReq   *ordersv1.EditMyOrderRequest
 	listReq   *ordersv1.ListOrdersRequest
 	listCalls int
 	meta      grpcclient.CallMeta
@@ -400,4 +401,31 @@ func TestOrderResponses_IncludeContactDetails(t *testing.T) {
 			assert.Contains(t, rec.Body.String(), `"contactPhone":"0991234567"`)
 		})
 	}
+}
+
+func (f *fakeOrderClient) EditMyOrder(_ context.Context, m grpcclient.CallMeta, req *ordersv1.EditMyOrderRequest) (*ordersv1.EditMyOrderResponse, error) {
+	f.editReq, f.meta = req, m
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &ordersv1.EditMyOrderResponse{Order: &ordersv1.Order{Id: req.GetOrderId(), PostalCode: req.GetPostalCode()}}, nil
+}
+
+func TestEditMyOrderOnlyForCustomersAndOnlyDeliveryFields(t *testing.T) {
+	const path = "/api/v1/orders/o-7"
+	client := &fakeOrderClient{}
+	router := ordersRouter(client)
+	foreignRole := do(router, http.MethodPatch, path, `{"postalCode":"170150"}`, authHdr(t, "OPERATOR"))
+	require.Equal(t, http.StatusForbidden, foreignRole.Code)
+	products := do(router, http.MethodPatch, path, `{"postalCode":"170150","items":[]}`, authHdr(t, "CUSTOMER"))
+	require.Equal(t, http.StatusBadRequest, products.Code)
+	require.Nil(t, client.editReq)
+
+	saved := do(router, http.MethodPatch, path, `{"postalCode":""}`, authHdr(t, "CUSTOMER"))
+	require.Equal(t, http.StatusOK, saved.Code, saved.Body.String())
+	require.NotNil(t, client.editReq.PostalCode)
+	assert.Empty(t, client.editReq.GetPostalCode())
+	assert.Equal(t, "o-7", client.editReq.GetOrderId())
+	assert.Nil(t, client.editReq.ContactPhone)
+	assert.Equal(t, "CUSTOMER", client.meta.Role)
 }

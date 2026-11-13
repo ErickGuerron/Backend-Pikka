@@ -51,7 +51,7 @@ func (ZoneCapacityPlanner) Plan(orders []PlannableOrder, maxPerRoute int) ([]Rou
 			last = len(routes) - 1
 		}
 		route := &routes[last]
-		route.Stops = append(route.Stops, RouteStop{OrderID: o.OrderID, ZoneID: o.ZoneID, Address: o.Address, Sequence: len(route.Stops) + 1})
+		route.Stops = append(route.Stops, RouteStop{OrderID: o.OrderID, ZoneID: o.ZoneID, Address: o.Address, Sequence: len(route.Stops) + 1, Version: o.Version})
 	}
 	return routes, nil
 }

@@ -227,7 +227,7 @@ func decodeSnapshot(t *testing.T, rec *httptest.ResponseRecorder) snapshotBody {
 func intPtr(n int) *int { return &n }
 
 func TestTrackingSnapshot_NonCustomerRolesGet403BeforeAnyCall(t *testing.T) {
-	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_ROUTE_ASSIGNED, trackedRouteID)}
+	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP, trackedRouteID)}
 	h := routerFor(trackingOptions(orders, &routeDriversFake{byRoute: trackedDriverID}, &trackingETAFake{}), io.Discard)
 
 	for _, role := range []string{"DRIVER", "OPERATOR", "ADMIN"} {
@@ -240,7 +240,7 @@ func TestTrackingSnapshot_NonCustomerRolesGet403BeforeAnyCall(t *testing.T) {
 }
 
 func TestTrackingSnapshot_WithoutToken_Returns401(t *testing.T) {
-	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_ROUTE_ASSIGNED, trackedRouteID)}
+	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP, trackedRouteID)}
 	h := routerFor(trackingOptions(orders, &routeDriversFake{}, &trackingETAFake{}), io.Discard)
 
 	rec := do(h, http.MethodGet, snapshotPath(trackedOrderID), "", nil)
@@ -250,7 +250,7 @@ func TestTrackingSnapshot_WithoutToken_Returns401(t *testing.T) {
 
 func TestTrackingSnapshot_OwnOrderWithFreshPosition_ReturnsETAAndStopsAhead(t *testing.T) {
 	orders := &trackingOrdersFake{
-		order:       ownOrder(ordersv1.OrderStatus_ORDER_STATUS_ROUTE_ASSIGNED, trackedRouteID),
+		order:       ownOrder(ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP, trackedRouteID),
 		stopsBefore: 1,
 	}
 	drivers := &routeDriversFake{byRoute: trackedDriverID}
@@ -261,7 +261,7 @@ func TestTrackingSnapshot_OwnOrderWithFreshPosition_ReturnsETAAndStopsAhead(t *t
 
 	body := decodeSnapshot(t, rec)
 	assert.Equal(t, trackedOrderID, body.OrderID)
-	assert.Equal(t, "ROUTE_ASSIGNED", body.Status)
+	assert.Equal(t, "PICKED_UP", body.Status)
 	assert.Equal(t, "Av. Amazonas 123", body.DeliveryAddress)
 	assert.Equal(t, windowBody{Start: "10:00", End: "12:00"}, body.DeliveryWindow)
 	require.NotNil(t, body.ETA)
@@ -301,7 +301,7 @@ func TestTrackingSnapshot_StopsBeforeIsTheServiceCount(t *testing.T) {
 				routeID = ""
 			}
 			orders := &trackingOrdersFake{
-				order:       ownOrder(ordersv1.OrderStatus_ORDER_STATUS_ROUTE_ASSIGNED, routeID),
+				order:       ownOrder(ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP, routeID),
 				stopsBefore: tc.count,
 				stopsErr:    tc.err,
 			}
@@ -337,7 +337,7 @@ func TestTrackingSnapshot_ForeignAndMissingOrderReturnTheSame404(t *testing.T) {
 	assert.Zero(t, eta.calls)
 }
 
-func TestTrackingSnapshot_OrderWithoutRouteHasNullETAAndNoRouteReason(t *testing.T) {
+func TestTrackingSnapshot_OrderBeforePickupHasNullTracking(t *testing.T) {
 	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_PENDING, "")}
 	drivers := &routeDriversFake{byRoute: trackedDriverID}
 	eta := &trackingETAFake{}
@@ -347,8 +347,7 @@ func TestTrackingSnapshot_OrderWithoutRouteHasNullETAAndNoRouteReason(t *testing
 
 	body := decodeSnapshot(t, rec)
 	assert.Nil(t, body.ETA)
-	require.NotNil(t, body.ETAUnavailableReason)
-	assert.Equal(t, "no_route", *body.ETAUnavailableReason)
+	assert.Nil(t, body.ETAUnavailableReason)
 	assert.Nil(t, body.StopsBefore)
 	assert.Zero(t, drivers.routeCalls)
 	assert.Zero(t, orders.stopsCalls)
@@ -357,7 +356,7 @@ func TestTrackingSnapshot_OrderWithoutRouteHasNullETAAndNoRouteReason(t *testing
 }
 
 func TestTrackingSnapshot_RouteWithoutDriverHasNoRouteReason(t *testing.T) {
-	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_ROUTE_ASSIGNED, trackedRouteID)}
+	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP, trackedRouteID)}
 	drivers := &routeDriversFake{byRoute: ""}
 	eta := &trackingETAFake{}
 	h := routerFor(trackingOptions(orders, drivers, eta), io.Discard)
@@ -385,7 +384,7 @@ func TestTrackingSnapshot_TrackingErrorsMapToReasonWithoutFakeETA(t *testing.T) 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			orders := &trackingOrdersFake{
-				order:       ownOrder(ordersv1.OrderStatus_ORDER_STATUS_ROUTE_ASSIGNED, trackedRouteID),
+				order:       ownOrder(ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP, trackedRouteID),
 				stopsBefore: 0,
 			}
 			eta := &trackingETAFake{err: tc.err}
@@ -402,7 +401,7 @@ func TestTrackingSnapshot_TrackingErrorsMapToReasonWithoutFakeETA(t *testing.T) 
 }
 
 func TestTrackingSnapshot_DriverLookupInternalErrorIsUnavailable(t *testing.T) {
-	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_ROUTE_ASSIGNED, trackedRouteID)}
+	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP, trackedRouteID)}
 	drivers := &routeDriversFake{routeErr: status.Error(codes.Internal, "boom")}
 	eta := &trackingETAFake{}
 	h := routerFor(trackingOptions(orders, drivers, eta), io.Discard)
@@ -417,7 +416,7 @@ func TestTrackingSnapshot_DriverLookupInternalErrorIsUnavailable(t *testing.T) {
 
 func TestTrackingSnapshot_StopsBeforeFailureKeepsETA(t *testing.T) {
 	orders := &trackingOrdersFake{
-		order:    ownOrder(ordersv1.OrderStatus_ORDER_STATUS_ROUTE_ASSIGNED, trackedRouteID),
+		order:    ownOrder(ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP, trackedRouteID),
 		stopsErr: status.Error(codes.Internal, "boom"),
 	}
 	eta := &trackingETAFake{res: &trackingv1.EstimateArrivalResponse{DistanceMeters: 50, DurationSeconds: 9}}
@@ -433,7 +432,7 @@ func TestTrackingSnapshot_StopsBeforeFailureKeepsETA(t *testing.T) {
 // La respuesta del cliente no lleva identidad del repartidor, ruta, otros pedidos ni campos de posición.
 func TestTrackingSnapshot_ResponseLeaksNoDriverRouteOrOtherOrders(t *testing.T) {
 	orders := &trackingOrdersFake{
-		order:       ownOrder(ordersv1.OrderStatus_ORDER_STATUS_ROUTE_ASSIGNED, trackedRouteID),
+		order:       ownOrder(ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP, trackedRouteID),
 		stopsBefore: 1,
 	}
 	eta := &trackingETAFake{res: &trackingv1.EstimateArrivalResponse{DistanceMeters: 1, DurationSeconds: 2}}
@@ -450,7 +449,7 @@ func TestTrackingSnapshot_ResponseLeaksNoDriverRouteOrOtherOrders(t *testing.T) 
 // Los logs no llevan token, coordenadas ni id del repartidor, ni en éxito ni en error.
 func TestTrackingSnapshot_LogsNeverContainTokenCoordinatesOrDriverID(t *testing.T) {
 	var out bytes.Buffer
-	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_ROUTE_ASSIGNED, trackedRouteID)}
+	orders := &trackingOrdersFake{order: ownOrder(ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP, trackedRouteID)}
 	eta := &trackingETAFake{err: status.Error(codes.Internal, "boom")}
 	h := routerFor(trackingOptions(orders, &routeDriversFake{byRoute: trackedDriverID}, eta), &out)
 	bearer := token(t, "u-customer", "CUSTOMER")
@@ -469,4 +468,30 @@ func TestTrackingSnapshot_LogsNeverContainTokenCoordinatesOrDriverID(t *testing.
 // StartRoute: the reserved driver starts the route on its first PICKED_UP; the stop tests expect success.
 func (f *routeDriversFake) StartRoute(_ context.Context, _ grpcclient.CallMeta, _ *driversv1.StartRouteRequest) (*driversv1.StartRouteResponse, error) {
 	return &driversv1.StartRouteResponse{}, nil
+}
+
+func TestTrackingSnapshotHidesDriverDataOutsideTransit(t *testing.T) {
+	for _, state := range []ordersv1.OrderStatus{
+		ordersv1.OrderStatus_ORDER_STATUS_ROUTE_ASSIGNED,
+		ordersv1.OrderStatus_ORDER_STATUS_DELIVERED,
+		ordersv1.OrderStatus_ORDER_STATUS_NOT_DELIVERED,
+		ordersv1.OrderStatus_ORDER_STATUS_CANCELLED,
+	} {
+		t.Run(state.String(), func(t *testing.T) {
+			orders := &trackingOrdersFake{order: ownOrder(state, trackedRouteID)}
+			drivers := &routeDriversFake{byRoute: trackedDriverID}
+			eta := &trackingETAFake{}
+			h := routerFor(trackingOptions(orders, drivers, eta), io.Discard)
+			rec := do(h, http.MethodGet, snapshotPath(trackedOrderID), "", customerHeaders(t))
+
+			body := decodeSnapshot(t, rec)
+			assert.Nil(t, body.ETA)
+			assert.Nil(t, body.StopsBefore)
+			assert.Contains(t, rec.Body.String(), `"driver_position":null`)
+			assert.Contains(t, rec.Body.String(), `"road":null`)
+			assert.Zero(t, drivers.routeCalls)
+			assert.Zero(t, orders.stopsCalls)
+			assert.Zero(t, eta.calls)
+		})
+	}
 }
