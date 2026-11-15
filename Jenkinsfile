@@ -4,6 +4,7 @@ pipeline {
 
     parameters {
         choice(name: 'TARGET', choices: ['local', 'nube'], description: 'Entorno de despliegue')
+        string(name: 'FRONTEND_BRANCH', defaultValue: 'develop', description: 'Rama de Frontend-Pikka que se construye')
         string(name: 'CLOUD_HOST', defaultValue: '', description: 'Solo nube: usuario@IP de la VM, por ejemplo ubuntu@129.80.10.20')
     }
 
@@ -72,7 +73,7 @@ RUN cd services/${SERVICE} && go test ./...
         stage('Frontend web (Nginx)') {
             steps {
                 dir('frontend') {
-                    git url: 'https://github.com/ErickGuerron/Frontend-Pikka.git', branch: 'develop'
+                    git url: 'https://github.com/ErickGuerron/Frontend-Pikka.git', branch: params.FRONTEND_BRANCH
                 }
                 withEnv(env.DH ? ["DOCKER_HOST=${env.DH}"] : []) {
                     dir('frontend/apps') {
