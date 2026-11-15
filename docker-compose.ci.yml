@@ -3,6 +3,7 @@
 # contenedor Jenkins o desde un Docker remoto esas rutas no existen en quien ejecuta los contenedores,
 # así que aquí se reemplazan los montajes por imágenes que llevan esos archivos incluidos.
 # En la nube (VM ARM64 de Oracle) Jenkins define PG_IMAGE con una imagen de PostGIS compatible con arm64.
+# Nota: dentro de dockerfile_inline el $$ evita que Compose interpole la variable; la resuelve Docker con el ARG.
 # Uso: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --build
 services:
   postgres:
@@ -13,7 +14,7 @@ services:
         PG_IMAGE: ${PG_IMAGE:-postgis/postgis:16-3.4}
       dockerfile_inline: |
         ARG PG_IMAGE
-        FROM ${PG_IMAGE}
+        FROM $${PG_IMAGE}
         COPY infrastructure/postgres/init /docker-entrypoint-initdb.d/
     volumes: !override
       - postgres-data:/var/lib/postgresql/data
