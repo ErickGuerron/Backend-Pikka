@@ -63,8 +63,8 @@ RUN cd services/${SERVICE} && go test ./...
 
         stage('Desplegar backend') {
             steps {
-                // La VM de Oracle es ARM64: allí se usa una imagen de PostGIS con soporte arm64
-                withEnv(env.DH ? ["DOCKER_HOST=${env.DH}", "PG_IMAGE=imresamu/postgis:16-3.4"] : []) {
+                // La VM de Oracle es x86_64, igual que el equipo local: usa la imagen oficial de PostGIS
+                withEnv(env.DH ? ["DOCKER_HOST=${env.DH}"] : []) {
                     sh '$COMPOSE up -d --build'
                 }
             }

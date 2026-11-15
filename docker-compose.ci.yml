@@ -2,7 +2,7 @@
 # El docker-compose.yml monta archivos locales (scripts de PostgreSQL y redis.conf). Desde un
 # contenedor Jenkins o desde un Docker remoto esas rutas no existen en quien ejecuta los contenedores,
 # así que aquí se reemplazan los montajes por imágenes que llevan esos archivos incluidos.
-# En la nube (VM ARM64 de Oracle) Jenkins define PG_IMAGE con una imagen de PostGIS compatible con arm64.
+# PG_IMAGE permite cambiar la imagen base de PostGIS (por ejemplo, una variante arm64); por defecto se usa la oficial.
 # Nota: dentro de dockerfile_inline el $$ evita que Compose interpole la variable; la resuelve Docker con el ARG.
 # Uso: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --build
 services:
