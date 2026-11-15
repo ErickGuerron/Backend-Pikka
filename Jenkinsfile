@@ -34,7 +34,7 @@ pipeline {
             steps {
                 // Las pruebas corren dentro de un docker build: el contexto lo envia el cliente, sin montar carpetas del equipo
                 writeFile file: 'Dockerfile.test', text: '''FROM golang:1.26-alpine
-ENV GOWORK=off CGO_ENABLED=0
+ENV CGO_ENABLED=0
 WORKDIR /src
 COPY . .
 ARG SERVICE
@@ -103,7 +103,7 @@ RUN cd services/${SERVICE} && go test ./...
     }
 
     post {
-        failure { sh 'docker compose ps || true' }
+        failure { sh 'docker ps -a || true' }
         always  { sh 'rm -f .env Dockerfile.test ~/.ssh/pikka_oracle ~/.ssh/config || true' }
     }
 }
