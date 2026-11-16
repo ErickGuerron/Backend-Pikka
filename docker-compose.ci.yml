@@ -1,0 +1,29 @@
+# Variante para desplegar desde Jenkins (que corre dentro de un contenedor) o hacia un Docker remoto.
+# El docker-compose.yml monta archivos locales (scripts de PostgreSQL y redis.conf). Desde un
+# contenedor Jenkins o desde un Docker remoto esas rutas no existen en quien ejecuta los contenedores,
+# así que aquí se reemplazan los montajes por imágenes que llevan esos archivos incluidos.
+# PG_IMAGE permite cambiar la imagen base de PostGIS (por ejemplo, una variante arm64); por defecto se usa la oficial.
+# Nota: dentro de dockerfile_inline el $$ evita que Compose interpole la variable; la resuelve Docker con el ARG.
+# Uso: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --build
+services:
+  postgres:
+    image: pikka/postgres:ci
+    build:
+      context: .
+      args:
+        PG_IMAGE: ${PG_IMAGE:-postgis/postgis:16-3.4}
+      dockerfile_inline: |
+        ARG PG_IMAGE
+        FROM $${PG_IMAGE}
+        COPY infrastructure/postgres/init /docker-entrypoint-initdb.d/
+    volumes: !override
+      - postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: pikka/redis:ci
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM redis:7-alpine
+        COPY infrastructure/redis/redis.conf /usr/local/etc/redis/redis.conf
+    volumes: !override []
