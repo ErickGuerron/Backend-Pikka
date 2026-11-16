@@ -34,7 +34,7 @@ pipeline {
             steps {
                 // Las pruebas corren dentro de un docker build: el contexto lo envia el cliente, sin montar carpetas del equipo
                 writeFile file: 'Dockerfile.test', text: '''FROM golang:1.26-alpine
-ENV CGO_ENABLED=0
+ENV CGO_ENABLED=0 GOPROXY=https://proxy.golang.org,direct
 WORKDIR /src
 COPY . .
 ARG SERVICE
@@ -42,7 +42,13 @@ RUN cd services/${SERVICE} && go test ./...
 '''
                 sh '''
                 for s in auth-service api-gateway order-service zone-service driver-service routing-service tracking-service; do
-                    docker build -f Dockerfile.test --build-arg SERVICE=$s -t pikka-test:$s . || exit 1
+                    ok=0
+                    for intento in 1 2 3; do
+                        if docker build -f Dockerfile.test --build-arg SERVICE=$s -t pikka-test:$s .; then ok=1; break; fi
+                        echo "Intento $intento fallido para $s (posible corte de red al descargar modulos de Go); reintentando..."
+                        sleep 5
+                    done
+                    [ "$ok" = 1 ] || exit 1
                 done
                 '''
             }
