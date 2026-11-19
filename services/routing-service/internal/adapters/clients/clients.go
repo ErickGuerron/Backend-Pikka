@@ -80,6 +80,52 @@ func (g *OrderGateway) AssignToRoute(ctx context.Context, routeID string, stops 
 	return err
 }
 
+// FindPending returns the PENDING order with that id. Order Service has no read by id for staff, so it
+// looks the order up among the PENDING ones.
+func (g *OrderGateway) FindPending(ctx context.Context, orderID string) (domain.PendingOrder, bool, error) {
+	res, err := g.client.ListOrders(forwardIdentity(ctx), &ordersv1.ListOrdersRequest{Status: ordersv1.OrderStatus_ORDER_STATUS_PENDING})
+	if err != nil {
+		return domain.PendingOrder{}, false, err
+	}
+	for _, order := range res.GetOrders() {
+		if order.GetId() == orderID {
+			return domain.PendingOrder{OrderID: order.GetId(), ZoneID: order.GetZoneId(), Address: order.GetAddress(), DeliveryDate: order.GetDeliveryDate()}, true, nil
+		}
+	}
+	return domain.PendingOrder{}, false, nil
+}
+
+// RouteOrders returns the non-cancelled orders of routeID among the orders of a delivery date.
+func (g *OrderGateway) RouteOrders(ctx context.Context, deliveryDate, routeID string) ([]domain.RouteOrder, error) {
+	res, err := g.client.ListOrders(forwardIdentity(ctx), &ordersv1.ListOrdersRequest{DeliveryDate: deliveryDate})
+	if err != nil {
+		return nil, err
+	}
+	var out []domain.RouteOrder
+	for _, order := range res.GetOrders() {
+		if order.GetRouteId() != routeID || order.GetStatus() == ordersv1.OrderStatus_ORDER_STATUS_CANCELLED {
+			continue
+		}
+		out = append(out, domain.RouteOrder{
+			OrderID:  order.GetId(),
+			ZoneID:   order.GetZoneId(),
+			Sequence: int(order.GetStopSequence()),
+			Open:     isOpenStop(order.GetStatus()),
+		})
+	}
+	return out, nil
+}
+
+// isOpenStop reports whether a stop in this state still has to be completed.
+func isOpenStop(s ordersv1.OrderStatus) bool {
+	switch s {
+	case ordersv1.OrderStatus_ORDER_STATUS_ROUTE_ASSIGNED, ordersv1.OrderStatus_ORDER_STATUS_PICKED_UP, ordersv1.OrderStatus_ORDER_STATUS_IN_TRANSIT:
+		return true
+	default:
+		return false
+	}
+}
+
 // DriverPool implements ports.DriverPool on top of Driver Service.
 type DriverPool struct {
 	client driversv1.DriverServiceClient

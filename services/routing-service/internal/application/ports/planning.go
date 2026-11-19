@@ -16,6 +16,12 @@ type OrderGateway interface {
 	// AssignToRoute moves the orders of the stops to ROUTE_ASSIGNED for routeID, all or none.
 	// Each stop carries its planned sequence within the route.
 	AssignToRoute(ctx context.Context, routeID string, stops []domain.RouteStop) error
+
+	// FindPending returns the PENDING order with that id. It reports false when no PENDING order has it.
+	FindPending(ctx context.Context, orderID string) (domain.PendingOrder, bool, error)
+
+	// RouteOrders returns the non-cancelled orders already on routeID for a delivery date (YYYY-MM-DD).
+	RouteOrders(ctx context.Context, deliveryDate, routeID string) ([]domain.RouteOrder, error)
 }
 
 // ZoneCapacities reads the per-route capacity and the geometry of a zone from Zone Service.

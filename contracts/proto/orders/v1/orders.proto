@@ -170,6 +170,8 @@ message Order {
   // FIFO place (1 is next) of a PENDING order waiting for a free route slot in its zone. 0 when the
   // order is not waiting. Computed for reads; the Gateway customer DTO exposes it as queuePosition.
   int32 queue_position = 16;
+  // Planned place (1 is first) of the order inside route_id. 0 when the order has no route.
+  int32 stop_sequence = 17;
 }
 
 message CreateOrderRequest {

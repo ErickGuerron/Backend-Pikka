@@ -104,6 +104,46 @@ func (uc *Generate) Run(ctx context.Context, deliveryDate string) (Result, error
 	return result, nil
 }
 
+// Preview plans the PENDING orders of a date and proposes a driver for each route, exactly as Run
+// would choose them, but reserves nothing and does not touch Order Service. A route with no driver
+// left comes back with an empty DriverID: confirming it would fail with ErrNoDriverAvailable.
+func (uc *Generate) Preview(ctx context.Context, deliveryDate string) (Result, error) {
+	if _, err := time.Parse(dateLayout, deliveryDate); err != nil {
+		return Result{}, ErrInvalidDate
+	}
+	pending, err := uc.orders.PendingByDate(ctx, deliveryDate)
+	if err != nil {
+		return Result{}, fmt.Errorf("load pending orders: %w", err)
+	}
+	planned, centers, err := uc.planByZone(ctx, pending)
+	if err != nil {
+		return Result{}, err
+	}
+	available, err := uc.drivers.FindAvailable(ctx, candidatePool)
+	if err != nil {
+		return Result{}, fmt.Errorf("find available drivers: %w", err)
+	}
+
+	var result Result
+	taken := map[string]bool{}
+	for _, route := range planned {
+		free := slices.DeleteFunc(slices.Clone(available), func(id string) bool { return taken[id] })
+		if center, ok := centers[route.ZoneID]; ok && len(free) > 0 {
+			if free, err = uc.rankByDistance(ctx, free, center); err != nil {
+				return Result{}, fmt.Errorf("rank drivers for route %s: %w", route.ID, err)
+			}
+		}
+		driverID := ""
+		if len(free) > 0 {
+			driverID = free[0]
+			taken[driverID] = true
+		}
+		result.Assigned = append(result.Assigned, route)
+		result.Routes = append(result.Routes, AssignedRoute{RouteID: scopedRouteID(deliveryDate, route.ID), DriverID: driverID, OrderCount: len(route.Stops)})
+	}
+	return result, nil
+}
+
 // reserveDriver takes the first AVAILABLE driver for one route. It asks for a single driver
 // each time, so every route sees the drivers reserved by the routes before it.
 func (uc *Generate) reserveDriver(ctx context.Context, routeID string, center domain.Point, hasCenter bool) (driverID, driverName string, err error) {
