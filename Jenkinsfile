@@ -106,6 +106,8 @@ COPY mobile/ ./
 COPY shared/ /app/shared/
 ARG EXPO_PUBLIC_API_URL
 ENV EXPO_PUBLIC_API_URL=${EXPO_PUBLIC_API_URL}
+ARG EXPO_PUBLIC_MAP_TILE_KEY=
+ENV EXPO_PUBLIC_MAP_TILE_KEY=${EXPO_PUBLIC_MAP_TILE_KEY}
 RUN rm -f .env && npx expo export --platform web --output-dir dist
 
 FROM nginx:1.27-alpine
@@ -169,8 +171,8 @@ $COMPOSE ps --format "table {{.Service}}\\t{{.Status}}\\t{{.Ports}}"
 cd ../Frontend-Pikka/apps
 echo "Frontend $(git log --oneline -1)"
 cp ../../mobile-web.Dockerfile ../../mobile-web.Dockerfile.dockerignore .
-echo "== build web"; docker build -q -f web/Dockerfile -t pikka/web:1.0 .
-echo "== build app movil"; docker build -q -f mobile-web.Dockerfile --build-arg EXPO_PUBLIC_API_URL="$MOBILE_API" -t pikka/mobile-web:1.0 .
+echo "== build web"; docker build -q -f web/Dockerfile --build-arg VITE_MAP_TILE_KEY="$MAPTILER_KEY" -t pikka/web:1.0 .
+echo "== build app movil"; docker build -q -f mobile-web.Dockerfile --build-arg EXPO_PUBLIC_API_URL="$MOBILE_API" --build-arg EXPO_PUBLIC_MAP_TILE_KEY="$MAPTILER_KEY" -t pikka/mobile-web:1.0 .
 docker rm -f pikka-web pikka-mobile >/dev/null 2>&1 || true
 # Sin puertos publicados: el servidor ya tiene 80/443 ocupados; Internet entra por Cloudflare Tunnel.
 docker run -d --name pikka-web    --restart unless-stopped --network "$NETWORK" pikka/web:1.0 >/dev/null
@@ -180,6 +182,7 @@ docker inspect -f "{{.State.Running}}" pikka-tunnel | grep -q true || { echo "pi
 docker network connect "$NETWORK" pikka-tunnel 2>/dev/null || echo "pikka-tunnel ya está en la red $NETWORK"
 echo "DESPLIEGUE EN EL SERVIDOR COMPLETADO"
 '''
+                withCredentials([string(credentialsId: 'maptiler-key-nube', variable: 'MAPTILER_KEY')]) {
                 sh '''
                 H="$CLOUD_HOST"; R='~/pikka_gestion'
                 # Reintenta un comando SSH corto si la conexión falla.
@@ -189,7 +192,7 @@ echo "DESPLIEGUE EN EL SERVIDOR COMPLETADO"
                 rssh "cd $R/Frontend-Pikka && git fetch -q origin && git checkout -q --detach origin/$FRONTEND_BRANCH && git log --oneline -1"
                 scp -q .env "$H:pikka_gestion/Backend-Pikka/.env" && rssh "chmod 600 $R/Backend-Pikka/.env"
                 scp -q cd/deploy-nube.sh cd/mobile-web.Dockerfile cd/mobile-web.Dockerfile.dockerignore "$H:pikka_gestion/"
-                rssh "cd $R && rm -f pikka-cd.status pikka-cd.log && SERVICES='$SERVICES' NETWORK='$NETWORK' MOBILE_API='$MOBILE_API' setsid nohup sh deploy-nube.sh > pikka-cd.log 2>&1 < /dev/null & echo 'Despliegue lanzado en el servidor'"
+                rssh "cd $R && rm -f pikka-cd.status pikka-cd.log && SERVICES='$SERVICES' NETWORK='$NETWORK' MOBILE_API='$MOBILE_API' MAPTILER_KEY='$MAPTILER_KEY' setsid nohup sh deploy-nube.sh > pikka-cd.log 2>&1 < /dev/null & echo 'Despliegue lanzado en el servidor'"
 
                 visto=0
                 for i in $(seq 1 240); do
@@ -207,6 +210,7 @@ echo "DESPLIEGUE EN EL SERVIDOR COMPLETADO"
                 done
                 echo "Tiempo de espera agotado (40 min)"; exit 1
                 '''
+                }
             }
         }
 
