@@ -5,11 +5,16 @@ pipeline {
     parameters {
         choice(name: 'TARGET', choices: ['local', 'nube'], description: 'Entorno de despliegue')
         string(name: 'FRONTEND_BRANCH', defaultValue: 'develop', description: 'Rama de Frontend-Pikka que se construye')
-        string(name: 'CLOUD_HOST', defaultValue: '', description: 'Solo nube: usuario@IP de la VM, por ejemplo ubuntu@129.80.10.20')
+        string(name: 'CLOUD_HOST', defaultValue: 'anthony@34.73.92.242', description: 'Solo nube: usuario@IP del servidor')
+        string(name: 'PUBLIC_WEB', defaultValue: 'https://pikka.factuproec.com', description: 'Solo nube: URL pública de la web')
+        string(name: 'PUBLIC_MOBILE', defaultValue: 'https://app-pikka.factuproec.com', description: 'Solo nube: URL pública de la app móvil')
+        string(name: 'PUBLIC_API', defaultValue: 'https://api-pikka.factuproec.com', description: 'Solo nube: URL pública de la API')
     }
 
     environment {
-        COMPOSE = 'docker compose -f docker-compose.yml -f docker-compose.ci.yml'
+        COMPOSE  = 'docker compose -f docker-compose.yml -f docker-compose.ci.yml'
+        NETWORK  = 'last-mile-logistics_default'
+        SERVICES = 'auth-service zone-service order-service driver-service tracking-service routing-service api-gateway'
     }
 
     stages {
@@ -22,7 +27,11 @@ pipeline {
                 script {
                     env.ENV_CRED = params.TARGET == 'nube' ? 'pikka-env-nube' : 'pikka-env'
                     env.DH       = params.TARGET == 'nube' ? "ssh://${params.CLOUD_HOST}" : ''
-                    env.WEB_PORT = params.TARGET == 'nube' ? '80' : '5173'
+                    // En la nube el servidor se comparte con otro sistema que ocupa 80/443: la web y la app móvil no
+                    // publican puertos; Internet entra por Cloudflare Tunnel (contenedor pikka-tunnel) a la red interna.
+                    env.WEB_PORTS  = params.TARGET == 'nube' ? '' : '-p 5173:80'
+                    env.MOB_PORTS  = params.TARGET == 'nube' ? '' : '-p 8082:80'
+                    env.MOBILE_API = params.TARGET == 'nube' ? params.PUBLIC_MOBILE : 'http://localhost:8082'
                 }
                 withCredentials([file(credentialsId: env.ENV_CRED, variable: 'ENV_FILE')]) {
                     sh 'cp "$ENV_FILE" .env'
@@ -90,24 +99,71 @@ COPY --from=test /coverage.xml /coverage.xml
             steps {
                 // La VM de Oracle es x86_64, igual que el equipo local: usa la imagen oficial de PostGIS
                 withEnv(env.DH ? ["DOCKER_HOST=${env.DH}"] : []) {
-                    sh '$COMPOSE up -d --build'
+                    script {
+                        if (params.TARGET == 'nube') {
+                            // Una imagen a la vez: el servidor (2 vCPU) atiende otro sistema en producción.
+                            sh 'for s in $SERVICES postgres redis; do echo "== build $s"; $COMPOSE build $s; done'
+                            sh '$COMPOSE up -d'
+                        } else {
+                            sh '$COMPOSE up -d --build'
+                        }
+                    }
                 }
             }
         }
 
-        stage('Frontend web (Nginx)') {
+        stage('Frontend web y app móvil (Nginx)') {
             steps {
                 dir('frontend') {
                     git url: 'https://github.com/ErickGuerron/Frontend-Pikka.git', branch: params.FRONTEND_BRANCH
                 }
+                // Imagen de la app móvil (Expo exportada a web + Nginx). El contexto es apps/ porque importa apps/shared.
+                writeFile file: 'frontend/apps/mobile-web.Dockerfile', text: '''FROM node:22-alpine AS build
+WORKDIR /app/mobile
+COPY mobile/package.json mobile/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY mobile/ ./
+COPY shared/ /app/shared/
+ARG EXPO_PUBLIC_API_URL
+ENV EXPO_PUBLIC_API_URL=${EXPO_PUBLIC_API_URL}
+RUN rm -f .env && npx expo export --platform web --output-dir dist
+
+FROM nginx:1.27-alpine
+COPY web/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/mobile/dist /usr/share/nginx/html
+HEALTHCHECK --interval=10s --timeout=3s --retries=5 CMD wget -qO- http://127.0.0.1/ >/dev/null || exit 1
+'''
+                // apps/.dockerignore excluye mobile/; esta imagen usa su propio ignorado.
+                writeFile file: 'frontend/apps/mobile-web.Dockerfile.dockerignore', text: '''**/node_modules
+**/dist
+**/coverage
+**/.env
+**/.env.local
+**/.expo
+'''
                 withEnv(env.DH ? ["DOCKER_HOST=${env.DH}"] : []) {
                     dir('frontend/apps') {
                         sh '''
                         docker build -f web/Dockerfile -t pikka/web:1.0 .
-                        docker rm -f pikka-web || true
-                        docker run -d --name pikka-web --restart unless-stopped --network last-mile-logistics_default -p ${WEB_PORT}:80 pikka/web:1.0
+                        docker build -f mobile-web.Dockerfile --build-arg EXPO_PUBLIC_API_URL="$MOBILE_API" -t pikka/mobile-web:1.0 .
+                        docker rm -f pikka-web pikka-mobile >/dev/null 2>&1 || true
+                        docker run -d --name pikka-web    --restart unless-stopped --network $NETWORK $WEB_PORTS pikka/web:1.0
+                        docker run -d --name pikka-mobile --restart unless-stopped --network $NETWORK $MOB_PORTS pikka/mobile-web:1.0
                         '''
                     }
+                }
+            }
+        }
+
+        stage('Túnel de Cloudflare') {
+            when { expression { params.TARGET == 'nube' } }
+            steps {
+                withEnv(["DOCKER_HOST=${env.DH}"]) {
+                    // pikka-tunnel se crea una sola vez en el servidor con su token; aquí se verifica y se conecta a la red.
+                    sh '''
+                    docker inspect -f "{{.State.Running}}" pikka-tunnel | grep -q true || { echo "pikka-tunnel no está en ejecución"; exit 1; }
+                    docker network connect $NETWORK pikka-tunnel 2>/dev/null || echo "pikka-tunnel ya está en la red $NETWORK"
+                    '''
                 }
             }
         }
@@ -116,12 +172,32 @@ COPY --from=test /coverage.xml /coverage.xml
             steps {
                 withEnv(env.DH ? ["DOCKER_HOST=${env.DH}"] : []) {
                     sh '''
-                    for i in $(seq 1 30); do
-                        if docker exec pikka-web wget -qO- http://127.0.0.1/ready; then echo; echo "Gateway OK a traves de Nginx"; exit 0; fi
-                        sleep 5
+                    for c in pikka-web pikka-mobile; do
+                        ok=0
+                        for i in $(seq 1 30); do
+                            if docker exec $c wget -qO- http://127.0.0.1/ready 2>/dev/null | grep -q ready; then ok=1; break; fi
+                            sleep 5
+                        done
+                        [ "$ok" = 1 ] || { echo "El gateway no respondio /ready a traves de $c"; exit 1; }
+                        echo "Gateway OK a traves de Nginx ($c)"
                     done
-                    echo "El gateway no respondio /ready"; exit 1
                     '''
+                }
+                script {
+                    if (params.TARGET == 'nube') {
+                        sh '''
+                        for u in "$PUBLIC_WEB/ready" "$PUBLIC_MOBILE/ready" "$PUBLIC_API/health"; do
+                            ok=0
+                            for i in $(seq 1 24); do
+                                code=$(curl -s -o /dev/null -w "%{http_code}" -A pikka-jenkins "$u" || true)
+                                [ "$code" = 200 ] && { ok=1; break; }
+                                sleep 5
+                            done
+                            [ "$ok" = 1 ] || { echo "FALLA $u (HTTP $code)"; exit 1; }
+                            echo "OK $u -> 200 (HTTPS por Cloudflare)"
+                        done
+                        '''
+                    }
                 }
             }
         }
