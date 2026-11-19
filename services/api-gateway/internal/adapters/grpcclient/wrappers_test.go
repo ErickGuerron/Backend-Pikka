@@ -144,7 +144,8 @@ func ordersCalls(cc grpc.ClientConnInterface) map[string]wrapperFn {
 func routingCalls(cc grpc.ClientConnInterface) map[string]wrapperFn {
 	r := NewRouting(cc, time.Second)
 	return map[string]wrapperFn{
-		"GeneratePlan": rpc(r.GeneratePlan),
+		"GeneratePlan":    rpc(r.GeneratePlan),
+		"AddOrderToRoute": rpc(r.AddOrderToRoute),
 	}
 }
 
