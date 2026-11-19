@@ -77,7 +77,7 @@ func run(log *slog.Logger) error {
 		clients.NewDriverPool(driversv1.NewDriverServiceClient(driverConn)),
 		clients.NewDriverLocations(trackingv1.NewTrackingServiceClient(trackingConn)),
 		domain.ZoneCapacityPlanner{},
-	)
+	).WithRunIDs(plan.RandomRunID) // cada planificación usa ids de ruta nuevos: planificar otra vez el mismo día no choca
 	log.Info("routing service wired", "orderService", cfg.OrderServiceAddr,
 		"zoneService", cfg.ZoneServiceAddr, "driverService", cfg.DriverServiceAddr,
 		"trackingService", cfg.TrackingServiceAddr)
@@ -97,7 +97,7 @@ func serveGRPC(ctx context.Context, log *slog.Logger, port int, server routingv1
 	if err != nil {
 		return fmt.Errorf("grpc listen: %w", err)
 	}
-	srv := grpc.NewServer()
+	srv := grpc.NewServer(grpcadapter.UnaryInterceptors(log))
 	routingv1.RegisterRoutingServiceServer(srv, server)
 	log.Info("grpc listening", "port", port)
 

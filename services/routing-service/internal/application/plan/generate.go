@@ -3,10 +3,13 @@ package plan
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -60,11 +63,40 @@ type Generate struct {
 	drivers   ports.DriverPool
 	locations ports.DriverLocations
 	planner   domain.RoutePlanner
+	// runID returns a token that is new on every run. Planner ids restart at {zone}#1 on every
+	// run, so without it a second plan for the same date and zone would reuse the id of a route
+	// that already exists and Order Service would reject it ("stop sequences must be unique").
+	runID func() string
 }
 
 // New injects the gateways, the driver pool, the driver locations and the planner.
 func New(orders ports.OrderGateway, zones ports.ZoneCapacities, drivers ports.DriverPool, locations ports.DriverLocations, planner domain.RoutePlanner) *Generate {
 	return &Generate{orders: orders, zones: zones, drivers: drivers, locations: locations, planner: planner}
+}
+
+// WithRunIDs makes every run scope its route ids with a fresh token from next, so planning the
+// same date and zone again never collides with routes that already exist. Production wires
+// RandomRunID; without it ids keep the {date}-{zone}-{n} form.
+func (uc *Generate) WithRunIDs(next func() string) *Generate {
+	uc.runID = next
+	return uc
+}
+
+// RandomRunID returns 6 random hex characters: short, URL-path safe and unique enough per date.
+func RandomRunID() string {
+	var b [3]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return strconv.FormatInt(time.Now().UnixNano()%0xffffff, 16)
+	}
+	return hex.EncodeToString(b[:])
+}
+
+// newRunToken returns the token of one run, or "" when run ids are not enabled.
+func (uc *Generate) newRunToken() string {
+	if uc.runID == nil {
+		return ""
+	}
+	return uc.runID()
 }
 
 // Run generates and assigns the routes for deliveryDate (YYYY-MM-DD).
@@ -83,8 +115,9 @@ func (uc *Generate) Run(ctx context.Context, deliveryDate string) (Result, error
 	}
 
 	var result Result
+	run := uc.newRunToken()
 	for _, route := range planned {
-		routeID := scopedRouteID(deliveryDate, route.ID)
+		routeID := scopedRouteID(deliveryDate, route.ID, run)
 		// The route goes to the available driver nearest to its zone. A zone without geometry ranks nobody.
 		center, hasCenter := centers[route.ZoneID]
 		driverID, driverName, err := uc.reserveDriver(ctx, routeID, center, hasCenter)
@@ -139,7 +172,8 @@ func (uc *Generate) Preview(ctx context.Context, deliveryDate string) (Result, e
 			taken[driverID] = true
 		}
 		result.Assigned = append(result.Assigned, route)
-		result.Routes = append(result.Routes, AssignedRoute{RouteID: scopedRouteID(deliveryDate, route.ID), DriverID: driverID, OrderCount: len(route.Stops)})
+		// A preview reserves nothing, so its ids are only labels: the confirming Run gets its own token.
+		result.Routes = append(result.Routes, AssignedRoute{RouteID: scopedRouteID(deliveryDate, route.ID, ""), DriverID: driverID, OrderCount: len(route.Stops)})
 	}
 	return result, nil
 }
@@ -255,8 +289,13 @@ func (uc *Generate) planByZone(ctx context.Context, pending []domain.PlannableOr
 
 // scopedRouteID prefixes the planner id with the delivery date. Planner ids are
 // {zone}#{n} and repeat on every date, so the date keeps them unique in Order Service.
-// The result is {date}-{zone}-{n}: it must stay URL-path safe, because the driver
-// stop endpoint carries the route id in the path (no "/" and no "#").
-func scopedRouteID(deliveryDate, plannerID string) string {
-	return deliveryDate + "-" + strings.ReplaceAll(plannerID, "#", "-")
+// The result is {date}-{zone}-{n}, plus "-{run}" when the run has a token: it must stay
+// URL-path safe, because the driver stop endpoint carries the route id in the path
+// (no "/" and no "#").
+func scopedRouteID(deliveryDate, plannerID, run string) string {
+	id := deliveryDate + "-" + strings.ReplaceAll(plannerID, "#", "-")
+	if run != "" {
+		id += "-" + run
+	}
+	return id
 }

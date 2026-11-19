@@ -213,7 +213,9 @@ func (h *ordersHandlers) listExceptions(c *httpx.Context) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, listOrdersResponse{Orders: toOrderDTOs(res.GetOrders())})
+	// Arreglo plano, como declara el OpenAPI y como lo lee la web. Antes respondía {"orders": [...]}
+	// y la pantalla Excepciones fallaba al interpretarlo.
+	return c.JSON(http.StatusOK, toOrderDTOs(res.GetOrders()))
 }
 
 func (h *ordersHandlers) review(c *httpx.Context) error {

@@ -210,15 +210,14 @@ func TestListExceptions_ReturnsReviewQueue(t *testing.T) {
 	rec := do(ordersRouter(&fakeOrderClient{}), http.MethodGet, "/api/v1/orders/exceptions", "", authHdr(t, "OPERATOR"))
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	var body struct {
-		Orders []struct {
-			ID     string `json:"id"`
-			Status string `json:"status"`
-		} `json:"orders"`
+	// El OpenAPI declara un arreglo plano de Order (igual que GET /orders); la web lo lee así.
+	var body []struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
 	}
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	require.Len(t, body.Orders, 1)
-	assert.Equal(t, "PENDING_REVIEW", body.Orders[0].Status)
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body), "debe ser un arreglo, no {\"orders\": [...]}")
+	require.Len(t, body, 1)
+	assert.Equal(t, "PENDING_REVIEW", body[0].Status)
 }
 
 func TestReview_CorrectSendsOnlyTheFieldsTheOperatorChanged(t *testing.T) {
