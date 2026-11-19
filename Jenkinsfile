@@ -89,7 +89,7 @@ COPY --from=test /coverage.xml /coverage.xml
                     sh '''
                     mkdir -p ~/.ssh
                     cp "$KEY" ~/.ssh/pikka_oracle && chmod 600 ~/.ssh/pikka_oracle
-                    printf "Host *\\n  IdentityFile ~/.ssh/pikka_oracle\\n  StrictHostKeyChecking accept-new\\n" > ~/.ssh/config
+                    printf "Host *\\n  IdentityFile ~/.ssh/pikka_oracle\\n  StrictHostKeyChecking accept-new\\n  ServerAliveInterval 15\\n  ServerAliveCountMax 8\\n" > ~/.ssh/config
                     '''
                 }
             }
@@ -102,7 +102,18 @@ COPY --from=test /coverage.xml /coverage.xml
                     script {
                         if (params.TARGET == 'nube') {
                             // Una imagen a la vez: el servidor (2 vCPU) atiende otro sistema en producción.
-                            sh 'for s in $SERVICES postgres redis; do echo "== build $s"; $COMPOSE build $s; done'
+                            // La compilación remota viaja por SSH: si la conexión se corta, se reintenta esa imagen.
+                            sh '''
+                            for s in $SERVICES postgres redis; do
+                                ok=0
+                                for intento in 1 2 3; do
+                                    echo "== build $s (intento $intento)"
+                                    if $COMPOSE build $s; then ok=1; break; fi
+                                    echo "Se cortó la compilación remota de $s; reintentando en 10 s..."; sleep 10
+                                done
+                                [ "$ok" = 1 ] || { echo "No se pudo construir $s en la nube"; exit 1; }
+                            done
+                            '''
                             sh '$COMPOSE up -d'
                         } else {
                             sh '$COMPOSE up -d --build'
