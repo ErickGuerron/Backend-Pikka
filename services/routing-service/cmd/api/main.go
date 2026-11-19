@@ -68,9 +68,12 @@ func run(log *slog.Logger) error {
 	}
 	defer func() { _ = trackingConn.Close() }()
 
+	orderGateway := clients.NewOrderGateway(ordersv1.NewOrderServiceClient(orderConn))
+	zoneCapacities := clients.NewZoneCapacities(zonesv1.NewZoneServiceClient(zoneConn))
+	addToRoute := plan.NewAddToRoute(orderGateway, zoneCapacities)
 	generate := plan.New(
-		clients.NewOrderGateway(ordersv1.NewOrderServiceClient(orderConn)),
-		clients.NewZoneCapacities(zonesv1.NewZoneServiceClient(zoneConn)),
+		orderGateway,
+		zoneCapacities,
 		clients.NewDriverPool(driversv1.NewDriverServiceClient(driverConn)),
 		clients.NewDriverLocations(trackingv1.NewTrackingServiceClient(trackingConn)),
 		domain.ZoneCapacityPlanner{},
@@ -79,7 +82,7 @@ func run(log *slog.Logger) error {
 		"zoneService", cfg.ZoneServiceAddr, "driverService", cfg.DriverServiceAddr,
 		"trackingService", cfg.TrackingServiceAddr)
 
-	return serveGRPC(ctx, log, cfg.GRPCPort, grpcadapter.NewRoutingServer(generate))
+	return serveGRPC(ctx, log, cfg.GRPCPort, grpcadapter.NewRoutingServer(generate).WithRouteAdder(addToRoute))
 }
 
 // dial creates a lazy client connection; the connection is established on the first call.
