@@ -27,12 +27,19 @@ const (
 // planRunner is the use case the server calls. *plan.Generate implements it.
 type planRunner interface {
 	Run(ctx context.Context, deliveryDate string) (plan.Result, error)
+	Preview(ctx context.Context, deliveryDate string) (plan.Result, error)
+}
+
+// routeAdder puts an order on a route that is running. *plan.AddToRoute implements it.
+type routeAdder interface {
+	Run(ctx context.Context, routeID, orderID string) (domain.RouteStop, error)
 }
 
 // RoutingServer implements routingv1.RoutingServiceServer.
 type RoutingServer struct {
 	routingv1.UnimplementedRoutingServiceServer
 	generate planRunner
+	add      routeAdder
 }
 
 var _ routingv1.RoutingServiceServer = (*RoutingServer)(nil)
@@ -42,12 +49,56 @@ func NewRoutingServer(generate planRunner) *RoutingServer {
 	return &RoutingServer{generate: generate}
 }
 
+// WithRouteAdder enables AddOrderToRoute. Without it that call answers UNIMPLEMENTED.
+func (s *RoutingServer) WithRouteAdder(add routeAdder) *RoutingServer {
+	s.add = add
+	return s
+}
+
+// AddOrderToRoute puts a PENDING order at the end of a running route.
+func (s *RoutingServer) AddOrderToRoute(ctx context.Context, req *routingv1.AddOrderToRouteRequest) (*routingv1.AddOrderToRouteResponse, error) {
+	if err := requirePlannerRole(ctx); err != nil {
+		return nil, err
+	}
+	if s.add == nil {
+		return nil, status.Error(codes.Unimplemented, "add order to route is not wired")
+	}
+	stop, err := s.add.Run(ctx, req.GetRouteId(), req.GetOrderId())
+	if err != nil {
+		return nil, mapAddError(err)
+	}
+	return &routingv1.AddOrderToRouteResponse{
+		RouteId: req.GetRouteId(),
+		Stop:    &routingv1.PlannedStop{OrderId: stop.OrderID, Address: stop.Address, Sequence: int32(stop.Sequence)},
+	}, nil
+}
+
+// mapAddError turns an AddToRoute error into a gRPC status.
+func mapAddError(err error) error {
+	switch {
+	case errors.Is(err, plan.ErrBlankID):
+		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, plan.ErrRouteNotFound):
+		return status.Error(codes.NotFound, err.Error())
+	case errors.Is(err, plan.ErrOrderNotPending), errors.Is(err, plan.ErrZoneMismatch),
+		errors.Is(err, plan.ErrRouteFinished), errors.Is(err, plan.ErrRouteFull):
+		return status.Error(codes.FailedPrecondition, err.Error())
+	default:
+		return status.Error(codes.Internal, err.Error())
+	}
+}
+
 // GeneratePlan checks the role before any downstream call, then runs the use case and maps its result.
+// With dry_run it only proposes the plan: nothing is reserved or assigned.
 func (s *RoutingServer) GeneratePlan(ctx context.Context, req *routingv1.GeneratePlanRequest) (*routingv1.GeneratePlanResponse, error) {
 	if err := requirePlannerRole(ctx); err != nil {
 		return nil, err
 	}
-	result, err := s.generate.Run(ctx, req.GetDeliveryDate())
+	run := s.generate.Run
+	if req.GetDryRun() {
+		run = s.generate.Preview
+	}
+	result, err := run(ctx, req.GetDeliveryDate())
 	if err != nil {
 		return nil, mapGenerateError(err, len(result.Routes))
 	}

@@ -22,10 +22,18 @@ type fakeGenerate struct {
 	err    error
 	calls  int
 	date   string
+	// previews counts the dry-run calls.
+	previews int
 }
 
 func (f *fakeGenerate) Run(_ context.Context, deliveryDate string) (plan.Result, error) {
 	f.calls++
+	f.date = deliveryDate
+	return f.result, f.err
+}
+
+func (f *fakeGenerate) Preview(_ context.Context, deliveryDate string) (plan.Result, error) {
+	f.previews++
 	f.date = deliveryDate
 	return f.result, f.err
 }
