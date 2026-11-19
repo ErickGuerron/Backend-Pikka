@@ -1293,6 +1293,8 @@ paths:
       summary: Generate the route plan for a delivery date (ADMIN or OPERATOR)
       description: |
         Plans the PENDING orders of the date, reserves one driver per route and assigns each route's orders.
+        With dryRun true it only proposes the plan and changes nothing, so an operator can review it and then
+        confirm by calling again without dryRun.
         Routes are processed in order and the run is not atomic: routes created before a failure stay
         assigned, and the error message says how many. The orders of the failing route are not changed.
         The Routing Service validates the role and the date; other roles get 403 before any work is done.
@@ -1323,6 +1325,75 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "503":
           description: Routing Service unavailable. Code UPSTREAM_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/routes/{routeId}/orders:
+    post:
+      tags: [routes]
+      operationId: addOrderToRoute
+      summary: Put a pending order at the end of a route that is still running (ADMIN or OPERATOR)
+      description: |
+        The route keeps its driver and its other stops; the new stop takes the next sequence. The order must be
+        PENDING, in the same zone and on the same delivery date as the route, and the route must still have an
+        open stop and room under its zone's maximum orders per route.
+      parameters:
+        - name: routeId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AddOrderToRouteRequest" }
+      responses:
+        "201":
+          description: Order added as the last stop
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AddOrderToRouteResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: The route has no orders on the delivery date of the order. Code NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: The order does not exist or is not PENDING, belongs to another zone, the route has no open stops, or it is full. Code FAILED_PRECONDITION
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: Routing Service unavailable. Code UPSTREAM_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/tracking/routes/active:
+    get:
+      tags: [routes]
+      operationId: listActiveRoutes
+      summary: Routes in progress with the state of each stop (ADMIN or OPERATOR)
+      description: |
+        Returns every route that still has an open stop (ROUTE_ASSIGNED, PICKED_UP or IN_TRANSIT), with all
+        its non-cancelled stops ordered by planned sequence and the driver's full name. A route whose driver
+        cannot be resolved shows "Sin repartidor". Each route carries the driver's last fresh position when there
+        is one, so the screen can draw the driver on a map. Stops carry no customer data. No open routes returns an
+        empty array. Other roles get 403.
+      responses:
+        "200":
+          description: Routes in progress
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TrackedRoute" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503":
+          description: Order or Driver Service unavailable. Code UPSTREAM_UNAVAILABLE
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -2019,12 +2090,53 @@ components:
       required: [deliveryDate]
       properties:
         deliveryDate: { type: string, format: date, example: "2026-10-16", description: "Delivery date, YYYY-MM-DD" }
+        dryRun:
+          type: boolean
+          default: false
+          description: |
+            true only proposes the plan: no driver is reserved and no order is assigned, so nothing changes.
+            A route with no driver left comes back with an empty driverId. Confirming is calling again without
+            dryRun, which plans again with the state of that moment.
+    AddOrderToRouteRequest:
+      type: object
+      required: [orderId]
+      properties:
+        orderId: { type: string, format: uuid, description: PENDING order to put on the route }
+    AddOrderToRouteResponse:
+      type: object
+      required: [routeId, stop]
+      properties:
+        routeId: { type: string }
+        stop: { $ref: "#/components/schemas/PlannedStop" }
+    TrackedRoute:
+      type: object
+      required: [id, driverName, stops]
+      properties:
+        id: { type: string }
+        driverName: { type: string }
+        driverPosition:
+          type: object
+          description: Last fresh GPS position of the route's driver. Omitted when the driver has no recent fix or cannot be resolved.
+          required: [latitude, longitude, recordedAt]
+          properties:
+            latitude: { type: number, minimum: -90, maximum: 90 }
+            longitude: { type: number, minimum: -180, maximum: 180 }
+            recordedAt: { type: string, format: date-time }
+        stops: { type: array, items: { $ref: "#/components/schemas/TrackedStop" } }
+    TrackedStop:
+      type: object
+      required: [orderId, address, sequence, status]
+      properties:
+        orderId: { type: string }
+        address: { type: string }
+        sequence: { type: integer, minimum: 0, description: "Planned place in the route; 1 is first" }
+        status: { type: string, enum: [PENDING, PICKED_UP, IN_TRANSIT, DELIVERED, NOT_DELIVERED] }
     PlannedRoute:
       type: object
       required: [routeId, driverId, orderCount]
       properties:
         routeId: { type: string, description: Route identifier shared by Order Service and Driver Service }
-        driverId: { type: string, format: uuid, description: Driver reserved for the route }
+        driverId: { type: string, description: "Driver reserved for the route. Empty in a dry run when no driver is left for it" }
         orderCount: { type: integer, minimum: 0, description: Number of stops (orders) in the route }
         driverName: { type: string, description: Full name of the reserved driver }
         stops: { type: array, description: Stops ordered by sequence starting at 1, items: { $ref: "#/components/schemas/PlannedStop" } }
@@ -2039,6 +2151,7 @@ components:
       type: object
       required: [planId, routes, unassignedOrderIds]
       properties:
+        dryRun: { type: boolean, description: "Present and true when the plan is only a proposal: nothing was reserved or assigned" }
         planId: { type: string, description: "Phase 1: derived as plan-<deliveryDate>; not persisted" }
         routes: { type: array, items: { $ref: "#/components/schemas/PlannedRoute" } }
         unassignedOrderIds: { type: array, items: { type: string }, description: "Phase 1: always empty; the planner assigns every order or fails" }

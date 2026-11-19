@@ -43,3 +43,10 @@ func (r *Routing) GeneratePlan(ctx context.Context, m CallMeta, req *routingv1.G
 	defer cancel()
 	return r.client.GeneratePlan(ctx, req)
 }
+
+// AddOrderToRoute asks the Routing Service to put a PENDING order at the end of a running route.
+func (r *Routing) AddOrderToRoute(ctx context.Context, m CallMeta, req *routingv1.AddOrderToRouteRequest) (*routingv1.AddOrderToRouteResponse, error) {
+	ctx, cancel := r.outgoing(ctx, m)
+	defer cancel()
+	return r.client.AddOrderToRoute(ctx, req)
+}
