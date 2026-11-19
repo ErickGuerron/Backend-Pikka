@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ErickGuerron/Backend-Pikka/libs/grpcx"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
@@ -114,7 +116,7 @@ func newClient(t *testing.T) authv1.AuthServiceClient {
 	require.NoError(t, err)
 
 	lis := bufconn.Listen(1 << 20)
-	srv := grpc.NewServer(grpcadapter.UnaryInterceptors(slog.New(slog.NewTextHandler(io.Discard, nil))))
+	srv := grpc.NewServer(grpcx.UnaryInterceptors(slog.New(slog.NewTextHandler(io.Discard, nil))))
 	authv1.RegisterAuthServiceServer(srv, grpcadapter.NewServer(grpcadapter.UseCases{
 		Login:          login,
 		CreateUser:     application.NewCreateUser(repo, hasher),

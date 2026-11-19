@@ -3,6 +3,7 @@ module github.com/ErickGuerron/Backend-Pikka/services/auth-service
 go 1.26.0
 
 require (
+	github.com/ErickGuerron/Backend-Pikka/libs/grpcx v0.0.0-00010101000000-000000000000
 	github.com/ErickGuerron/Backend-Pikka/contracts v0.0.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang-migrate/migrate/v4 v4.20.1
@@ -28,3 +29,5 @@ require (
 )
 
 replace github.com/ErickGuerron/Backend-Pikka/contracts => ../../contracts
+
+replace github.com/ErickGuerron/Backend-Pikka/libs/grpcx => ../../libs/grpcx

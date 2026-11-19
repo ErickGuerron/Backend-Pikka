@@ -130,7 +130,9 @@ func (s *Server) DeleteZone(ctx context.Context, req *zonesv1.DeleteZoneRequest)
 
 // GetZone devuelve una zona por su identificador.
 func (s *Server) GetZone(ctx context.Context, req *zonesv1.GetZoneRequest) (*zonesv1.GetZoneResponse, error) {
-	if err := requireRole(ctx, roleAdmin, roleOperator); err != nil {
+	// SERVICE: Order Service lee max_orders_per_route para llenar la cola de espera de la zona
+	// cuando se libera un cupo; sin este rol esa llamada se rechazaba siempre con PermissionDenied.
+	if err := requireRole(ctx, roleAdmin, roleOperator, roleService); err != nil {
 		return nil, err
 	}
 	zone, err := s.zones.GetZone(ctx, req.GetId())

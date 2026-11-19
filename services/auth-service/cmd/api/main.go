@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ErickGuerron/Backend-Pikka/libs/grpcx"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -78,7 +80,7 @@ func run(log *slog.Logger) error {
 	}
 
 	grpcServer := grpc.NewServer(
-		grpcadapter.UnaryInterceptors(log),
+		grpcx.UnaryInterceptors(log),
 		grpc.KeepaliveParams(keepalive.ServerParameters{MaxConnectionIdle: 5 * time.Minute}),
 	)
 	authv1.RegisterAuthServiceServer(grpcServer, grpcadapter.NewServer(grpcadapter.UseCases{

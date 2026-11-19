@@ -262,6 +262,23 @@ func TestCreateZone_OnlyAdmin(t *testing.T) {
 	}
 }
 
+// Order Service lee la capacidad de la zona con identidad de servicio para llenar la cola de espera.
+// Antes GetZone solo aceptaba ADMIN/OPERATOR y esa llamada fallaba siempre con PermissionDenied.
+func TestGetZone_ServiceRoleReadsCapacity(t *testing.T) {
+	srv := newServer()
+	created, err := srv.CreateZone(asRole("ADMIN"), &zonesv1.CreateZoneRequest{
+		Code: "NORTE", Name: "Zona Norte", Ring: validRing(), Settings: validProtoSettings(),
+	})
+	require.NoError(t, err)
+
+	res, err := srv.GetZone(asRole("SERVICE"), &zonesv1.GetZoneRequest{Id: created.GetZone().GetId()})
+
+	require.NoError(t, err)
+	assert.Equal(t, created.GetZone().GetSettings().GetMaxOrdersPerRoute(), res.GetZone().GetSettings().GetMaxOrdersPerRoute())
+	_, err = srv.GetZone(asRole("CUSTOMER"), &zonesv1.GetZoneRequest{Id: created.GetZone().GetId()})
+	assert.Equal(t, codes.PermissionDenied, status.Code(err), "un cliente no lee la configuración de la zona")
+}
+
 func TestReadZone_AdminAndOperatorOnly(t *testing.T) {
 	srv := newServer()
 	for _, role := range []string{"DRIVER"} {
