@@ -1,0 +1,18 @@
+# Jenkins de la practica APE 7. Uso: docker compose up -d --build   (desde esta carpeta)
+# Panel: http://localhost:9090
+# restart: unless-stopped hace que Jenkins vuelva solo al reiniciar el equipo o Docker.
+services:
+  jenkins:
+    build: .
+    container_name: pikka-ci
+    restart: unless-stopped
+    ports:
+      - "9090:8080"
+      - "50000:50000"
+    volumes:
+      - pikka_ci_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  pikka_ci_home:
+    name: pikka_ci_home

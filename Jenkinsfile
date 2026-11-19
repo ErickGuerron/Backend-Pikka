@@ -30,27 +30,46 @@ pipeline {
             }
         }
 
-        stage('Pruebas unitarias') {
+        stage('Pruebas unitarias y cobertura') {
             steps {
-                // Las pruebas corren dentro de un docker build: el contexto lo envia el cliente, sin montar carpetas del equipo
-                writeFile file: 'Dockerfile.test', text: '''FROM golang:1.26-alpine
+                // Las pruebas corren dentro de un docker build: el contexto lo envia el cliente, sin montar carpetas del equipo.
+                // La etapa "cov" solo contiene los informes de cobertura, que se exportan a reports/coverage/<servicio>.
+                writeFile file: 'Dockerfile.test', text: '''FROM golang:1.26-alpine AS test
 ENV CGO_ENABLED=0 GOPROXY=https://proxy.golang.org,direct
+RUN go install github.com/boumenot/gocover-cobertura@latest
 WORKDIR /src
 COPY . .
 ARG SERVICE
-RUN cd services/${SERVICE} && go test ./...
+RUN cd services/${SERVICE} \\
+ && go test -covermode=atomic -coverprofile=/cov.out ./... \\
+ && echo "COBERTURA ${SERVICE}: $(go tool cover -func=/cov.out | tail -1)" \\
+ && gocover-cobertura < /cov.out > /coverage.xml
+
+FROM scratch AS cov
+COPY --from=test /cov.out /coverage.out
+COPY --from=test /coverage.xml /coverage.xml
 '''
                 sh '''
+                rm -rf reports/coverage; mkdir -p reports/coverage
                 for s in auth-service api-gateway order-service zone-service driver-service routing-service tracking-service; do
                     ok=0
                     for intento in 1 2 3; do
-                        if docker build -f Dockerfile.test --build-arg SERVICE=$s -t pikka-test:$s .; then ok=1; break; fi
+                        if docker build --progress=plain -f Dockerfile.test --target cov --build-arg SERVICE=$s --output type=local,dest=reports/coverage/$s .; then ok=1; break; fi
                         echo "Intento $intento fallido para $s (posible corte de red al descargar modulos de Go); reintentando..."
                         sleep 5
                     done
                     [ "$ok" = 1 ] || exit 1
                 done
                 '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'reports/coverage/**', allowEmptyArchive: true
+                    recordCoverage(
+                        tools: [[parser: 'COBERTURA', pattern: 'reports/coverage/**/coverage.xml']],
+                        sourceCodeRetention: 'NEVER'
+                    )
+                }
             }
         }
 

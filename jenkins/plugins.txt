@@ -1,0 +1,7 @@
+workflow-aggregator
+pipeline-stage-view
+git
+credentials-binding
+ssh-agent
+timestamper
+coverage
