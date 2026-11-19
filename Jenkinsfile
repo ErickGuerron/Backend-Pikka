@@ -3,9 +3,11 @@ pipeline {
     options { timestamps(); disableConcurrentBuilds() }
 
     parameters {
-        choice(name: 'TARGET', choices: ['local', 'nube'], description: 'Entorno de despliegue')
+        choice(name: 'TARGET', choices: ['local', 'servidor', 'nube'], description: 'local = Docker de este equipo; servidor = VM Linux dedicada por SSH; nube = servidor de Google Cloud con Cloudflare Tunnel')
         string(name: 'FRONTEND_BRANCH', defaultValue: 'develop', description: 'Rama de Frontend-Pikka que se construye')
         string(name: 'CLOUD_HOST', defaultValue: 'anthony@34.73.92.242', description: 'Solo nube: usuario@IP del servidor')
+        string(name: 'SERVER_HOST', defaultValue: 'pikka@192.168.0.8', description: 'Solo servidor: usuario@IP de la VM Linux dedicada')
+        string(name: 'PUBLIC_HOST', defaultValue: '', description: 'Solo servidor: IP o nombre con el que se abrirá la web (vacío = la IP de SERVER_HOST)')
         string(name: 'PUBLIC_WEB', defaultValue: 'https://pikka.factuproec.com', description: 'Solo nube: URL pública de la web')
         string(name: 'PUBLIC_MOBILE', defaultValue: 'https://app-pikka.factuproec.com', description: 'Solo nube: URL pública de la app móvil')
         string(name: 'PUBLIC_API', defaultValue: 'https://api-pikka.factuproec.com', description: 'Solo nube: URL pública de la API')
@@ -25,13 +27,17 @@ pipeline {
         stage('Preparar entorno') {
             steps {
                 script {
-                    env.ENV_CRED = params.TARGET == 'nube' ? 'pikka-env-nube' : 'pikka-env'
-                    env.DH       = params.TARGET == 'nube' ? "ssh://${params.CLOUD_HOST}" : ''
+                    env.ENV_CRED = params.TARGET == 'nube' ? 'pikka-env-nube' : (params.TARGET == 'servidor' ? 'pikka-env-servidor' : 'pikka-env')
+                    env.SSH_CRED = params.TARGET == 'servidor' ? 'servidor-ssh' : 'oracle-ssh'
+                    env.SSH_HOST = params.TARGET == 'servidor' ? params.SERVER_HOST : params.CLOUD_HOST
+                    env.DH       = params.TARGET == 'servidor' ? "ssh://${params.SERVER_HOST}" : (params.TARGET == 'nube' ? "ssh://${params.CLOUD_HOST}" : '')
+                    // Servidor dedicado: la web sale por el puerto 80 y la app móvil por el 8082 de la VM.
+                    def host = params.PUBLIC_HOST ?: params.SERVER_HOST.split('@')[-1]
                     // En la nube el servidor se comparte con otro sistema que ocupa 80/443: la web y la app móvil no
                     // publican puertos; Internet entra por Cloudflare Tunnel (contenedor pikka-tunnel) a la red interna.
-                    env.WEB_PORTS  = params.TARGET == 'nube' ? '' : '-p 5173:80'
+                    env.WEB_PORTS  = params.TARGET == 'nube' ? '' : (params.TARGET == 'servidor' ? '-p 80:80' : '-p 5173:80')
                     env.MOB_PORTS  = params.TARGET == 'nube' ? '' : '-p 8082:80'
-                    env.MOBILE_API = params.TARGET == 'nube' ? params.PUBLIC_MOBILE : 'http://localhost:8082'
+                    env.MOBILE_API = params.TARGET == 'nube' ? params.PUBLIC_MOBILE : (params.TARGET == 'servidor' ? "http://${host}:8082" : 'http://localhost:8082')
                 }
                 withCredentials([file(credentialsId: env.ENV_CRED, variable: 'ENV_FILE')]) {
                     sh 'cp "$ENV_FILE" .env'
@@ -82,10 +88,10 @@ COPY --from=test /coverage.xml /coverage.xml
             }
         }
 
-        stage('Acceso a la nube') {
-            when { expression { params.TARGET == 'nube' } }
+        stage('Acceso por SSH') {
+            when { expression { params.TARGET != 'local' } }
             steps {
-                withCredentials([sshUserPrivateKey(credentialsId: 'oracle-ssh', keyFileVariable: 'KEY')]) {
+                withCredentials([sshUserPrivateKey(credentialsId: env.SSH_CRED, keyFileVariable: 'KEY')]) {
                     sh '''
                     mkdir -p ~/.ssh
                     cp "$KEY" ~/.ssh/pikka_oracle && chmod 600 ~/.ssh/pikka_oracle
@@ -124,22 +130,27 @@ HEALTHCHECK --interval=10s --timeout=3s --retries=5 CMD wget -qO- http://127.0.0
             }
         }
 
-        stage('Desplegar en local') {
-            when { expression { params.TARGET == 'local' } }
+        // TARGET=local usa el Docker de este equipo; TARGET=servidor usa el Docker de la VM dedicada por SSH (DOCKER_HOST).
+        stage('Desplegar (local o servidor)') {
+            when { expression { params.TARGET != 'nube' } }
             steps {
-                sh '$COMPOSE up -d --build'
+                withEnv(env.DH ? ["DOCKER_HOST=${env.DH}"] : []) {
+                    sh '$COMPOSE up -d --build'
+                }
                 dir('frontend') {
                     git url: 'https://github.com/ErickGuerron/Frontend-Pikka.git', branch: params.FRONTEND_BRANCH
                 }
                 sh 'cp cd/mobile-web.Dockerfile cd/mobile-web.Dockerfile.dockerignore frontend/apps/'
-                dir('frontend/apps') {
-                    sh '''
-                    docker build -f web/Dockerfile -t pikka/web:1.0 .
-                    docker build -f mobile-web.Dockerfile --build-arg EXPO_PUBLIC_API_URL="$MOBILE_API" -t pikka/mobile-web:1.0 .
-                    docker rm -f pikka-web pikka-mobile >/dev/null 2>&1 || true
-                    docker run -d --name pikka-web    --restart unless-stopped --network $NETWORK $WEB_PORTS pikka/web:1.0
-                    docker run -d --name pikka-mobile --restart unless-stopped --network $NETWORK $MOB_PORTS pikka/mobile-web:1.0
-                    '''
+                withEnv(env.DH ? ["DOCKER_HOST=${env.DH}"] : []) {
+                    dir('frontend/apps') {
+                        sh '''
+                        docker build -f web/Dockerfile -t pikka/web:1.0 .
+                        docker build -f mobile-web.Dockerfile --build-arg EXPO_PUBLIC_API_URL="$MOBILE_API" -t pikka/mobile-web:1.0 .
+                        docker rm -f pikka-web pikka-mobile >/dev/null 2>&1 || true
+                        docker run -d --name pikka-web    --restart unless-stopped --network $NETWORK $WEB_PORTS pikka/web:1.0
+                        docker run -d --name pikka-mobile --restart unless-stopped --network $NETWORK $MOB_PORTS pikka/mobile-web:1.0
+                        '''
+                    }
                 }
             }
         }
@@ -212,7 +223,7 @@ echo "DESPLIEGUE EN EL SERVIDOR COMPLETADO"
 
         stage('Prueba de humo') {
             steps {
-                withEnv(["RUN=${params.TARGET == 'nube' ? 'ssh -o ConnectTimeout=15 ' + params.CLOUD_HOST : ''}"]) {
+                withEnv(["RUN=${params.TARGET == 'local' ? '' : 'ssh -o ConnectTimeout=15 ' + env.SSH_HOST}"]) {
                     sh '''
                     for c in pikka-web pikka-mobile; do
                         ok=0

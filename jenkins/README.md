@@ -15,7 +15,9 @@ Jenkins en Docker que ejecuta el `Jenkinsfile` de la raiz: pruebas unitarias con
 |----|------|-----------|
 | `pikka-env` | Secret file | `.env` del backend para local |
 | `pikka-env-nube` | Secret file | `.env` del backend para la nube |
-| `oracle-ssh` | SSH Username with private key | Llave de la VM (solo para TARGET = nube) |
+| `pikka-env-servidor` | Secret file | `.env` para la VM Linux dedicada (CORS con la IP de la VM) |
+| `servidor-ssh` | SSH Username with private key | Llave privada para entrar por SSH a la VM dedicada (TARGET = servidor) |
+| `oracle-ssh` | SSH Username with private key | Llave del servidor en la nube (solo TARGET = nube) |
 
 El `.env` no se sube al repositorio: cada integrante crea el suyo con sus propios valores.
 
@@ -24,7 +26,11 @@ New Item > `pikka-backend` > Pipeline > "Pipeline script from SCM" > Git >
 `https://github.com/ErickGuerron/Backend-Pikka.git`, rama `*/feat/jenkins-ci` (o `*/develop` tras el merge), Script Path `Jenkinsfile`.
 
 ## Ejecutar
-Build with Parameters: `TARGET = local`, `FRONTEND_BRANCH = develop` (o `feat/docker-frontend`).
+Build with Parameters:
+- `TARGET = local`: despliega en el Docker de este equipo (web en 5173, app móvil en 8082).
+- `TARGET = servidor`: despliega por SSH en una VM Linux dedicada (`SERVER_HOST = usuario@IP`); web en `http://IP` (puerto 80) y app móvil en `http://IP:8082`.
+- `TARGET = nube`: servidor de Google Cloud con Cloudflare Tunnel.
+`FRONTEND_BRANCH = develop` por defecto.
 La cobertura queda en el menu del build (Coverage Report) y los archivos en Artifacts.
 
 ## Que vuelva solo tras apagar el equipo

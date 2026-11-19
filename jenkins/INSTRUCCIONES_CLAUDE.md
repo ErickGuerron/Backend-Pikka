@@ -12,7 +12,8 @@ despliegue automatizado que ya funciona en el equipo de María Zapata. Léelo co
   → Frontend web (Nginx, repo Frontend-Pikka) → Prueba de humo (`/ready`).
 - `docker-compose.ci.yml` reemplaza los montajes de archivos locales (init de PostgreSQL y `redis.conf`) por imágenes que los
   llevan incluidos, porque desde un Jenkins en contenedor o un Docker remoto esas rutas no existen.
-- Parámetros: `TARGET` (`local` o `nube`), `FRONTEND_BRANCH`, `CLOUD_HOST` (`usuario@IP`, solo nube).
+- Parámetros: `TARGET` (`local`, `servidor` o `nube`), `FRONTEND_BRANCH`, `SERVER_HOST` (`usuario@IP` de una VM Linux dedicada, solo servidor) y `CLOUD_HOST` (solo nube).
+- `TARGET=servidor` usa el Docker de la VM por SSH (`DOCKER_HOST=ssh://...`): web en el puerto 80, app móvil en el 8082. La VM necesita Docker Engine, OpenSSH y el usuario en el grupo `docker`.
 - Este flujo automatiza el despliegue manual del APE 6 (docker compose + docker build/run a mano).
 
 ## Requisitos
@@ -29,11 +30,12 @@ Docker Desktop encendido (Docker Engine y Compose), Git y acceso a Internet. Ram
    http://localhost:9090, instalar los plugins sugeridos y crear el usuario administrador (lo hace el usuario en el navegador).
 5. Crear credenciales en Manage Jenkins > Credentials > System > Global (también lo hace el usuario):
    - `pikka-env`: tipo *Secret file*, con su `.env` local.
-   - `pikka-env-nube`: *Secret file* con el `.env` de la nube (solo si va a desplegar en la nube).
-   - `oracle-ssh`: *SSH Username with private key* (solo nube). Dejar la passphrase vacía si la llave no la tiene.
+   - `pikka-env-servidor`: *Secret file* con el `.env` para la VM dedicada (CORS con la IP de la VM).
+   - `servidor-ssh`: *SSH Username with private key* para entrar a la VM (la llave pública va en `~/.ssh/authorized_keys` de la VM). Passphrase vacía si la llave no la tiene.
+   - `pikka-env-nube` y `oracle-ssh`: solo si va a desplegar en la nube.
 6. Crear el job `pikka-backend`: Pipeline > *Pipeline script from SCM* > Git > URL del repo > rama `*/feat/jenkins-ci` >
    Script Path `Jenkinsfile`.
-7. Ejecutar *Build with Parameters* con `TARGET=local`. Verificar: `docker ps` (nueve contenedores del backend y `pikka-web`),
+7. Ejecutar *Build with Parameters* con `TARGET=local` (o `servidor` con `SERVER_HOST`). Verificar: `docker ps` (nueve contenedores del backend y `pikka-web`),
    http://localhost:5173 y, en el build, el reporte *Coverage Report* y la línea `COBERTURA <servicio>: total ...%` por servicio.
 
 ## Reinicio automático (demostración)
