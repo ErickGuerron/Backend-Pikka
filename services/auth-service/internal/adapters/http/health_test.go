@@ -17,7 +17,7 @@ func TestHealthEndpoints(t *testing.T) {
 	down := httpadapter.NewHealthServer(func(context.Context) error { return errors.New("db down") })
 
 	for _, tc := range []struct {
-		srv  http.Handler
+		srv  *http.Server
 		path string
 		want int
 	}{
@@ -27,7 +27,7 @@ func TestHealthEndpoints(t *testing.T) {
 		{down, "/ready", http.StatusServiceUnavailable},
 	} {
 		rec := httptest.NewRecorder()
-		tc.srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
+		tc.srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
 		assert.Equal(t, tc.want, rec.Code, tc.path)
 	}
 }

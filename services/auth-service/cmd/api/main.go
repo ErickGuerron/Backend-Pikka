@@ -82,17 +82,21 @@ func run(log *slog.Logger) error {
 		grpc.KeepaliveParams(keepalive.ServerParameters{MaxConnectionIdle: 5 * time.Minute}),
 	)
 	authv1.RegisterAuthServiceServer(grpcServer, grpcadapter.NewServer(grpcadapter.UseCases{
-		Login:         login,
-		CreateUser:    application.NewCreateUser(users, hasher),
-		GetUser:       application.NewGetUser(users),
-		ValidateToken: application.NewValidateToken(tokens),
+		Login:          login,
+		CreateUser:     application.NewCreateUser(users, hasher),
+		GetUser:        application.NewGetUser(users),
+		ValidateToken:  application.NewValidateToken(tokens),
+		SignupCustomer: application.NewSignupCustomer(users, hasher, tokens),
+		ListUsers:      application.NewListUsers(users),
+		UpdateUser:     application.NewUpdateUser(users),
+		DeactivateUser: application.NewDeactivateUser(users),
 	}))
 	healthSrv := health.NewServer()
 	healthpb.RegisterHealthServer(grpcServer, healthSrv)
 	healthSrv.SetServingStatus(authv1.AuthService_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
 
 	httpServer := httpadapter.NewHealthServer(pool.Ping)
-	httpServer.Server.ReadHeaderTimeout = 5 * time.Second
+	httpServer.Addr = fmt.Sprintf(":%d", cfg.HTTPPort)
 
 	errCh := make(chan error, 2)
 	go func() {
@@ -106,7 +110,7 @@ func run(log *slog.Logger) error {
 	}()
 	go func() {
 		log.Info("http listening", "port", cfg.HTTPPort)
-		if err := httpServer.Start(fmt.Sprintf(":%d", cfg.HTTPPort)); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
 	}()

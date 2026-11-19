@@ -19,7 +19,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [services/auth-service, services/api-gateway]
+        module: [libs/osrm, services/auth-service, services/api-gateway, services/order-service, services/zone-service, services/driver-service, services/routing-service, services/tracking-service]
+    env:
+      # Order Service must declare every dependency without inheriting go.work.
+      GOWORK: ${{ matrix.module == 'services/order-service' && 'off' || 'auto' }}
     defaults:
       run:
         working-directory: ${{ matrix.module }}
@@ -56,7 +59,7 @@ jobs:
       postgres:
         image: postgis/postgis:16-3.4
         env:
-          POSTGRES_DB: last_mile
+          POSTGRES_DB: last_mile_ci
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
         ports: ["5432:5432"]
@@ -74,14 +77,39 @@ jobs:
           cache-dependency-path: services/auth-service/go.sum
       - name: Initialize schemas and service users
         run: |
-          export POSTGRES_USER=postgres POSTGRES_DB=last_mile
+          export POSTGRES_USER=postgres POSTGRES_DB=last_mile_ci
           export AUTH_DB_PASSWORD=auth ORDER_DB_PASSWORD=x ZONE_DB_PASSWORD=x ROUTING_DB_PASSWORD=x DRIVER_DB_PASSWORD=x TRACKING_DB_PASSWORD=x
           bash infrastructure/postgres/init/01-schemas-and-users.sh
+          # Each integration test runs in its own schema of this disposable database, so the service
+          # users need CREATE on it. Scoped to last_mile_ci only; the development database never gets this.
+          psql -v ON_ERROR_STOP=1 -U postgres -d last_mile_ci -c "GRANT CREATE ON DATABASE last_mile_ci TO auth_service_user, order_service_user, driver_service_user;"
       - name: Auth Service integration tests
         working-directory: services/auth-service
         env:
-          AUTH_TEST_DATABASE_URL: postgres://auth_service_user:auth@localhost:5432/last_mile?sslmode=disable&search_path=auth
+          AUTH_TEST_DATABASE_URL: postgres://auth_service_user:auth@localhost:5432/last_mile_ci?sslmode=disable&search_path=auth
         run: go test -tags integration -count=1 ./...
+
+      - name: Order Service migration integration tests
+        working-directory: services/order-service
+        env:
+          ORDER_TEST_DATABASE_URL: postgres://order_service_user:x@localhost:5432/last_mile_ci?sslmode=disable&search_path=orders,public
+        # -p 1: the migration test rolls the shared schema down and up, so packages must not run in parallel.
+        # Coverage of the SQL adapters is produced only here, so it is published for SonarQube.
+        run: go test -race -p 1 -tags integration -count=1 -coverprofile=coverage.out ./...
+
+      - name: Upload order-service integration coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-integration-order
+          path: services/order-service/coverage.out
+          if-no-files-found: ignore
+
+      - name: Driver Service integration tests
+        working-directory: services/driver-service
+        env:
+          DRIVER_TEST_DATABASE_URL: postgres://driver_service_user:x@localhost:5432/last_mile_ci?sslmode=disable&search_path=drivers,public
+        run: go test -race -p 1 -tags integration -count=1 ./...
 
   contracts:
     name: Contracts (proto + OpenAPI)
@@ -121,6 +149,16 @@ jobs:
         run: docker build -f services/auth-service/Dockerfile -t lastmile/auth-service:ci .
       - name: Build api-gateway
         run: docker build -f services/api-gateway/Dockerfile -t lastmile/api-gateway:ci .
+      - name: Build zone-service
+        run: docker build -f services/zone-service/Dockerfile -t lastmile/zone-service:ci .
+      - name: Build driver-service
+        run: docker build -f services/driver-service/Dockerfile -t lastmile/driver-service:ci .
+      - name: Build order-service
+        run: docker build -f services/order-service/Dockerfile -t lastmile/order-service:ci .
+      - name: Build tracking-service
+        run: docker build -f services/tracking-service/Dockerfile -t lastmile/tracking-service:ci .
+      - name: Build routing-service
+        run: docker build -f services/routing-service/Dockerfile -t lastmile/routing-service:ci .
 
   secrets:
     name: Secret scan
@@ -136,7 +174,7 @@ jobs:
   sonarqube:
     name: SonarQube
     runs-on: ubuntu-latest
-    needs: go
+    needs: [go, integration]
     # Se activa cuando el repositorio tenga configurados SONAR_TOKEN y SONAR_HOST_URL.
     if: ${{ vars.SONAR_ENABLED == 'true' }}
     steps:

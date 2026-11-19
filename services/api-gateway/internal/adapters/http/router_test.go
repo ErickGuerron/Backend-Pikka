@@ -27,8 +27,13 @@ import (
 var secret = strings.Repeat("k", 32)
 
 type fakeAuth struct {
-	lastMeta grpcclient.CallMeta
-	err      error
+	lastMeta       grpcclient.CallMeta
+	lastUpdate     *authv1.UpdateUserRequest
+	lastDeactivate *authv1.DeactivateUserRequest
+	lastCreate     *authv1.CreateUserRequest
+	createCalls    int
+	deactivateErr  error
+	err            error
 }
 
 func (f *fakeAuth) Login(_ context.Context, m grpcclient.CallMeta, req *authv1.LoginRequest) (*authv1.LoginResponse, error) {
@@ -45,6 +50,8 @@ func (f *fakeAuth) Login(_ context.Context, m grpcclient.CallMeta, req *authv1.L
 
 func (f *fakeAuth) CreateUser(_ context.Context, m grpcclient.CallMeta, req *authv1.CreateUserRequest) (*authv1.CreateUserResponse, error) {
 	f.lastMeta = m
+	f.lastCreate = req
+	f.createCalls++
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -57,6 +64,63 @@ func (f *fakeAuth) GetUser(_ context.Context, m grpcclient.CallMeta, req *authv1
 		return nil, f.err
 	}
 	return &authv1.GetUserResponse{User: &authv1.User{Id: req.GetId(), Role: authv1.Role_ROLE_DRIVER}}, nil
+}
+
+func (f *fakeAuth) SignupCustomer(_ context.Context, m grpcclient.CallMeta, req *authv1.SignupCustomerRequest) (*authv1.SignupCustomerResponse, error) {
+	f.lastMeta = m
+	if f.err != nil {
+		return nil, f.err
+	}
+	if len(req.GetPassword()) < 8 {
+		return nil, status.Error(codes.InvalidArgument, "password must be between 8 and 72 bytes")
+	}
+	return &authv1.SignupCustomerResponse{AccessToken: "tok-customer", TokenType: "Bearer", ExpiresInSeconds: 3600,
+		User: &authv1.User{Id: "u-customer", Email: req.GetEmail(), FullName: req.GetFullName(), Role: authv1.Role_ROLE_CUSTOMER, Active: true, CreatedAt: "2026-01-02T03:04:05Z"}}, nil
+}
+
+// ListUsers devuelve una lista con dos usuarios. Los handlers reciben
+// CallMeta con el rol del llamador; el handler debe rechazar (403) si el rol
+// no es ADMIN antes de invocar este método. El fake no hace ninguna validación
+// de rol porque la lógica vive en el handler HTTP (adminOnlyMiddleware) y en
+// el caso de uso (ListUsers del Auth Service).
+func (f *fakeAuth) ListUsers(_ context.Context, m grpcclient.CallMeta, _ *authv1.ListUsersRequest) (*authv1.ListUsersResponse, error) {
+	f.lastMeta = m
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &authv1.ListUsersResponse{
+		Users: []*authv1.User{
+			{Id: "u-admin", Email: "admin@example.com", FullName: "Admin", Role: authv1.Role_ROLE_ADMIN, Active: true, CreatedAt: "2026-01-01T00:00:00Z"},
+			{Id: "u-customer", Email: "cliente@example.com", FullName: "Cliente", Role: authv1.Role_ROLE_CUSTOMER, Active: true, CreatedAt: "2026-01-02T00:00:00Z"},
+		},
+	}, nil
+}
+
+// UpdateUser refleja el reenvío: guarda la petición para que el test compruebe
+// qué campos llegaron. Rol UNSPECIFIED (CUSTOMER o inválido) se rechaza como
+// lo hace auth-service.
+func (f *fakeAuth) UpdateUser(_ context.Context, m grpcclient.CallMeta, req *authv1.UpdateUserRequest) (*authv1.UpdateUserResponse, error) {
+	f.lastMeta = m
+	f.lastUpdate = req
+	if f.err != nil {
+		return nil, f.err
+	}
+	if req.Role != nil && req.GetRole() == authv1.Role_ROLE_UNSPECIFIED {
+		return nil, status.Error(codes.InvalidArgument, "invalid role")
+	}
+	return &authv1.UpdateUserResponse{User: &authv1.User{Id: req.GetId(), FullName: req.GetFullName(), Role: authv1.Role_ROLE_DRIVER, Active: true}}, nil
+}
+
+func (f *fakeAuth) DeactivateUser(_ context.Context, m grpcclient.CallMeta, req *authv1.DeactivateUserRequest) (*authv1.DeactivateUserResponse, error) {
+	f.lastMeta = m
+	f.lastDeactivate = req
+	if f.deactivateErr != nil {
+		return nil, f.deactivateErr
+	}
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &authv1.DeactivateUserResponse{User: &authv1.User{Id: req.GetId(), Role: authv1.Role_ROLE_DRIVER, Active: false}}, nil
 }
 
 func token(t *testing.T, sub, role string) string {
@@ -75,7 +139,7 @@ func newRouter(auth httpapi.AuthClient, ready bool) http.Handler {
 		RequestTimeout: time.Second, BodyLimit: "1K", EnableHSTS: true,
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return httpapi.NewRouter(log, opts, jwt.NewVerifier(secret, "lastmile-auth"), auth, func(context.Context) bool { return ready })
+	return httpapi.NewRouter(log, opts, jwt.NewVerifier(secret, "lastmile-auth"), auth, nil, func(context.Context) bool { return ready })
 }
 
 func do(h http.Handler, method, path, body string, headers map[string]string) *httptest.ResponseRecorder {
@@ -194,6 +258,67 @@ func TestCreateUser(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), `"role":"DRIVER"`)
 }
 
+// --- BE-T3: GET /api/v1/users (solo ADMIN) ---------------------------------
+
+func TestListUsers_AsAdmin_Returns200(t *testing.T) {
+	auth := &fakeAuth{}
+	h := newRouter(auth, true)
+
+	rec := do(h, http.MethodGet, "/api/v1/users", "",
+		map[string]string{"Authorization": "Bearer " + token(t, "u-1", "ADMIN")})
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	users, ok := body["users"].([]any)
+	require.True(t, ok, "la respuesta debe tener clave users como array")
+	assert.Len(t, users, 2)
+
+	// El rol del caller se propagó al backend vía CallMeta.
+	assert.Equal(t, "u-1", auth.lastMeta.UserID)
+	assert.Equal(t, "ADMIN", auth.lastMeta.Role)
+}
+
+func TestListUsers_AsCustomer_Returns403(t *testing.T) {
+	auth := &fakeAuth{}
+	h := newRouter(auth, true)
+
+	rec := do(h, http.MethodGet, "/api/v1/users", "",
+		map[string]string{"Authorization": "Bearer " + token(t, "u-9", "CUSTOMER")})
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Equal(t, "FORBIDDEN", decodeError(t, rec).Code)
+
+	// El middleware corta antes de llegar al handler, así que CallMeta queda vacío.
+	assert.Equal(t, "", auth.lastMeta.UserID)
+}
+
+func TestListUsers_AsOperator_Returns403(t *testing.T) {
+	h := newRouter(&fakeAuth{}, true)
+
+	rec := do(h, http.MethodGet, "/api/v1/users", "",
+		map[string]string{"Authorization": "Bearer " + token(t, "u-3", "OPERATOR")})
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Equal(t, "FORBIDDEN", decodeError(t, rec).Code)
+}
+
+func TestListUsers_AsDriver_Returns403(t *testing.T) {
+	h := newRouter(&fakeAuth{}, true)
+
+	rec := do(h, http.MethodGet, "/api/v1/users", "",
+		map[string]string{"Authorization": "Bearer " + token(t, "u-7", "DRIVER")})
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Equal(t, "FORBIDDEN", decodeError(t, rec).Code)
+}
+
+func TestListUsers_WithoutAuth_Returns401(t *testing.T) {
+	auth := &fakeAuth{}
+	h := newRouter(auth, true)
+
+	rec := do(h, http.MethodGet, "/api/v1/users", "", nil)
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Equal(t, "UNAUTHENTICATED", decodeError(t, rec).Code)
+}
+
 func TestGRPCErrorsAreTranslated(t *testing.T) {
 	cases := map[codes.Code]int{
 		codes.PermissionDenied: http.StatusForbidden,
@@ -237,10 +362,39 @@ func TestLoginRateLimit(t *testing.T) {
 		RateLimitPerSecond: 1000, RateLimitBurst: 1000, LoginRatePerMinute: 2,
 		RequestTimeout: time.Second, BodyLimit: "1K",
 	}
-	h := httpapi.NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), opts, jwt.NewVerifier(secret, "lastmile-auth"), &fakeAuth{}, func(context.Context) bool { return true })
+	h := httpapi.NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), opts, jwt.NewVerifier(secret, "lastmile-auth"), &fakeAuth{}, nil, func(context.Context) bool { return true })
 	body := `{"email":"a@example.com","password":"password123"}`
 	assert.Equal(t, http.StatusOK, do(h, http.MethodPost, "/api/v1/auth/login", body, nil).Code)
 	rec := do(h, http.MethodPost, "/api/v1/auth/login", body, nil)
 	assert.Equal(t, http.StatusTooManyRequests, rec.Code)
 	assert.Equal(t, "RATE_LIMITED", decodeError(t, rec).Code)
+}
+
+func TestAPIDocs(t *testing.T) {
+	opts := httpapi.Options{
+		CORSAllowedOrigins: []string{"http://localhost:5173"},
+		RateLimitPerSecond: 1000, RateLimitBurst: 1000, LoginRatePerMinute: 6000,
+		RequestTimeout: time.Second, BodyLimit: "1K", EnableDocs: true,
+	}
+	h := httpapi.NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), opts, jwt.NewVerifier(secret, "lastmile-auth"), &fakeAuth{}, nil, func(context.Context) bool { return true })
+
+	rec := do(h, http.MethodGet, "/docs", "", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), `data-url="/openapi.yaml"`)
+	assert.Contains(t, rec.Header().Get("Content-Security-Policy"), "https://cdn.jsdelivr.net")
+
+	rec = do(h, http.MethodGet, "/openapi.yaml", "", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "openapi: 3.0.3")
+	assert.Contains(t, rec.Header().Get("Content-Type"), "yaml")
+
+	// La CSP estricta sigue aplicando al resto de rutas.
+	rec = do(h, http.MethodGet, "/health", "", nil)
+	assert.Equal(t, "default-src 'none'; frame-ancestors 'none'", rec.Header().Get("Content-Security-Policy"))
+}
+
+func TestAPIDocsDisabled(t *testing.T) {
+	h := newRouter(&fakeAuth{}, true)
+	assert.Equal(t, http.StatusNotFound, do(h, http.MethodGet, "/docs", "", nil).Code)
+	assert.Equal(t, http.StatusNotFound, do(h, http.MethodGet, "/openapi.yaml", "", nil).Code)
 }

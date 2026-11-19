@@ -25,10 +25,14 @@ const (
 
 // UseCases agrupa los casos de uso que este adaptador necesita.
 type UseCases struct {
-	Login         *application.Login
-	CreateUser    *application.CreateUser
-	GetUser       *application.GetUser
-	ValidateToken *application.ValidateToken
+	Login          *application.Login
+	CreateUser     *application.CreateUser
+	GetUser        *application.GetUser
+	ValidateToken  *application.ValidateToken
+	SignupCustomer *application.SignupCustomer
+	ListUsers      *application.ListUsers
+	UpdateUser     *application.UpdateUser
+	DeactivateUser *application.DeactivateUser
 }
 
 // Server implementa authv1.AuthServiceServer. Solo traduce; no contiene reglas de negocio.
@@ -92,6 +96,78 @@ func (s *Server) ValidateToken(_ context.Context, req *authv1.ValidateTokenReque
 	return &authv1.ValidateTokenResponse{UserId: c.UserID, Role: toProtoRole(c.Role)}, nil
 }
 
+// SignupCustomer registra un cliente nuevo. Es público (no exige caller) y
+// devuelve un JWT con rol CUSTOMER.
+func (s *Server) SignupCustomer(ctx context.Context, req *authv1.SignupCustomerRequest) (*authv1.SignupCustomerResponse, error) {
+	if s.uc.SignupCustomer == nil {
+		return nil, status.Error(codes.Unimplemented, "signup customer is not wired")
+	}
+	res, err := s.uc.SignupCustomer.Execute(ctx, req.GetEmail(), req.GetPassword(), req.GetFullName())
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	return &authv1.SignupCustomerResponse{
+		AccessToken:      res.AccessToken,
+		TokenType:        "Bearer",
+		ExpiresInSeconds: int64(res.ExpiresIn / time.Second),
+		User:             toProtoUser(res.User),
+	}, nil
+}
+
+// ListUsers devuelve todos los usuarios. La autorización por rol (solo ADMIN)
+// se valida dentro del caso de uso antes de tocar la base (ADR 0008 §3).
+func (s *Server) ListUsers(ctx context.Context, _ *authv1.ListUsersRequest) (*authv1.ListUsersResponse, error) {
+	if s.uc.ListUsers == nil {
+		return nil, status.Error(codes.Unimplemented, "list users is not wired")
+	}
+	users, err := s.uc.ListUsers.Execute(ctx, callerFrom(ctx).Role)
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	out := make([]*authv1.User, 0, len(users))
+	for _, u := range users {
+		out = append(out, toProtoUser(u))
+	}
+	return &authv1.ListUsersResponse{Users: out}, nil
+}
+
+// UpdateUser edita nombre y/o rol. Los campos ausentes no cambian; un rol
+// desconocido llega como ROLE_UNSPECIFIED y se rechaza como InvalidArgument.
+func (s *Server) UpdateUser(ctx context.Context, req *authv1.UpdateUserRequest) (*authv1.UpdateUserResponse, error) {
+	if s.uc.UpdateUser == nil {
+		return nil, status.Error(codes.Unimplemented, "update user is not wired")
+	}
+	in := domain.UserUpdate{}
+	if req.FullName != nil {
+		name := req.GetFullName()
+		in.FullName = &name
+	}
+	if req.Role != nil {
+		role, ok := fromProtoRole(req.GetRole())
+		if !ok {
+			return nil, status.Error(codes.InvalidArgument, domain.ErrInvalidRole.Error())
+		}
+		in.Role = &role
+	}
+	u, err := s.uc.UpdateUser.Execute(ctx, callerFrom(ctx), req.GetId(), in)
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	return &authv1.UpdateUserResponse{User: toProtoUser(u)}, nil
+}
+
+// DeactivateUser hace borrado lógico del usuario indicado.
+func (s *Server) DeactivateUser(ctx context.Context, req *authv1.DeactivateUserRequest) (*authv1.DeactivateUserResponse, error) {
+	if s.uc.DeactivateUser == nil {
+		return nil, status.Error(codes.Unimplemented, "deactivate user is not wired")
+	}
+	u, err := s.uc.DeactivateUser.Execute(ctx, callerFrom(ctx), req.GetId())
+	if err != nil {
+		return nil, toStatus(err)
+	}
+	return &authv1.DeactivateUserResponse{User: toProtoUser(u)}, nil
+}
+
 func callerFrom(ctx context.Context) ports.Caller {
 	md, _ := metadata.FromIncomingContext(ctx)
 	first := func(k string) string {
@@ -112,8 +188,14 @@ func toStatus(err error) error {
 	case errors.Is(err, domain.ErrInvalidEmail),
 		errors.Is(err, domain.ErrInvalidPassword),
 		errors.Is(err, domain.ErrInvalidFullName),
-		errors.Is(err, domain.ErrInvalidRole):
+		errors.Is(err, domain.ErrInvalidRole),
+		errors.Is(err, domain.ErrNothingToUpdate),
+		errors.Is(err, domain.ErrCustomerRoleNotAssignable):
 		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, domain.ErrCustomerRoleLocked),
+		errors.Is(err, domain.ErrLastActiveAdmin),
+		errors.Is(err, domain.ErrSelfDeactivation):
+		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, domain.ErrInvalidCredentials), errors.Is(err, domain.ErrInvalidToken):
 		return status.Error(codes.Unauthenticated, "invalid credentials")
 	case errors.Is(err, domain.ErrUserInactive):
@@ -153,6 +235,8 @@ func toProtoRole(r domain.Role) authv1.Role {
 		return authv1.Role_ROLE_OPERATOR
 	case domain.RoleDriver:
 		return authv1.Role_ROLE_DRIVER
+	case domain.RoleCustomer:
+		return authv1.Role_ROLE_CUSTOMER
 	default:
 		return authv1.Role_ROLE_UNSPECIFIED
 	}
@@ -166,6 +250,8 @@ func fromProtoRole(r authv1.Role) (domain.Role, bool) {
 		return domain.RoleOperator, true
 	case authv1.Role_ROLE_DRIVER:
 		return domain.RoleDriver, true
+	case authv1.Role_ROLE_CUSTOMER:
+		return domain.RoleCustomer, true
 	default:
 		return "", false
 	}

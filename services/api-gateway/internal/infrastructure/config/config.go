@@ -17,48 +17,72 @@ type Config struct {
 	AppEnv   string
 	HTTPPort int
 
-	AuthServiceAddr string
-	GRPCTimeout     time.Duration
+	AuthServiceAddr     string
+	ZoneServiceAddr     string
+	OrderServiceAddr    string
+	DriverServiceAddr   string
+	TrackingServiceAddr string
+	RoutingServiceAddr  string
+	// OSRMURL es el servidor OSRM (por ejemplo http://osrm:5000). Vacío desactiva la ruta óptima del repartidor.
+	OSRMURL     string
+	GRPCTimeout time.Duration
+	// TrackingPollInterval es cada cuánto el WebSocket de seguimiento sondea el snapshot del pedido.
+	TrackingPollInterval time.Duration
 
 	JWTSecret string
 	JWTIssuer string
 
-	CORSAllowedOrigins []string
-	RateLimitPerSecond float64
-	RateLimitBurst     int
-	LoginRatePerMinute float64
-	RequestTimeout     time.Duration
-	BodyLimit          string
+	CORSAllowedOrigins  []string
+	RateLimitPerSecond  float64
+	RateLimitBurst      int
+	LoginRatePerMinute  float64
+	SignupRatePerMinute float64
+	RequestTimeout      time.Duration
+	BodyLimit           string
 	// TrustProxy indica si se confía en X-Forwarded-For para identificar al cliente.
 	TrustProxy bool
 	// HSTS solo tiene sentido detrás de HTTPS (por ejemplo, en el balanceador).
 	EnableHSTS bool
+	// EnableDocs publica la documentación interactiva de la API en /docs.
+	EnableDocs bool
 }
 
 // Load lee y valida la configuración.
 func Load() (Config, error) {
 	var errs []error
 	cfg := Config{
-		AppEnv:             getEnv("APP_ENV", "development"),
-		HTTPPort:           getInt("HTTP_PORT", 8080, &errs),
-		AuthServiceAddr:    getEnv("AUTH_SERVICE_ADDR", "localhost:9090"),
-		GRPCTimeout:        getDuration("GRPC_TIMEOUT", 3*time.Second, &errs),
-		JWTSecret:          os.Getenv("JWT_SECRET"),
-		JWTIssuer:          getEnv("JWT_ISSUER", "lastmile-auth"),
-		CORSAllowedOrigins: splitList(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:5173")),
-		RateLimitPerSecond: getFloat("RATE_LIMIT_PER_SECOND", 20, &errs),
-		RateLimitBurst:     getInt("RATE_LIMIT_BURST", 40, &errs),
-		LoginRatePerMinute: getFloat("LOGIN_RATE_PER_MINUTE", 10, &errs),
-		RequestTimeout:     getDuration("REQUEST_TIMEOUT", 10*time.Second, &errs),
-		BodyLimit:          getEnv("BODY_LIMIT", "1M"),
-		TrustProxy:         getEnv("TRUST_PROXY", "false") == "true",
-		EnableHSTS:         getEnv("ENABLE_HSTS", "true") == "true",
+		AppEnv:               getEnv("APP_ENV", "development"),
+		HTTPPort:             getInt("HTTP_PORT", 8080, &errs),
+		AuthServiceAddr:      getEnv("AUTH_SERVICE_ADDR", "localhost:9090"),
+		ZoneServiceAddr:      getEnv("ZONE_SERVICE_ADDR", "localhost:9090"),
+		OrderServiceAddr:     getEnv("ORDER_SERVICE_ADDR", "localhost:9091"),
+		DriverServiceAddr:    getEnv("DRIVER_SERVICE_ADDR", "localhost:9092"),
+		TrackingServiceAddr:  getEnv("TRACKING_GRPC_ADDR", "localhost:9093"),
+		RoutingServiceAddr:   getEnv("ROUTING_SERVICE_ADDR", "localhost:9094"),
+		OSRMURL:              os.Getenv("OSRM_URL"),
+		GRPCTimeout:          getDuration("GRPC_TIMEOUT", 3*time.Second, &errs),
+		TrackingPollInterval: getDuration("TRACKING_POLL_INTERVAL", 5*time.Second, &errs),
+		JWTSecret:            os.Getenv("JWT_SECRET"),
+		JWTIssuer:            getEnv("JWT_ISSUER", "lastmile-auth"),
+		CORSAllowedOrigins:   splitList(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:5173")),
+		RateLimitPerSecond:   getFloat("RATE_LIMIT_PER_SECOND", 20, &errs),
+		RateLimitBurst:       getInt("RATE_LIMIT_BURST", 40, &errs),
+		LoginRatePerMinute:   getFloat("LOGIN_RATE_PER_MINUTE", 10, &errs),
+		SignupRatePerMinute:  getFloat("SIGNUP_RATE_PER_MINUTE", 10, &errs),
+		RequestTimeout:       getDuration("REQUEST_TIMEOUT", 10*time.Second, &errs),
+		BodyLimit:            getEnv("BODY_LIMIT", "1M"),
+		TrustProxy:           getEnv("TRUST_PROXY", "false") == "true",
+		EnableHSTS:           getEnv("ENABLE_HSTS", "true") == "true",
+		EnableDocs:           getEnv("ENABLE_API_DOCS", "true") == "true",
 	}
 	if len(cfg.JWTSecret) < minJWTSecretLen {
 		errs = append(errs, fmt.Errorf("JWT_SECRET must be at least %d characters", minJWTSecretLen))
 	}
 	if cfg.GRPCTimeout <= 0 || cfg.RequestTimeout <= 0 {
 		errs = append(errs, errors.New("GRPC_TIMEOUT and REQUEST_TIMEOUT must be positive"))
+	}
+	if cfg.TrackingPollInterval <= 0 {
+		errs = append(errs, errors.New("TRACKING_POLL_INTERVAL must be positive"))
 	}
 	for _, o := range cfg.CORSAllowedOrigins {
 		if o == "*" {

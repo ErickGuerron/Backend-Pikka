@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/ErickGuerron/Backend-Pikka/services/auth-service/internal/application/ports"
 	"github.com/ErickGuerron/Backend-Pikka/services/auth-service/internal/domain"
 )
 
@@ -61,6 +62,76 @@ func (r *UserRepository) Count(ctx context.Context) (int, error) {
 	var n int
 	err := r.pool.QueryRow(ctx, `SELECT count(*) FROM users`).Scan(&n)
 	return n, err
+}
+
+// List devuelve todos los usuarios ordenados por fecha de creación descendente.
+// La autorización por rol se valida en la capa de aplicación, no acá: este
+// método solo lee filas cuando ya pasó la comprobación de Caller.
+func (r *UserRepository) List(ctx context.Context) ([]domain.User, error) {
+	rows, err := r.pool.Query(ctx, `SELECT `+userColumns+` FROM users ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	users := make([]domain.User, 0)
+	for rows.Next() {
+		var u domain.User
+		var role string
+		if err := rows.Scan(&u.ID, &u.Email, &u.FullName, &u.PasswordHash, &role, &u.Active, &u.Version, &u.CreatedAt, &u.UpdatedAt); err != nil {
+			return nil, err
+		}
+		u.Role = domain.Role(role)
+		users = append(users, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
+// UpdateUser aplica mutate dentro de una transacción. Antes de leer la fila
+// bloquea todos los ADMIN activos (en orden de id), así que dos cambios
+// concurrentes sobre administradores se serializan y la cuenta que ve mutate
+// no puede quedar desactualizada.
+func (r *UserRepository) UpdateUser(ctx context.Context, id string, mutate ports.UserMutation) (domain.User, error) {
+	if _, err := uuid.Parse(id); err != nil {
+		return domain.User{}, domain.ErrUserNotFound
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return domain.User{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var activeAdmins int
+	if err := tx.QueryRow(ctx,
+		`SELECT count(*) FROM (SELECT id FROM users WHERE role = 'ADMIN' AND active ORDER BY id FOR UPDATE) locked`,
+	).Scan(&activeAdmins); err != nil {
+		return domain.User{}, err
+	}
+
+	cur, err := scanUser(tx.QueryRow(ctx, `SELECT `+userColumns+` FROM users WHERE id = $1 FOR UPDATE`, id))
+	if err != nil {
+		return domain.User{}, err
+	}
+	next, err := mutate(cur, activeAdmins)
+	if err != nil {
+		return domain.User{}, err
+	}
+
+	saved, err := scanUser(tx.QueryRow(ctx,
+		`UPDATE users SET full_name = $2, role = $3, active = $4, version = version + 1, updated_at = now()
+		 WHERE id = $1
+		 RETURNING `+userColumns,
+		id, next.FullName, string(next.Role), next.Active))
+	if err != nil {
+		return domain.User{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return domain.User{}, err
+	}
+	return saved, nil
 }
 
 func scanUser(row pgx.Row) (domain.User, error) {

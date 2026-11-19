@@ -11,7 +11,7 @@ import (
 // ErrInvalidToken indica un token ausente, mal formado, expirado o con firma inválida.
 var ErrInvalidToken = errors.New("invalid token")
 
-var knownRoles = map[string]bool{"ADMIN": true, "OPERATOR": true, "DRIVER": true}
+var knownRoles = map[string]bool{"ADMIN": true, "OPERATOR": true, "DRIVER": true, "CUSTOMER": true} // ADR 0007
 
 // Identity es la identidad autenticada que el Gateway propaga a los servicios.
 type Identity struct {

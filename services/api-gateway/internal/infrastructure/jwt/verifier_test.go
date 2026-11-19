@@ -59,3 +59,20 @@ func TestVerify(t *testing.T) {
 		})
 	}
 }
+
+// TestVerify_CustomerRole_Passes asegura que un JWT con rol "CUSTOMER"
+// es aceptado por el Verifier. Este test cubre el fix preexistente de BE-T3:
+// sin "CUSTOMER" en knownRoles, ningún CUSTOMER podía autenticarse.
+func TestVerify_CustomerRole_Passes(t *testing.T) {
+	v := NewVerifier(secret, "lastmile-auth")
+
+	c := claims{Role: "CUSTOMER", RegisteredClaims: jwt.RegisteredClaims{
+		Subject:   "u-customer-1",
+		Issuer:    "lastmile-auth",
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+	}}
+
+	id, err := v.Verify(sign(t, c, secret))
+	require.NoError(t, err)
+	assert.Equal(t, Identity{UserID: "u-customer-1", Role: "CUSTOMER"}, id)
+}

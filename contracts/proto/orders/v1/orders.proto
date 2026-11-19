@@ -1,0 +1,658 @@
+syntax = "proto3";
+
+package orders.v1;
+
+option go_package = "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/orders/v1;ordersv1";
+
+// OrderService owns orders. The Gateway exposes REST; Routing uses gRPC.
+// Authorization is enforced by the service using the propagated user metadata.
+service OrderService {
+  // CreateOrder accepts delivery data only. ID, status and created_at are
+  // assigned by the service. Malformed input returns INVALID_ARGUMENT.
+  rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse);
+  // GetOrder returns NOT_FOUND for an unknown ID.
+  rpc GetOrder(GetOrderRequest) returns (GetOrderResponse);
+  // ListOrders applies optional filters. An empty result is an empty list.
+  rpc ListOrders(ListOrdersRequest) returns (ListOrdersResponse);
+  // GetPendingOrders selects only PENDING orders for a required delivery date,
+  // independently of when they were registered. Used by Routing in Sprint 3.
+  rpc GetPendingOrders(GetPendingOrdersRequest) returns (GetPendingOrdersResponse);
+  // Operations already published in OpenAPI; implemented in a later sprint.
+  rpc ListOrderExceptions(ListOrderExceptionsRequest) returns (ListOrderExceptionsResponse);
+  // ListSurchargesPendingVerification is the operator's queue of surcharges waiting for verification
+  // (WRONG_ADDRESS, ADR 0006 amendment), oldest first. Only ADMIN and OPERATOR.
+  rpc ListSurchargesPendingVerification(ListSurchargesPendingVerificationRequest) returns (ListSurchargesPendingVerificationResponse);
+  // ResolveSurchargeVerification confirms or waives one surcharge with an audited reason. Only ADMIN and
+  // OPERATOR. An unknown id returns NOT_FOUND; one that is not waiting returns ABORTED (HTTP 409).
+  rpc ResolveSurchargeVerification(ResolveSurchargeVerificationRequest) returns (ResolveSurchargeVerificationResponse);
+  // ApplyRecidivismCharge applies an extra charge to a customer marked as recidivist (ADR 0006). Only
+  // ADMIN and OPERATOR. The amount and the reason are the operator's decision and are audited. A customer
+  // that is not a recidivist returns FAILED_PRECONDITION, a second charge for the same reincidence ABORTED
+  // (HTTP 409), an unknown customer NOT_FOUND.
+  rpc ApplyRecidivismCharge(ApplyRecidivismChargeRequest) returns (ApplyRecidivismChargeResponse);
+  // ListRecidivists lists the customers marked as recidivist, oldest mark first, with only what an operator
+  // needs to decide an extra charge and reach the customer (ADR 0006). Only ADMIN and OPERATOR.
+  rpc ListRecidivists(ListRecidivistsRequest) returns (ListRecidivistsResponse);
+  // ClearRecidivist removes the reincidence mark with an audited reason (ADR 0006, F5). Only ADMIN: an
+  // operator gets PERMISSION_DENIED. A customer without the mark returns FAILED_PRECONDITION, an unknown
+  // customer NOT_FOUND. The charges already collected and the balance are not touched.
+  rpc ClearRecidivist(ClearRecidivistRequest) returns (ClearRecidivistResponse);
+  // OpenDispute lets the authenticated CUSTOMER dispute one of their own surcharges within two hours of it becoming
+  // owed (ADR 0007, section 6). One dispute per surcharge. Another customer's or an unknown surcharge returns NOT_FOUND
+  // (the same answer for both); outside the window or not owed returns FAILED_PRECONDITION; a second dispute ABORTED
+  // (HTTP 409). Any role other than CUSTOMER returns PERMISSION_DENIED.
+  rpc OpenDispute(OpenDisputeRequest) returns (OpenDisputeResponse);
+  // ListOpenDisputes is the staff's queue of disputes waiting for a decision, oldest first. Only ADMIN and OPERATOR.
+  rpc ListOpenDisputes(ListOpenDisputesRequest) returns (ListOpenDisputesResponse);
+  // ResolveDispute decides an open dispute, once, with an audited reason. IN_FAVOR waives the surcharge and takes it off
+  // the balance; AGAINST changes nothing. Only ADMIN and OPERATOR. Already resolved returns ABORTED; a surcharge that
+  // was paid meanwhile returns FAILED_PRECONDITION and the dispute stays open.
+  rpc ResolveDispute(ResolveDisputeRequest) returns (ResolveDisputeResponse);
+  // SetReassignmentFee defines or changes the fixed fee charged when an order is reassigned at the customer's
+  // request (ADR 0006). Only ADMIN; the amount and the reason are audited. Every change is a new row.
+  rpc SetReassignmentFee(SetReassignmentFeeRequest) returns (SetReassignmentFeeResponse);
+  // GetReassignmentFee returns the current fee to ADMIN and OPERATOR. With none set it returns
+  // FAILED_PRECONDITION: an amount is never invented.
+  rpc GetReassignmentFee(GetReassignmentFeeRequest) returns (GetReassignmentFeeResponse);
+  // ApplyReassignmentCharge charges the current fixed fee to the customer of an order, once per order (a
+  // second charge returns ABORTED, HTTP 409). Only ADMIN and OPERATOR. The amount is never sent: it is the fee.
+  rpc ApplyReassignmentCharge(ApplyReassignmentChargeRequest) returns (ApplyReassignmentChargeResponse);
+  // PayMyBalance pays the whole pending balance of the authenticated CUSTOMER with the simulated card
+  // (ADR 0006, section 5). There is no amount to send: only the full balance can be paid. An approved
+  // payment returns a balance-blocked account to ACTIVO at once. A declined charge is a result, not an
+  // error. Nothing owed returns FAILED_PRECONDITION; a balance that changed while paying ABORTED (the
+  // charge is refunded). Any role other than CUSTOMER returns PERMISSION_DENIED.
+  rpc PayMyBalance(PayMyBalanceRequest) returns (PayMyBalanceResponse);
+  // GetMyBalance shows the authenticated CUSTOMER what they owe: the total, the account status and each
+  // line with its reason and its due date (ADR 0006, sections 4 and 5). A blocked account can still call
+  // it. Any role other than CUSTOMER returns PERMISSION_DENIED.
+  rpc GetMyBalance(GetMyBalanceRequest) returns (GetMyBalanceResponse);
+  // ReviewOrder only accepts PENDING_REVIEW; another state returns
+  // ABORTED (HTTP 409). An unknown ID returns NOT_FOUND.
+  rpc ReviewOrder(ReviewOrderRequest) returns (ReviewOrderResponse);
+  // ListMyOrders returns the orders of the customer identified by the
+  // propagated user metadata. Only the CUSTOMER role can call it.
+  rpc ListMyOrders(ListMyOrdersRequest) returns (ListMyOrdersResponse);
+  // ListMyNotifications returns the notices the customer received about the
+  // review of their orders, newest first. Only the CUSTOMER role can call it.
+  rpc ListMyNotifications(ListMyNotificationsRequest) returns (ListMyNotificationsResponse);
+  // CancelOrder cancels an order of the authenticated CUSTOMER. Only PENDING or ROUTE_ASSIGNED can be
+  // cancelled; another state returns ABORTED (HTTP 409). An order of another customer returns NOT_FOUND.
+  rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse);
+  // GetMyOrder returns one order of the authenticated CUSTOMER. An order of another customer
+  // or an unknown ID returns NOT_FOUND (never PERMISSION_DENIED). Only the CUSTOMER role can call it.
+  rpc GetMyOrder(GetMyOrderRequest) returns (GetMyOrderResponse);
+  // AssignOrdersToRoute moves every listed order from PENDING to ROUTE_ASSIGNED
+  // in one transaction. Internal, called by Routing. Blank route_id or empty
+  // order_ids returns INVALID_ARGUMENT; an unknown ID returns NOT_FOUND; any
+  // order not in PENDING returns ABORTED (HTTP 409) and none is changed.
+  rpc AssignOrdersToRoute(AssignOrdersToRouteRequest) returns (AssignOrdersToRouteResponse);
+  // AdvanceRouteStop moves one order of a route forward for its driver: ROUTE_ASSIGNED -> PICKED_UP
+  // -> IN_TRANSIT. Internal, called by the Gateway after it verified the driver owns the route. Blank
+  // route_id or order_id returns INVALID_ARGUMENT; a target other than PICKED_UP or IN_TRANSIT returns
+  // INVALID_ARGUMENT; an order not on that route returns NOT_FOUND; an illegal transition returns
+  // FAILED_PRECONDITION. DELIVERED and NOT_DELIVERED belong to RegisterDelivery, not to this RPC.
+  rpc AdvanceRouteStop(AdvanceRouteStopRequest) returns (AdvanceRouteStopResponse);
+  // RecordRouteStopOutcome closes a stop of the driver's route: IN_TRANSIT -> DELIVERED or NOT_DELIVERED.
+  // Internal, called by the Gateway only after Driver Service accepted the delivery record. Blank route_id
+  // or order_id returns INVALID_ARGUMENT; an outcome other than DELIVERED or NOT_DELIVERED returns
+  // INVALID_ARGUMENT; an order not on that route returns NOT_FOUND; an order not IN_TRANSIT returns
+  // FAILED_PRECONDITION.
+  rpc RecordRouteStopOutcome(RecordRouteStopOutcomeRequest) returns (RecordRouteStopOutcomeResponse);
+  // StopsBeforeForOrder counts the orders of the same route with a smaller stop_sequence that are still
+  // open (not DELIVERED, NOT_DELIVERED or CANCELLED). Only the CUSTOMER role can call it, and only for an
+  // order it owns: a foreign or unknown order returns NOT_FOUND. An order without route or stop_sequence
+  // returns 0.
+  rpc StopsBeforeForOrder(StopsBeforeForOrderRequest) returns (StopsBeforeForOrderResponse);
+  // ListDriverRouteStops returns the stops of a route for its DRIVER, ordered by stop_sequence.
+  // Only DRIVER. Customer data (name, phone) is never in DriverRouteStop.
+  rpc ListDriverRouteStops(ListDriverRouteStopsRequest) returns (ListDriverRouteStopsResponse);
+}
+
+enum OrderStatus {
+  ORDER_STATUS_UNSPECIFIED = 0;
+  ORDER_STATUS_PENDING = 1;
+  ORDER_STATUS_PENDING_REVIEW = 2;
+  ORDER_STATUS_ROUTE_ASSIGNED = 3;
+  ORDER_STATUS_PICKED_UP = 4;
+  ORDER_STATUS_IN_TRANSIT = 5;
+  ORDER_STATUS_DELIVERED = 6;
+  ORDER_STATUS_NOT_DELIVERED = 7;
+  ORDER_STATUS_CANCELLED = 8;
+}
+
+enum ReviewReason {
+  REVIEW_REASON_UNSPECIFIED = 0;
+  REVIEW_REASON_ZONE_NOT_COVERED = 1;
+  REVIEW_REASON_INVALID_WINDOW = 2;
+  REVIEW_REASON_CAPACITY_EXCEEDED = 3;
+  REVIEW_REASON_CUSTOMER_BLOCKED = 4;
+  // La dirección no pudo localizarse en el mapa (geocodificación sin resultado).
+  REVIEW_REASON_ADDRESS_NOT_LOCATED = 5;
+}
+
+enum ReviewAction {
+  REVIEW_ACTION_UNSPECIFIED = 0;
+  REVIEW_ACTION_CONFIRM = 1;
+  REVIEW_ACTION_CORRECT = 2;
+  REVIEW_ACTION_REJECT = 3;
+}
+
+message Order {
+  string id = 1;
+  // Trimmed address, 5 to 300 Unicode characters.
+  string address = 2;
+  // WGS 84: latitude [-90, 90], longitude [-180, 180]; both finite.
+  double latitude = 3;
+  double longitude = 4;
+  // Calendar date YYYY-MM-DD in the operating timezone, not a UTC instant.
+  string delivery_date = 5;
+  // Local times HH:mm on delivery_date. End must be strictly after start.
+  string window_start = 6;
+  string window_end = 7;
+  OrderStatus status = 8;
+  // Empty outside PENDING_REVIEW.
+  repeated ReviewReason review_reasons = 9;
+  // Registration instant in RFC 3339, UTC. Independent of delivery_date.
+  string created_at = 10;
+  // Zone resolved when the order was registered. Empty when the order has no zone
+  // (for example PENDING_REVIEW with ZONE_NOT_COVERED). Used by Routing for capacity.
+  string zone_id = 11;
+  // Reference to find the delivery point (3 to 200 characters). Empty in orders created before it existed.
+  string address_reference = 12;
+  // Optional postal code (4 to 10 letters, digits or hyphen). Empty when not given.
+  string postal_code = 13;
+  // Contact phone for the delivery, normalized (digits and optional leading "+"). Empty in old orders.
+  string contact_phone = 14;
+  // Driver route the order was assigned to. Empty until Routing assigns it. Used internally to find
+  // the assigned driver. Internal field: the Gateway customer DTO must not expose it.
+  string route_id = 15;
+  // FIFO place (1 is next) of a PENDING order waiting for a free route slot in its zone. 0 when the
+  // order is not waiting. Computed for reads; the Gateway customer DTO exposes it as queuePosition.
+  int32 queue_position = 16;
+}
+
+message CreateOrderRequest {
+  string address = 1;
+  // Both must be present. Optional presence distinguishes valid zero degrees
+  // from an omitted coordinate; omission returns INVALID_ARGUMENT.
+  optional double latitude = 2;
+  optional double longitude = 3;
+  // Valid YYYY-MM-DD, today or later in the operating timezone.
+  string delivery_date = 4;
+  string window_start = 5;
+  string window_end = 6;
+  // Productos del pedido (ADR 0009). Obligatorio: al menos uno, sin repetir producto.
+  // Cada producto debe estar activo y tener stock suficiente; si no, el pedido no se guarda.
+  repeated OrderItemRequest items = 7;
+  // Required, 3 to 200 characters after trimming.
+  string address_reference = 8;
+  // Optional, 4 to 10 letters, digits or hyphen.
+  string postal_code = 9;
+  // Required, 7 to 15 digits with optional leading "+"; spaces, hyphens, dots and parentheses are stripped.
+  string contact_phone = 10;
+}
+
+// Un producto del catálogo y la cantidad pedida. El precio lo fija el servidor, no el cliente.
+message OrderItemRequest {
+  string product_id = 1;
+  // Entre 1 y 50.
+  int64 quantity = 2;
+}
+
+message CreateOrderResponse {
+  Order order = 1;
+  // Productos guardados con el pedido, con el precio del momento.
+  repeated OrderLine items = 2;
+  // Suma de los subtotales, como texto decimal con dos decimales.
+  string total = 3;
+  // What the customer owes when the order is confirmed, as a separate line from the order's total
+  // (ADR 0006, section 4). Decimal string with two digits; "0.00" when nothing is owed.
+  string pending_surcharge = 4;
+}
+
+// Un producto del pedido tal como quedó guardado: nombre y precio del momento del pedido.
+message OrderLine {
+  string product_id = 1;
+  string name = 2;
+  string unit_price = 3;
+  int64 quantity = 4;
+}
+
+message GetOrderRequest {
+  // Required UUID.
+  string id = 1;
+}
+
+message GetOrderResponse {
+  Order order = 1;
+}
+
+message ListOrdersRequest {
+  // Empty means all dates; otherwise YYYY-MM-DD.
+  string delivery_date = 1;
+  // UNSPECIFIED means all states; unrecognized values are invalid.
+  OrderStatus status = 2;
+}
+
+message ListOrdersResponse {
+  // Ordered by created_at descending, then id ascending for ties.
+  repeated Order orders = 1;
+}
+
+message GetPendingOrdersRequest {
+  // Required YYYY-MM-DD. Filters by delivery_date, never by created_at.
+  string delivery_date = 1;
+}
+
+message GetPendingOrdersResponse {
+  repeated Order orders = 1;
+}
+
+message ListOrderExceptionsRequest {}
+
+message ListOrderExceptionsResponse {
+  repeated Order orders = 1;
+}
+
+// Presence distinguishes omitted fields from values supplied by the operator.
+message OrderCorrection {
+  optional string address = 1;
+  optional string delivery_date = 2;
+  optional string window_start = 3;
+  optional string window_end = 4;
+}
+
+message ReviewOrderRequest {
+  string id = 1;
+  ReviewAction action = 2;
+  // Required audit reason, 5 to 300 characters after trimming.
+  string reason = 3;
+  // Used only for CORRECT. Omitted fields preserve their current values.
+  OrderCorrection correction = 4;
+}
+
+message ReviewOrderResponse {
+  Order order = 1;
+}
+
+message ListMyOrdersRequest {}
+
+message ListMyOrdersResponse {
+  // Ordered by created_at descending, then id ascending for ties.
+  repeated Order orders = 1;
+}
+
+message ListMyNotificationsRequest {}
+
+message ListMyNotificationsResponse {
+  // Newest first, then id ascending for ties.
+  repeated Notification notifications = 1;
+}
+
+// Notice sent to the customer when the automatic validation or an operator review changes an order.
+message Notification {
+  string id = 1;
+  // Empty for ACCOUNT_BLOCKED_BY_BALANCE: that notice belongs to the account, not to an order.
+  string order_id = 2;
+  // ORDER_IN_REVIEW, ORDER_CONFIRMED, ORDER_CORRECTED, ORDER_REJECTED, SURCHARGE_APPLIED or
+  // ACCOUNT_BLOCKED_BY_BALANCE.
+  string kind = 3;
+  // Review reasons (ORDER_IN_REVIEW), the operator's audit reason (ORDER_CONFIRMED, ORDER_CORRECTED, ORDER_REJECTED),
+  // "REASON,AMOUNT,DUE" for SURCHARGE_APPLIED (a closed reason code, a decimal amount and the RFC 3339 due date) or empty
+  // for ACCOUNT_BLOCKED_BY_BALANCE.
+  string detail = 4;
+  // RFC 3339, UTC.
+  string created_at = 5;
+  bool read = 6;
+}
+
+message CancelOrderRequest {
+  // Required UUID of an order owned by the caller.
+  string id = 1;
+}
+
+message CancelOrderResponse {
+  Order order = 1;
+}
+
+message GetMyOrderRequest {
+  // Required UUID of an order owned by the caller.
+  string order_id = 1;
+}
+
+message GetMyOrderResponse {
+  Order order = 1;
+}
+
+// One order of a route and its position in the route (1 is the first stop).
+message OrderStop {
+  string order_id = 1;
+  // Integer >= 1, unique within the route.
+  int32 sequence = 2;
+}
+
+message AssignOrdersToRouteRequest {
+  // Required route identifier chosen by Routing.
+  string route_id = 1;
+  // Legacy form: order UUIDs with no stop sequence (stored as unassigned). Ignored when stops is set.
+  repeated string order_ids = 2;
+  // Preferred form: every order with its stop sequence, all PENDING. When set, order_ids is ignored.
+  // A sequence below 1, or repeated within the route, returns INVALID_ARGUMENT.
+  repeated OrderStop stops = 3;
+}
+
+message AdvanceRouteStopRequest {
+  // Required route the driver is running.
+  string route_id = 1;
+  // Required UUID of an order on that route.
+  string order_id = 2;
+  // PICKED_UP or IN_TRANSIT. Any other value returns INVALID_ARGUMENT.
+  OrderStatus target_status = 3;
+}
+
+message AdvanceRouteStopResponse {
+  Order order = 1;
+}
+
+message RecordRouteStopOutcomeRequest {
+  // Required route the driver is running.
+  string route_id = 1;
+  // Required UUID of an order on that route.
+  string order_id = 2;
+  // DELIVERED or NOT_DELIVERED. Any other value returns INVALID_ARGUMENT.
+  OrderStatus outcome = 3;
+  // Optional NOT_DELIVERED reason already validated by Driver Service (CLIENT_REFUSED, CLIENT_ABSENT,
+  // OUT_OF_WINDOW, ...). A customer reason records a surcharge incident (ADR 0006). Empty is accepted.
+  string reason = 4;
+}
+
+message RecordRouteStopOutcomeResponse {
+  Order order = 1;
+}
+
+message StopsBeforeForOrderRequest {
+  // Required UUID of an order owned by the caller.
+  string order_id = 1;
+}
+
+message StopsBeforeForOrderResponse {
+  // Open stops of the same route ahead of this order. 0 when the order has no route or stop_sequence.
+  int32 stops_before = 1;
+}
+
+message AssignOrdersToRouteResponse {
+  // The orders in the request, now ROUTE_ASSIGNED.
+  repeated Order orders = 1;
+}
+
+message ListDriverRouteStopsRequest {
+  // Required route id of the driver's own route.
+  string route_id = 1;
+}
+
+message ListDriverRouteStopsResponse {
+  repeated DriverRouteStop stops = 1;
+  // Pedidos maximos que cabe en esta ruta (max_orders_per_route de la zona). 0 cuando no se conoce.
+  int32 max_orders = 2;
+}
+
+// One stop of a driver's route. Carries no customer identity.
+message DriverRouteStop {
+  string order_id = 1;
+  int32 sequence = 2;
+  string address = 3;
+  double latitude = 4;
+  double longitude = 5;
+  // Local times HH:mm.
+  string window_start = 6;
+  string window_end = 7;
+  OrderStatus status = 8;
+  // Planned delivery day, YYYY-MM-DD. The window above applies to this day.
+  string delivery_date = 9;
+}
+
+// Surcharge is one penalty incident (ADR 0006).
+message Surcharge {
+  string id = 1;
+  string customer_id = 2;
+  // The order that was not delivered. One surcharge per order.
+  string order_id = 3;
+  // Closed NOT_DELIVERED reason, for example WRONG_ADDRESS.
+  string reason = 4;
+  // PENDING, PENDING_VERIFICATION, APPLIED, PAID or WAIVED.
+  string status = 5;
+  // Decimal string with two digits. Empty until the next order exists to price it.
+  string amount = 6;
+  // RFC 3339, UTC.
+  string created_at = 7;
+  // Operator audit. Empty until the verification is resolved.
+  string resolved_by = 8;
+  string resolution_reason = 9;
+  string resolved_at = 10;
+}
+
+message ListSurchargesPendingVerificationRequest {}
+
+message ListSurchargesPendingVerificationResponse {
+  repeated Surcharge surcharges = 1;
+}
+
+message ResolveSurchargeVerificationRequest {
+  // Required UUID of the surcharge.
+  string id = 1;
+  // Required: CONFIRM (the customer is responsible) or WAIVE (no surcharge).
+  string decision = 2;
+  // Required, 5 to 300 characters. Stored with the operator and the time.
+  string reason = 3;
+}
+
+message ResolveSurchargeVerificationResponse {
+  Surcharge surcharge = 1;
+}
+
+message ApplyRecidivismChargeRequest {
+  // Required UUID of the customer.
+  string customer_id = 1;
+  // Required decimal string greater than zero, for example "12.50". It is rounded to cents.
+  string amount = 2;
+  // Required, 5 to 300 characters. Stored with the operator and the time.
+  string reason = 3;
+}
+
+// RecidivismCharge is one extra charge applied to a recidivist.
+message RecidivismCharge {
+  string id = 1;
+  string customer_id = 2;
+  // The reincidence mark this charge answers (RFC 3339, UTC).
+  string recidivist_at = 3;
+  string amount = 4;
+  string reason = 5;
+  // Operator that applied it.
+  string applied_by = 6;
+  string created_at = 7;
+}
+
+message ApplyRecidivismChargeResponse {
+  RecidivismCharge charge = 1;
+}
+
+message ListRecidivistsRequest {}
+
+message ClearRecidivistRequest {
+  string customer_id = 1;
+  // The administrator's justification, 5 to 300 characters. It is audited.
+  string reason = 2;
+}
+
+// RecidivistClear is the audit row of a removed mark.
+message RecidivistClear {
+  string id = 1;
+  string customer_id = 2;
+  // The mark that was removed (RFC 3339).
+  string recidivist_at = 3;
+  string reason = 4;
+  string cleared_by = 5;
+  string created_at = 6;
+}
+
+message ClearRecidivistResponse {
+  RecidivistClear clear = 1;
+}
+
+// Recidivist is a customer with the reincidence mark. It carries no email: the contact is the phone.
+message Recidivist {
+  string customer_id = 1;
+  // The customer's full name, who receives the deliveries.
+  string full_name = 2;
+  // Phone of the customer's latest order, else the customer's own phone; empty if there is none.
+  string contact_phone = 3;
+  // When the customer was marked (RFC 3339, UTC).
+  string recidivist_at = 4;
+  // What the customer owes now, a decimal string.
+  string pending_surcharge = 5;
+  // true when the operator already applied the extra charge for this mark (it can be applied once).
+  bool charge_applied = 6;
+}
+
+message ListRecidivistsResponse {
+  repeated Recidivist recidivists = 1;
+}
+
+message PayMyBalanceRequest {}
+
+message PayMyBalanceResponse {
+  // SIMULATED_APPROVED or SIMULATED_DECLINED. There is no real gateway, so a payment is never real.
+  string status = 1;
+  // Decimal string with two digits: the balance that was charged.
+  string amount = 2;
+  // Internal reference of the attempt (payment_attempts).
+  string reference = 3;
+  // True when this payment returned the account from BLOQUEADO_POR_SALDO to ACTIVO.
+  bool unblocked = 4;
+  // RFC 3339, UTC.
+  string created_at = 5;
+}
+
+message SetReassignmentFeeRequest {
+  // Decimal string, greater than zero.
+  string amount = 1;
+  // The administrator's justification, 5 to 300 characters. It is audited.
+  string reason = 2;
+}
+
+message GetReassignmentFeeRequest {}
+
+message ReassignmentFee {
+  string id = 1;
+  string amount = 2;
+  string reason = 3;
+  string set_by = 4;
+  string created_at = 5;
+}
+
+message SetReassignmentFeeResponse {
+  ReassignmentFee fee = 1;
+}
+
+message GetReassignmentFeeResponse {
+  ReassignmentFee fee = 1;
+}
+
+message ApplyReassignmentChargeRequest {
+  string order_id = 1;
+  // The operator's justification, 5 to 300 characters. It is audited.
+  string reason = 2;
+}
+
+message ReassignmentCharge {
+  string id = 1;
+  string customer_id = 2;
+  string order_id = 3;
+  string amount = 4;
+  string reason = 5;
+  string applied_by = 6;
+  string created_at = 7;
+}
+
+message ApplyReassignmentChargeResponse {
+  ReassignmentCharge charge = 1;
+}
+
+message GetMyBalanceRequest {}
+
+// BalanceLine is one thing the customer owes.
+message BalanceLine {
+  // SURCHARGE (an order not delivered because of the customer), RECIDIVISM (an extra charge) or REASSIGNMENT
+  // (the fixed fee for an order reassigned at the customer's request).
+  string kind = 1;
+  string id = 2;
+  // The order that was not delivered. Empty for a RECIDIVISM line.
+  string order_id = 3;
+  // Closed code the app can translate, for example CLIENT_REFUSED. RECIDIVISM for the extra charge.
+  string reason = 4;
+  // Decimal string with two digits.
+  string amount = 5;
+  // When the two-week clock started (RFC 3339, UTC).
+  string started_at = 6;
+  // Last moment to pay before the account is blocked (RFC 3339, UTC).
+  string due_at = 7;
+  // State of the customer's dispute over this line: empty when there is none, else OPEN, IN_FAVOR or AGAINST.
+  string dispute_status = 8;
+  // Last moment the customer can still dispute this line (RFC 3339, UTC). Empty when it cannot be disputed: only a
+  // SURCHARGE line without a dispute, during the two hours after it became owed.
+  string disputable_until = 9;
+}
+
+message GetMyBalanceResponse {
+  // Decimal string with two digits.
+  string pending_surcharge = 1;
+  // ACTIVO, BLOQUEADO_POR_SALDO or BLOQUEADO_POR_INCIDENCIAS.
+  string account_status = 2;
+  // Oldest first. Empty when nothing is owed.
+  repeated BalanceLine lines = 3;
+}
+
+message OpenDisputeRequest {
+  string surcharge_id = 1;
+  // The customer's explanation, 5 to 300 characters. It is audited.
+  string reason = 2;
+}
+
+// Dispute is a customer's objection to one surcharge.
+message Dispute {
+  string id = 1;
+  string surcharge_id = 2;
+  string customer_id = 3;
+  string reason = 4;
+  // OPEN, IN_FAVOR or AGAINST.
+  string status = 5;
+  // RFC 3339, UTC.
+  string opened_at = 6;
+  // Empty while the dispute is open.
+  string resolved_by = 7;
+  string resolution_reason = 8;
+  string resolved_at = 9;
+}
+
+message OpenDisputeResponse {
+  Dispute dispute = 1;
+}
+
+message ListOpenDisputesRequest {}
+
+message ListOpenDisputesResponse {
+  repeated Dispute disputes = 1;
+}
+
+message ResolveDisputeRequest {
+  string id = 1;
+  // IN_FAVOR or AGAINST.
+  string decision = 2;
+  // The staff's justification, 5 to 300 characters. It is audited.
+  string reason = 3;
+}
+
+message ResolveDisputeResponse {
+  Dispute dispute = 1;
+}

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
@@ -27,10 +28,29 @@ type CallMeta struct {
 	Role      string
 }
 
+// reconnectParams acota el backoff de reconexión. El default de grpc-go crece hasta
+// 120s entre intentos, y el resolver DNS re-resuelve como mucho cada 30s. Cuando
+// docker compose recrea un servicio, cambia su IP y el canal sigue reintentando la
+// IP vieja durante minutos. Con un tope de 5s el canal se recupera pronto tras el
+// cambio de IP.
+var reconnectParams = grpc.ConnectParams{
+	Backoff: backoff.Config{
+		BaseDelay:  500 * time.Millisecond,
+		Multiplier: 1.6,
+		Jitter:     0.2,
+		MaxDelay:   5 * time.Second,
+	},
+	MinConnectTimeout: 5 * time.Second,
+}
+
 // Dial abre una conexión gRPC perezosa hacia addr. La red interna es privada;
 // mTLS queda como mejora posterior.
 func Dial(addr string) (*grpc.ClientConn, error) {
-	return grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	return grpc.NewClient(
+		addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithConnectParams(reconnectParams),
+	)
 }
 
 // Auth envuelve al cliente del Auth Service imponiendo deadline y propagando metadata.
@@ -66,6 +86,14 @@ func (a *Auth) Login(ctx context.Context, m CallMeta, req *authv1.LoginRequest) 
 	return a.client.Login(ctx, req)
 }
 
+// SignupCustomer registra un cliente nuevo desde el Gateway. Es el único método
+// que se invoca sin identidad propagada (ruta pública).
+func (a *Auth) SignupCustomer(ctx context.Context, m CallMeta, req *authv1.SignupCustomerRequest) (*authv1.SignupCustomerResponse, error) {
+	ctx, cancel := a.outgoing(ctx, m)
+	defer cancel()
+	return a.client.SignupCustomer(ctx, req)
+}
+
 // CreateUser solicita el alta de un usuario.
 func (a *Auth) CreateUser(ctx context.Context, m CallMeta, req *authv1.CreateUserRequest) (*authv1.CreateUserResponse, error) {
 	ctx, cancel := a.outgoing(ctx, m)
@@ -78,6 +106,29 @@ func (a *Auth) GetUser(ctx context.Context, m CallMeta, req *authv1.GetUserReque
 	ctx, cancel := a.outgoing(ctx, m)
 	defer cancel()
 	return a.client.GetUser(ctx, req)
+}
+
+// ListUsers consulta el listado completo de usuarios. El llamador ya pasó el
+// adminOnlyMiddleware del router: la autorización final igual se valida en el
+// caso de uso de auth-service.
+func (a *Auth) ListUsers(ctx context.Context, m CallMeta, req *authv1.ListUsersRequest) (*authv1.ListUsersResponse, error) {
+	ctx, cancel := a.outgoing(ctx, m)
+	defer cancel()
+	return a.client.ListUsers(ctx, req)
+}
+
+// UpdateUser edita nombre y/o rol. Solo ADMIN; la autorización final la valida auth-service.
+func (a *Auth) UpdateUser(ctx context.Context, m CallMeta, req *authv1.UpdateUserRequest) (*authv1.UpdateUserResponse, error) {
+	ctx, cancel := a.outgoing(ctx, m)
+	defer cancel()
+	return a.client.UpdateUser(ctx, req)
+}
+
+// DeactivateUser hace borrado lógico de un usuario. Solo ADMIN.
+func (a *Auth) DeactivateUser(ctx context.Context, m CallMeta, req *authv1.DeactivateUserRequest) (*authv1.DeactivateUserResponse, error) {
+	ctx, cancel := a.outgoing(ctx, m)
+	defer cancel()
+	return a.client.DeactivateUser(ctx, req)
 }
 
 // Ready verifica con el protocolo estándar de health de gRPC que el servicio atiende.

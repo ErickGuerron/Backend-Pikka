@@ -5,10 +5,12 @@ WORKDIR /src
 ENV CGO_ENABLED=0 GOWORK=off
 
 COPY contracts/go.mod contracts/go.sum ./contracts/
+COPY libs/osrm/go.mod ./libs/osrm/
 COPY services/api-gateway/go.mod services/api-gateway/go.sum ./services/api-gateway/
 RUN cd services/api-gateway && go mod download
 
 COPY contracts/ ./contracts/
+COPY libs/osrm/ ./libs/osrm/
 COPY services/api-gateway/ ./services/api-gateway/
 RUN cd services/api-gateway && go build -trimpath -ldflags="-s -w" -o /out/service ./cmd/api
 

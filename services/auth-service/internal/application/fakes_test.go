@@ -63,6 +63,18 @@ func (r *fakeRepo) Count(context.Context) (int, error) {
 	return len(r.users), nil
 }
 
+// List devuelve los usuarios en orden de creación (el orden natural del map
+// puede no ser estable, pero para los tests basta con "los devuelve todos").
+func (r *fakeRepo) List(context.Context) ([]domain.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]domain.User, 0, len(r.users))
+	for _, u := range r.users {
+		out = append(out, u)
+	}
+	return out, nil
+}
+
 // fakeHasher evita el costo de bcrypt en pruebas unitarias.
 type fakeHasher struct{ compares int }
 
@@ -84,4 +96,29 @@ func (fakeTokens) Verify(token string) (ports.Claims, error) {
 		return ports.Claims{}, domain.ErrInvalidToken
 	}
 	return ports.Claims{UserID: parts[1], Role: domain.Role(parts[2])}, nil
+}
+
+// UpdateUser simula la transacción del repositorio real: cuenta los ADMIN
+// activos, aplica mutate y guarda con version+1.
+func (r *fakeRepo) UpdateUser(_ context.Context, id string, mutate ports.UserMutation) (domain.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cur, ok := r.users[id]
+	if !ok {
+		return domain.User{}, domain.ErrUserNotFound
+	}
+	admins := 0
+	for _, u := range r.users {
+		if u.Role == domain.RoleAdmin && u.Active {
+			admins++
+		}
+	}
+	next, err := mutate(cur, admins)
+	if err != nil {
+		return domain.User{}, err
+	}
+	next.Version = cur.Version + 1
+	next.UpdatedAt = time.Now().UTC()
+	r.users[id] = next
+	return next, nil
 }

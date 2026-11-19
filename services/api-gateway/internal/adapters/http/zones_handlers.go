@@ -1,0 +1,315 @@
+package http
+
+import (
+	"context"
+	"net/http"
+	"strconv"
+
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
+
+	zonesv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/zones/v1"
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/grpcclient"
+)
+
+// ZonesClient es lo que los handlers necesitan del Zone Service.
+type ZonesClient interface {
+	CreateZone(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.CreateZoneRequest) (*zonesv1.CreateZoneResponse, error)
+	GetZone(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.GetZoneRequest) (*zonesv1.GetZoneResponse, error)
+	ClassifyPoint(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.ClassifyPointRequest) (*zonesv1.ClassifyPointResponse, error)
+	ListZones(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.ListZonesRequest) (*zonesv1.ListZonesResponse, error)
+	ListCoverageZones(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.ListCoverageZonesRequest) (*zonesv1.ListCoverageZonesResponse, error)
+	UpdateZone(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.UpdateZoneRequest) (*zonesv1.UpdateZoneResponse, error)
+	SetZoneStatus(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.SetZoneStatusRequest) (*zonesv1.SetZoneStatusResponse, error)
+	DeleteZone(ctx context.Context, m grpcclient.CallMeta, req *zonesv1.DeleteZoneRequest) (*zonesv1.DeleteZoneResponse, error)
+}
+
+func (h *zonesHandlers) list(c *httpx.Context) error {
+	res, err := h.zones.ListZones(c.Request().Context(), callMeta(c), &zonesv1.ListZonesRequest{})
+	if err != nil {
+		return err
+	}
+	out := make([]zoneDTO, 0, len(res.GetZones()))
+	for _, z := range res.GetZones() {
+		out = append(out, toZoneDTO(z))
+	}
+	return c.JSON(http.StatusOK, out)
+}
+
+// coverageZoneDTO es lo único que se publica de una zona a cualquier rol autenticado: el contorno.
+// Sin depósito, capacidad ni configuración operativa.
+type coverageZoneDTO struct {
+	ID    string            `json:"id"`
+	Code  string            `json:"code"`
+	Name  string            `json:"name"`
+	Ring  []coordinateDTO   `json:"ring"`
+	Holes [][]coordinateDTO `json:"holes"`
+}
+
+type coverageZonesResponse struct {
+	Zones []coverageZoneDTO `json:"zones"`
+}
+
+// coverage lista las zonas activas para dibujar la cobertura. Zone Service decide los roles
+// permitidos y filtra las inactivas; aquí solo se recorta cada zona al contorno.
+func (h *zonesHandlers) coverage(c *httpx.Context) error {
+	res, err := h.zones.ListCoverageZones(c.Request().Context(), callMeta(c), &zonesv1.ListCoverageZonesRequest{})
+	if err != nil {
+		return err
+	}
+	out := coverageZonesResponse{Zones: make([]coverageZoneDTO, 0, len(res.GetZones()))}
+	for _, z := range res.GetZones() {
+		full := toZoneDTO(z)
+		out.Zones = append(out.Zones, coverageZoneDTO{ID: full.ID, Code: full.Code, Name: full.Name, Ring: full.Ring, Holes: full.Holes})
+	}
+	return c.JSON(http.StatusOK, out)
+}
+
+func (h *zonesHandlers) update(c *httpx.Context) error {
+	var req updateZoneRequest
+	if err := bindJSON(c, &req); err != nil {
+		return err
+	}
+	res, err := h.zones.UpdateZone(c.Request().Context(), callMeta(c), &zonesv1.UpdateZoneRequest{
+		Id:              c.Param("id"),
+		Code:            req.Code,
+		Name:            req.Name,
+		Ring:            toProtoRing(req.Ring),
+		Holes:           toProtoHoles(req.Holes),
+		Settings:        toProtoSettings(req.Settings),
+		ExpectedVersion: req.ExpectedVersion,
+	})
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, toZoneDTO(res.GetZone()))
+}
+
+// Como en auth, los handlers solo traducen REST <-> gRPC. Las reglas y el rol se validan en Zone Service.
+type zonesHandlers struct {
+	zones ZonesClient
+}
+
+type coordinateDTO struct {
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+}
+
+type zoneDTO struct {
+	ID           string            `json:"id"`
+	Code         string            `json:"code"`
+	Name         string            `json:"name"`
+	Ring         []coordinateDTO   `json:"ring"`
+	Holes        [][]coordinateDTO `json:"holes"`
+	Status       string            `json:"status"`
+	StatusReason string            `json:"statusReason"`
+	CreatedAt    string            `json:"createdAt"`
+	UpdatedAt    string            `json:"updatedAt"`
+	Version      int32             `json:"version"`
+	CreatedBy    string            `json:"createdBy"`
+	UpdatedBy    string            `json:"updatedBy"`
+	Settings     settingsDTO       `json:"settings"`
+}
+
+// settingsDTO es la configuración operativa de la zona. El depósito llega vacío (depotName "") en
+// zonas anteriores a la configuración.
+type settingsDTO struct {
+	Description        string   `json:"description"`
+	DepotName          string   `json:"depotName"`
+	DepotLatitude      float64  `json:"depotLatitude"`
+	DepotLongitude     float64  `json:"depotLongitude"`
+	MaxOrdersPerRoute  int32    `json:"maxOrdersPerRoute"`
+	RouteCapacityKg    float64  `json:"routeCapacityKg"`
+	Timezone           string   `json:"timezone"`
+	ServiceDays        []string `json:"serviceDays"`
+	DeliveryWindowFrom string   `json:"deliveryWindowFrom"`
+	DeliveryWindowTo   string   `json:"deliveryWindowTo"`
+	CutoffTime         string   `json:"cutoffTime"`
+	DispatchTime       string   `json:"dispatchTime"`
+	Priority           string   `json:"priority"`
+	DailyOrderLimit    int32    `json:"dailyOrderLimit"`
+}
+
+type createZoneRequest struct {
+	Code     string            `json:"code"`
+	Name     string            `json:"name"`
+	Ring     []coordinateDTO   `json:"ring"`
+	Holes    [][]coordinateDTO `json:"holes"`
+	Settings settingsDTO       `json:"settings"`
+}
+
+// updateZoneRequest reemplaza la zona completa. ExpectedVersion es la versión que el cliente vio;
+// 0 significa sin control de concurrencia.
+type updateZoneRequest struct {
+	createZoneRequest
+	ExpectedVersion int32 `json:"expectedVersion"`
+}
+
+func (h *zonesHandlers) create(c *httpx.Context) error {
+	var req createZoneRequest
+	if err := bindJSON(c, &req); err != nil {
+		return err
+	}
+	res, err := h.zones.CreateZone(c.Request().Context(), callMeta(c), &zonesv1.CreateZoneRequest{
+		Code:     req.Code,
+		Name:     req.Name,
+		Ring:     toProtoRing(req.Ring),
+		Holes:    toProtoHoles(req.Holes),
+		Settings: toProtoSettings(req.Settings),
+	})
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusCreated, toZoneDTO(res.GetZone()))
+}
+
+func (h *zonesHandlers) get(c *httpx.Context) error {
+	res, err := h.zones.GetZone(c.Request().Context(), callMeta(c), &zonesv1.GetZoneRequest{Id: c.Param("id")})
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, toZoneDTO(res.GetZone()))
+}
+
+func (h *zonesHandlers) classify(c *httpx.Context) error {
+	lat, err := strconv.ParseFloat(c.QueryParam("latitude"), 64)
+	if err != nil {
+		return httpx.NewHTTPError(http.StatusBadRequest, "latitude must be a number")
+	}
+	lng, err := strconv.ParseFloat(c.QueryParam("longitude"), 64)
+	if err != nil {
+		return httpx.NewHTTPError(http.StatusBadRequest, "longitude must be a number")
+	}
+	res, err := h.zones.ClassifyPoint(c.Request().Context(), callMeta(c), &zonesv1.ClassifyPointRequest{
+		Point: &zonesv1.Coordinate{Latitude: lat, Longitude: lng},
+	})
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, toZoneDTO(res.GetZone()))
+}
+
+func toProtoRing(points []coordinateDTO) []*zonesv1.Coordinate {
+	ring := make([]*zonesv1.Coordinate, 0, len(points))
+	for _, p := range points {
+		ring = append(ring, &zonesv1.Coordinate{Latitude: p.Latitude, Longitude: p.Longitude})
+	}
+	return ring
+}
+
+// toProtoHoles convierte los huecos del JSON. Un hueco vacío llega como anillo sin puntos y el dominio lo rechaza.
+func toProtoHoles(holes [][]coordinateDTO) []*zonesv1.Ring {
+	out := make([]*zonesv1.Ring, 0, len(holes))
+	for _, h := range holes {
+		out = append(out, &zonesv1.Ring{Points: toProtoRing(h)})
+	}
+	return out
+}
+
+func toZoneDTO(z *zonesv1.Zone) zoneDTO {
+	ring := make([]coordinateDTO, 0, len(z.GetRing()))
+	for _, p := range z.GetRing() {
+		ring = append(ring, coordinateDTO{Latitude: p.GetLatitude(), Longitude: p.GetLongitude()})
+	}
+	holes := make([][]coordinateDTO, 0, len(z.GetHoles()))
+	for _, h := range z.GetHoles() {
+		hole := make([]coordinateDTO, 0, len(h.GetPoints()))
+		for _, p := range h.GetPoints() {
+			hole = append(hole, coordinateDTO{Latitude: p.GetLatitude(), Longitude: p.GetLongitude()})
+		}
+		holes = append(holes, hole)
+	}
+	return zoneDTO{
+		ID:           z.GetId(),
+		Code:         z.GetCode(),
+		Name:         z.GetName(),
+		Ring:         ring,
+		Holes:        holes,
+		Status:       z.GetStatus(),
+		StatusReason: z.GetStatusReason(),
+		CreatedAt:    z.GetCreatedAt(),
+		UpdatedAt:    z.GetUpdatedAt(),
+		Version:      z.GetVersion(),
+		CreatedBy:    z.GetCreatedBy(),
+		UpdatedBy:    z.GetUpdatedBy(),
+		Settings:     toSettingsDTO(z.GetSettings()),
+	}
+}
+
+func toSettingsDTO(s *zonesv1.ZoneSettings) settingsDTO {
+	return settingsDTO{
+		Description:        s.GetDescription(),
+		DepotName:          s.GetDepotName(),
+		DepotLatitude:      s.GetDepotLatitude(),
+		DepotLongitude:     s.GetDepotLongitude(),
+		MaxOrdersPerRoute:  s.GetMaxOrdersPerRoute(),
+		RouteCapacityKg:    s.GetDefaultRouteCapacityKg(),
+		Timezone:           s.GetTimezone(),
+		ServiceDays:        s.GetServiceDays(),
+		DeliveryWindowFrom: s.GetDeliveryWindowStart(),
+		DeliveryWindowTo:   s.GetDeliveryWindowEnd(),
+		CutoffTime:         s.GetCutoffTime(),
+		DispatchTime:       s.GetDispatchTime(),
+		Priority:           s.GetPriority(),
+		DailyOrderLimit:    s.GetDailyOrderLimit(),
+	}
+}
+
+func toProtoSettings(s settingsDTO) *zonesv1.ZoneSettings {
+	return &zonesv1.ZoneSettings{
+		Description:            s.Description,
+		DepotName:              s.DepotName,
+		DepotLatitude:          s.DepotLatitude,
+		DepotLongitude:         s.DepotLongitude,
+		MaxOrdersPerRoute:      s.MaxOrdersPerRoute,
+		DefaultRouteCapacityKg: s.RouteCapacityKg,
+		Timezone:               s.Timezone,
+		ServiceDays:            s.ServiceDays,
+		DeliveryWindowStart:    s.DeliveryWindowFrom,
+		DeliveryWindowEnd:      s.DeliveryWindowTo,
+		CutoffTime:             s.CutoffTime,
+		DispatchTime:           s.DispatchTime,
+		Priority:               s.Priority,
+		DailyOrderLimit:        s.DailyOrderLimit,
+	}
+}
+
+type statusRequest struct {
+	Status string `json:"status"`
+	Reason string `json:"reason"`
+}
+
+type deleteRequest struct {
+	Reason string `json:"reason"`
+}
+
+// setStatus activa o desactiva una zona. El motivo es obligatorio y queda en la bitácora del servicio.
+func (h *zonesHandlers) setStatus(c *httpx.Context) error {
+	var req statusRequest
+	if err := bindJSON(c, &req); err != nil {
+		return err
+	}
+	res, err := h.zones.SetZoneStatus(c.Request().Context(), callMeta(c), &zonesv1.SetZoneStatusRequest{
+		Id:     c.Param("id"),
+		Status: req.Status,
+		Reason: req.Reason,
+	})
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, toZoneDTO(res.GetZone()))
+}
+
+// remove borra físicamente una zona inactiva.
+func (h *zonesHandlers) remove(c *httpx.Context) error {
+	var req deleteRequest
+	if err := bindJSON(c, &req); err != nil {
+		return err
+	}
+	if _, err := h.zones.DeleteZone(c.Request().Context(), callMeta(c), &zonesv1.DeleteZoneRequest{
+		Id:     c.Param("id"),
+		Reason: req.Reason,
+	}); err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
+}

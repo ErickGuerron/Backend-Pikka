@@ -60,7 +60,7 @@ El sistema deberá permitir:
 
 Debe permitir:
 
-- registrar un pedido;
+- registrar un pedido asociado a un cliente con cuenta, que lo crea desde la app móvil o el operador lo registra en su nombre (ADR 0007);
 - registrar la dirección;
 - registrar fecha de entrega;
 - registrar una ventana u hora aproximada de entrega;
@@ -77,8 +77,11 @@ ROUTE_ASSIGNED
 PICKED_UP
 IN_TRANSIT
 DELIVERED
+NOT_DELIVERED
 CANCELLED
 ```
+
+`NOT_DELIVERED` registra que el pedido no se entregó por causa del cliente, con motivo. Ver ADR 0007.
 
 ---
 
@@ -419,9 +422,10 @@ Roles iniciales:
 ADMIN
 OPERATOR
 DRIVER
+CUSTOMER
 ```
 
-Un rol `CUSTOMER` podrá incorporarse si posteriormente se habilita acceso directo para clientes.
+`CUSTOMER` es el cliente final. Se registra en la app móvil, crea sus pedidos y sigue su estado y la ruta de su pedido. Ver ADR 0007.
 
 ---
 

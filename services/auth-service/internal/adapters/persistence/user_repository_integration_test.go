@@ -4,7 +4,6 @@ package persistence_test
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	"github.com/google/uuid"
@@ -19,17 +18,16 @@ import (
 // Requiere AUTH_TEST_DATABASE_URL apuntando a una base con el esquema auth.
 // Ejecutar con: go test -tags integration ./...
 func TestUserRepository(t *testing.T) {
-	dsn := os.Getenv("AUTH_TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("AUTH_TEST_DATABASE_URL not set")
-	}
+	dsn := isolatedDSN(t, "AUTH_TEST_DATABASE_URL")
 	ctx := context.Background()
 	require.NoError(t, postgres.Migrate(dsn))
 	pool, err := postgres.Connect(ctx, dsn)
 	require.NoError(t, err)
 	defer pool.Close()
-	_, err = pool.Exec(ctx, `TRUNCATE users`)
-	require.NoError(t, err)
+
+	// La migracion 000003 siembra usuarios de prueba: el conteo se mide contra esa linea base.
+	var seeded int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM users`).Scan(&seeded))
 
 	repo := persistence.NewUserRepository(pool)
 	email := "it-" + uuid.NewString()[:8] + "@example.com"
@@ -57,7 +55,7 @@ func TestUserRepository(t *testing.T) {
 
 	n, err := repo.Count(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, 1, n)
+	assert.Equal(t, seeded+1, n, "la semilla mas el usuario creado")
 
 	_, err = pool.Exec(ctx, `INSERT INTO users (email, full_name, password_hash, role) VALUES ('UPPER@example.com','x','h','DRIVER')`)
 	assert.Error(t, err, "el CHECK debe rechazar correos con mayúsculas")

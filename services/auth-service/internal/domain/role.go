@@ -7,6 +7,7 @@ const (
 	RoleAdmin    Role = "ADMIN"
 	RoleOperator Role = "OPERATOR"
 	RoleDriver   Role = "DRIVER"
+	RoleCustomer Role = "CUSTOMER"
 )
 
 // ParseRole convierte un texto en un Role válido.
@@ -21,7 +22,7 @@ func ParseRole(s string) (Role, error) {
 // Valid indica si el rol pertenece al conjunto de roles soportados.
 func (r Role) Valid() bool {
 	switch r {
-	case RoleAdmin, RoleOperator, RoleDriver:
+	case RoleAdmin, RoleOperator, RoleDriver, RoleCustomer:
 		return true
 	default:
 		return false

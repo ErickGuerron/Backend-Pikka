@@ -73,6 +73,103 @@ services:
       postgres:
         condition: service_healthy
 
+  zone-service:
+    <<: *go-service
+    build:
+      context: .
+      dockerfile: services/zone-service/Dockerfile
+    environment:
+      <<: *go-env
+      HTTP_PORT: "8080"
+      GRPC_PORT: "9090"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-last_mile}
+      POSTGRES_USER: zone_service_user
+      POSTGRES_PASSWORD: ${ZONE_DB_PASSWORD}
+      POSTGRES_SCHEMA: zones
+    # Tráfico interno: sin puertos publicados al host; solo el Gateway lo alcanza.
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  order-service:
+    <<: *go-service
+    build:
+      context: .
+      dockerfile: services/order-service/Dockerfile
+    environment:
+      <<: *go-env
+      HTTP_PORT: "8080"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-last_mile}
+      POSTGRES_USER: order_service_user
+      POSTGRES_PASSWORD: ${ORDER_DB_PASSWORD}
+      POSTGRES_SCHEMA: orders
+      ZONE_SERVICE_ADDR: zone-service:9090
+    # Tráfico interno: sin puertos publicados al host; solo el Gateway lo alcanza.
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  driver-service:
+    <<: *go-service
+    build:
+      context: .
+      dockerfile: services/driver-service/Dockerfile
+    environment:
+      <<: *go-env
+      DRIVER_HTTP_PORT: "8080"
+      DRIVER_GRPC_PORT: "9092"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-last_mile}
+      DRIVER_DB_USER: driver_service_user
+      DRIVER_DB_PASSWORD: ${DRIVER_DB_PASSWORD}
+      DRIVER_DB_SCHEMA: drivers
+      DRIVER_ARRIVAL_RADIUS_METERS: ${DRIVER_ARRIVAL_RADIUS_METERS:-50}
+      ORDERS_GRPC_ADDR: order-service:9091
+    # Tráfico interno: sin puertos publicados al host. Las pruebas la alcanzan dentro de la red de compose.
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  tracking-service:
+    <<: *go-service
+    build:
+      context: .
+      dockerfile: services/tracking-service/Dockerfile
+    environment:
+      <<: *go-env
+      TRACKING_GRPC_PORT: "9093"
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      OSRM_URL: http://osrm:5000
+    # Tráfico interno: sin puertos publicados al host; solo el Gateway lo alcanza.
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  routing-service:
+    <<: *go-service
+    build:
+      context: .
+      dockerfile: services/routing-service/Dockerfile
+    environment:
+      <<: *go-env
+      ROUTING_GRPC_PORT: "9094"
+      ORDER_SERVICE_ADDR: order-service:9091
+      ZONE_SERVICE_ADDR: zone-service:9090
+      DRIVER_SERVICE_ADDR: driver-service:9092
+      TRACKING_SERVICE_ADDR: tracking-service:9093
+    # Internal traffic: no published host port; only the Gateway reaches it. No database: state lives in
+    # Order and Driver Service, so this service has no DB_PASSWORD and no depends_on on postgres.
+    depends_on:
+      - order-service
+      - zone-service
+      - driver-service
+
   api-gateway:
     <<: *go-service
     build:
@@ -82,13 +179,106 @@ services:
       <<: *go-env
       HTTP_PORT: "8080"
       AUTH_SERVICE_ADDR: auth-service:9090
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173}
+      ZONE_SERVICE_ADDR: zone-service:9090
+      ORDER_SERVICE_ADDR: order-service:9091
+      DRIVER_SERVICE_ADDR: driver-service:9092
+      TRACKING_GRPC_ADDR: tracking-service:9093
+      ROUTING_SERVICE_ADDR: routing-service:9094
+      # Ruta óptima del repartidor. Requiere el perfil osrm levantado (make osrm-up). Si no está levantado,
+      # el endpoint de plan responde 503 y la app lo muestra. Vacío lo desactiva del todo.
+      OSRM_URL: ${OSRM_URL:-http://osrm:5000}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8081,http://localhost:8082}
       # En local no hay TLS; en producción el HTTPS termina en el balanceador.
       ENABLE_HSTS: "false"
+      # Documentación interactiva en /docs (Scalar) y contrato en /openapi.yaml.
+      ENABLE_API_DOCS: ${ENABLE_API_DOCS:-true}
     ports:
       - "${GATEWAY_PORT:-8080}:8080"
     depends_on:
       - auth-service
+      - zone-service
+      - order-service
+      - driver-service
+      - tracking-service
+      - routing-service
+
+  # --- Pruebas de rendimiento y seguridad -----------------------------------
+  # Estos servicios NO se levantan con `make up`. Se ejecutan bajo demanda:
+  #   make perf-smoke       -> k6 (perfil "perf")
+  #   make security-scan    -> OWASP ZAP API scan (perfil "security")
+  # Se conectan al Gateway por la red interna de compose (api-gateway:8080).
+
+  k6:
+    image: grafana/k6:1.2.2
+    profiles: ["perf"]
+    environment:
+      BASE_URL: ${PERF_BASE_URL:-http://api-gateway:8080}
+      K6_NO_COLOR: "true"
+    volumes:
+      - ./test-data/performance:/scripts:ro
+    command: ["run", "/scripts/smoke.js"]
+    depends_on:
+      - api-gateway
+
+  # OWASP ZAP en modo terminal (headless). Escanea la API a partir del contrato
+  # OpenAPI publicado por el Gateway. Es un escaneo ACTIVO: envía payloads de
+  # ataque, así que sólo debe ejecutarse contra el entorno local o de pruebas,
+  # nunca contra producción.
+  # Códigos de salida: 0 sin alertas, 1 al menos una alerta FAIL, 2 sólo advertencias, 3 otro fallo.
+  zap:
+    image: ghcr.io/zaproxy/zaproxy:stable
+    profiles: ["security"]
+    command:
+      - zap-api-scan.py
+      - -t
+      - http://api-gateway:8080/openapi.yaml
+      - -f
+      - openapi
+      - -m
+      - "5"
+      - -r
+      - zap-report.html
+      - -w
+      - zap-report.md
+      - -J
+      - zap-report.json
+    volumes:
+      - ./reports/security:/zap/wrk
+    depends_on:
+      - api-gateway
+
+  # Preparación de datos OSRM (una vez): osrm-extract + osrm-partition + osrm-customize (MLD). Es un servicio del compose
+  # (no `compose run`) para que su contenedor quede dentro del grupo last-mile-logistics.
+  # Se usa MLD y no CH: osrm-contract no converge con el mapa de Ecuador en este entorno (2 CPU / 4 GB) y MLD
+  # prepara en ~2 min y soporta /trip y /route igual.
+  # Uso: make osrm-prepare
+  osrm-prepare:
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
+    profiles: ["osrm-prepare"]
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - osrm-extract -p /opt/car.lua /data/ecuador-latest.osm.pbf && osrm-partition /data/ecuador-latest.osrm && osrm-customize /data/ecuador-latest.osrm
+    cpus: 2.0
+    volumes:
+      - ./infrastructure/osrm/data:/data
+      # Perfil de coche ajustado para Ecuador (weight_name routability); reemplaza el car.lua de la imagen.
+      - ./infrastructure/osrm/profiles/car.lua:/opt/car.lua:ro
+
+  # Motor de rutas OSRM con el mapa de Ecuador y algoritmo MLD (único contenedor OSRM). Opcional: se levanta
+  # con `make osrm-up` y requiere haber ejecutado antes `make osrm-prepare`.
+  osrm:
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
+    profiles: ["osrm"]
+    restart: unless-stopped
+    # MLD: /trip (orden óptimo) funciona en v5.27.1. Requiere `make osrm-prepare`.
+    # 2 hilos bastan para unas pocas consultas de ruta por repartidor y no saturan el equipo.
+    command: osrm-routed -t 2 --algorithm mld /data/ecuador-latest.osrm
+    cpus: 2.0
+    volumes:
+      - ./infrastructure/osrm/data:/data:ro
+    ports:
+      - "127.0.0.1:5000:5000"
 
 volumes:
   postgres-data:

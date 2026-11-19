@@ -1,0 +1,89 @@
+package config
+
+import (
+	"testing"
+	"time"
+)
+
+func TestBalanceSweepIntervalDefaultsToFifteenMinutes(t *testing.T) {
+	t.Setenv("POSTGRES_PASSWORD", "x")
+	t.Setenv("BALANCE_SWEEP_MINUTES", "")
+
+	cfg, err := Load()
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.BalanceSweepInterval != 15*time.Minute {
+		t.Fatalf("interval = %v, want 15m", cfg.BalanceSweepInterval)
+	}
+}
+
+func TestBalanceSweepIntervalComesFromTheEnvironment(t *testing.T) {
+	t.Setenv("POSTGRES_PASSWORD", "x")
+	t.Setenv("BALANCE_SWEEP_MINUTES", "5")
+
+	cfg, err := Load()
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.BalanceSweepInterval != 5*time.Minute {
+		t.Fatalf("interval = %v, want 5m", cfg.BalanceSweepInterval)
+	}
+}
+
+func TestBalanceSweepIntervalMustBeAPositiveNumber(t *testing.T) {
+	t.Setenv("POSTGRES_PASSWORD", "x")
+	for _, bad := range []string{"0", "-3", "abc"} {
+		t.Setenv("BALANCE_SWEEP_MINUTES", bad)
+		if _, err := Load(); err == nil {
+			t.Fatalf("BALANCE_SWEEP_MINUTES=%q must be rejected", bad)
+		}
+	}
+}
+
+func TestLoadRequiresThePassword(t *testing.T) {
+	t.Setenv("POSTGRES_PASSWORD", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("a missing POSTGRES_PASSWORD must fail")
+	}
+}
+
+func TestRecidivismChargeMaxDefaultsToFifty(t *testing.T) {
+	t.Setenv("POSTGRES_PASSWORD", "x")
+	t.Setenv("RECIDIVISM_CHARGE_MAX", "")
+
+	cfg, err := Load()
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RecidivismChargeMax.StringFixed(2) != "50.00" {
+		t.Fatalf("max = %s, want 50.00", cfg.RecidivismChargeMax)
+	}
+}
+
+func TestRecidivismChargeMaxComesFromTheEnvironment(t *testing.T) {
+	t.Setenv("POSTGRES_PASSWORD", "x")
+	t.Setenv("RECIDIVISM_CHARGE_MAX", "75.50")
+
+	cfg, err := Load()
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RecidivismChargeMax.StringFixed(2) != "75.50" {
+		t.Fatalf("max = %s, want 75.50", cfg.RecidivismChargeMax)
+	}
+}
+
+func TestRecidivismChargeMaxMustBeAPositiveAmount(t *testing.T) {
+	t.Setenv("POSTGRES_PASSWORD", "x")
+	for _, bad := range []string{"0", "-3", "abc", "1e3x"} {
+		t.Setenv("RECIDIVISM_CHARGE_MAX", bad)
+		if _, err := Load(); err == nil {
+			t.Fatalf("RECIDIVISM_CHARGE_MAX=%q must be rejected", bad)
+		}
+	}
+}

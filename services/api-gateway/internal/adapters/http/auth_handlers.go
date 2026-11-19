@@ -2,12 +2,19 @@ package http
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
+	"unicode/utf8"
 
-	"github.com/labstack/echo/v4"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 
 	authv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/auth/v1"
+	customerv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/customer/v1"
 	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/grpcclient"
 )
 
@@ -16,11 +23,21 @@ type AuthClient interface {
 	Login(ctx context.Context, m grpcclient.CallMeta, req *authv1.LoginRequest) (*authv1.LoginResponse, error)
 	CreateUser(ctx context.Context, m grpcclient.CallMeta, req *authv1.CreateUserRequest) (*authv1.CreateUserResponse, error)
 	GetUser(ctx context.Context, m grpcclient.CallMeta, req *authv1.GetUserRequest) (*authv1.GetUserResponse, error)
+	SignupCustomer(ctx context.Context, m grpcclient.CallMeta, req *authv1.SignupCustomerRequest) (*authv1.SignupCustomerResponse, error)
+	ListUsers(ctx context.Context, m grpcclient.CallMeta, req *authv1.ListUsersRequest) (*authv1.ListUsersResponse, error)
+	UpdateUser(ctx context.Context, m grpcclient.CallMeta, req *authv1.UpdateUserRequest) (*authv1.UpdateUserResponse, error)
+	DeactivateUser(ctx context.Context, m grpcclient.CallMeta, req *authv1.DeactivateUserRequest) (*authv1.DeactivateUserResponse, error)
 }
 
 // Los handlers solo traducen REST <-> gRPC. La autorización y las reglas viven en los servicios.
 type authHandlers struct {
-	auth AuthClient
+	auth      AuthClient
+	customers CustomerClient // opcional: si es nil el signup no crea Customer
+}
+
+// CustomerClient es lo que el signup necesita del Order Service.
+type CustomerClient interface {
+	CreateCustomer(ctx context.Context, m grpcclient.CallMeta, req *customerv1.CreateCustomerRequest) (*customerv1.CreateCustomerResponse, error)
 }
 
 type loginRequest struct {
@@ -42,6 +59,32 @@ type createUserRequest struct {
 	Role     string `json:"role"`
 }
 
+type signupRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	FullName string `json:"fullName"`
+	Phone    string `json:"phone"`
+	City     string `json:"city"`
+}
+
+type signupResponse struct {
+	AccessToken string  `json:"accessToken"`
+	TokenType   string  `json:"tokenType"`
+	ExpiresIn   int64   `json:"expiresIn"`
+	User        userDTO `json:"user"`
+}
+
+// updateUserRequest: los campos ausentes (nil) no cambian. Un rol inválido o
+// CUSTOMER llega como ROLE_UNSPECIFIED y auth-service lo rechaza con 400.
+type updateUserRequest struct {
+	FullName *string `json:"fullName"`
+	Role     *string `json:"role"`
+}
+
+type listUsersResponse struct {
+	Users []userDTO `json:"users"`
+}
+
 type userDTO struct {
 	ID        string `json:"id"`
 	Email     string `json:"email"`
@@ -51,7 +94,7 @@ type userDTO struct {
 	CreatedAt string `json:"createdAt"`
 }
 
-func (h *authHandlers) login(c echo.Context) error {
+func (h *authHandlers) login(c *httpx.Context) error {
 	var req loginRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
@@ -68,16 +111,16 @@ func (h *authHandlers) login(c echo.Context) error {
 	})
 }
 
-func (h *authHandlers) me(c echo.Context) error {
+func (h *authHandlers) me(c *httpx.Context) error {
 	id, _ := identityFrom(c)
 	return h.respondUser(c, id.UserID)
 }
 
-func (h *authHandlers) getUser(c echo.Context) error {
+func (h *authHandlers) getUser(c *httpx.Context) error {
 	return h.respondUser(c, c.Param("id"))
 }
 
-func (h *authHandlers) respondUser(c echo.Context, userID string) error {
+func (h *authHandlers) respondUser(c *httpx.Context, userID string) error {
 	res, err := h.auth.GetUser(c.Request().Context(), callMeta(c), &authv1.GetUserRequest{Id: userID})
 	if err != nil {
 		return err
@@ -85,7 +128,7 @@ func (h *authHandlers) respondUser(c echo.Context, userID string) error {
 	return c.JSON(http.StatusOK, toUserDTO(res.GetUser()))
 }
 
-func (h *authHandlers) createUser(c echo.Context) error {
+func (h *authHandlers) createUser(c *httpx.Context) error {
 	var req createUserRequest
 	if err := bindJSON(c, &req); err != nil {
 		return err
@@ -102,18 +145,146 @@ func (h *authHandlers) createUser(c echo.Context) error {
 	return c.JSON(http.StatusCreated, toUserDTO(res.GetUser()))
 }
 
-func bindJSON(c echo.Context, dst any) error {
-	if ct := c.Request().Header.Get(echo.HeaderContentType); !isJSON(ct) {
-		return echo.NewHTTPError(http.StatusUnsupportedMediaType, "content type must be application/json")
+// signup registra un cliente nuevo. Ruta pública: no propaga identidad del
+// Gateway (el cliente todavía no existe). Devuelve 201 con el JWT.
+func (h *authHandlers) signup(c *httpx.Context) error {
+	var req signupRequest
+	if err := bindJSON(c, &req); err != nil {
+		return err
 	}
-	if err := (&echo.DefaultBinder{}).BindBody(c, dst); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "malformed JSON body")
+	// Teléfono y ciudad se validan antes de crear la cuenta: createCustomer no propaga sus fallos.
+	phone, err := normalizePhone(req.Phone)
+	if err != nil {
+		return err
+	}
+	city, err := normalizeCity(req.City)
+	if err != nil {
+		return err
+	}
+	res, err := h.auth.SignupCustomer(c.Request().Context(), callMeta(c), &authv1.SignupCustomerRequest{
+		Email:    req.Email,
+		Password: req.Password,
+		FullName: req.FullName,
+	})
+	if err != nil {
+		return err
+	}
+	h.createCustomer(c, res.GetUser(), phone, city)
+	return c.JSON(http.StatusCreated, signupResponse{
+		AccessToken: res.GetAccessToken(),
+		TokenType:   res.GetTokenType(),
+		ExpiresIn:   res.GetExpiresInSeconds(),
+		User:        toUserDTO(res.GetUser()),
+	})
+}
+
+// createCustomer registra el Customer en order-service tras un signup exitoso.
+//
+// Política de fallos: la cuenta de auth ya existe y el cliente recibe su token,
+// así que un fallo aquí NO se propaga: se loguea con el request id y el signup
+// responde 201. AlreadyExists cuenta como éxito (idempotencia). Un único
+// reintento cubre cortes transitorios (Unavailable). Si igualmente falla, el
+// reintento posterior es seguro: CreateCustomer es idempotente por user_id
+// (ErrCustomerAlreadyExists -> AlreadyExists), por lo que un backfill o job de
+// reconciliación puede volver a llamarlo sin riesgo.
+func (h *authHandlers) createCustomer(c *httpx.Context, u *authv1.User, phone, city string) {
+	if h.customers == nil || u == nil {
+		return
+	}
+	req := &customerv1.CreateCustomerRequest{UserId: u.GetId(), Email: u.GetEmail(), FullName: u.GetFullName(), Phone: phone, City: city}
+	m := callMeta(c)
+	var err error
+	for attempt := 0; attempt < 2; attempt++ {
+		_, err = h.customers.CreateCustomer(c.Request().Context(), m, req)
+		code := status.Code(err)
+		if err == nil || code == codes.AlreadyExists {
+			return
+		}
+		if code != codes.Unavailable {
+			break
+		}
+	}
+	slog.Error("signup: create customer failed", "request_id", m.RequestID, "user_id", u.GetId(), "err", err)
+}
+
+// listUsers devuelve la lista completa de usuarios. La autorización por rol
+// (solo ADMIN) la aplica el adminOnlyMiddleware antes de llegar a este handler;
+// la capa de auth-service revalida por defensa en profundidad.
+func (h *authHandlers) listUsers(c *httpx.Context) error {
+	res, err := h.auth.ListUsers(c.Request().Context(), callMeta(c), &authv1.ListUsersRequest{})
+	if err != nil {
+		return err
+	}
+	out := listUsersResponse{Users: make([]userDTO, 0, len(res.GetUsers()))}
+	for _, u := range res.GetUsers() {
+		out.Users = append(out.Users, toUserDTO(u))
+	}
+	return c.JSON(http.StatusOK, out)
+}
+
+// updateUser edita nombre y/o rol de un usuario (solo ADMIN, filtrado por adminOnly).
+func (h *authHandlers) updateUser(c *httpx.Context) error {
+	var req updateUserRequest
+	if err := bindJSON(c, &req); err != nil {
+		return err
+	}
+	in := &authv1.UpdateUserRequest{Id: c.Param("id"), FullName: req.FullName}
+	if req.Role != nil {
+		role := roleToProto(*req.Role)
+		in.Role = &role
+	}
+	res, err := h.auth.UpdateUser(c.Request().Context(), callMeta(c), in)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, toUserDTO(res.GetUser()))
+}
+
+// deactivateUser hace borrado lógico (active=false) y devuelve el usuario (solo ADMIN).
+func (h *authHandlers) deactivateUser(c *httpx.Context) error {
+	res, err := h.auth.DeactivateUser(c.Request().Context(), callMeta(c), &authv1.DeactivateUserRequest{Id: c.Param("id")})
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, toUserDTO(res.GetUser()))
+}
+
+var (
+	phoneSeparators = strings.NewReplacer(" ", "", "-", "", ".", "", "(", "", ")", "")
+	phonePattern    = regexp.MustCompile(`^\+?[0-9]{7,15}$`)
+)
+
+// normalizePhone aplica la misma regla que el dominio de order-service: quita espacios,
+// guiones, puntos y paréntesis y exige 7 a 15 dígitos con "+" inicial opcional.
+func normalizePhone(raw string) (string, error) {
+	phone := phoneSeparators.Replace(strings.TrimSpace(raw))
+	if !phonePattern.MatchString(phone) {
+		return "", httpx.NewHTTPError(http.StatusBadRequest, "phone must have 7 to 15 digits with an optional leading +")
+	}
+	return phone, nil
+}
+
+// normalizeCity recorta la ciudad y exige entre 2 y 80 caracteres.
+func normalizeCity(raw string) (string, error) {
+	city := strings.TrimSpace(raw)
+	if n := utf8.RuneCountInString(city); strings.ContainsRune(city, '\x00') || n < 2 || n > 80 {
+		return "", httpx.NewHTTPError(http.StatusBadRequest, "city must contain 2 to 80 characters")
+	}
+	return city, nil
+}
+
+func bindJSON(c *httpx.Context, dst any) error {
+	if ct := c.Request().Header.Get(httpx.HeaderContentType); !isJSON(ct) {
+		return httpx.NewHTTPError(http.StatusUnsupportedMediaType, "content type must be application/json")
+	}
+	if err := httpx.BindBody(c, dst); err != nil {
+		return httpx.NewHTTPError(http.StatusBadRequest, "malformed JSON body")
 	}
 	return nil
 }
 
 func isJSON(ct string) bool {
-	return strings.HasPrefix(strings.ToLower(ct), echo.MIMEApplicationJSON)
+	return strings.HasPrefix(strings.ToLower(ct), httpx.MIMEApplicationJSON)
 }
 
 func toUserDTO(u *authv1.User) userDTO {
@@ -148,6 +319,8 @@ func roleFromProto(r authv1.Role) string {
 		return "OPERATOR"
 	case authv1.Role_ROLE_DRIVER:
 		return "DRIVER"
+	case authv1.Role_ROLE_CUSTOMER:
+		return "CUSTOMER"
 	default:
 		return ""
 	}

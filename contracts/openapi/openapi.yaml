@@ -1,17 +1,18 @@
 openapi: 3.0.3
 info:
-  title: Last-Mile Logistics API
+  title: Pikka API
   version: 1.0.0
   description: |
     API pública REST/JSON expuesta por el API Gateway. Clientes: aplicación web
-    (React) y aplicación móvil de repartidores (React Native). Los microservicios
-    internos no son accesibles directamente.
+    (React) y aplicación móvil (React Native, clientes y repartidores). Los
+    microservicios internos no son accesibles directamente.
 
     Fase 1 cubre autenticación y usuarios. Pedidos, zonas, rutas, repartidores y
-    seguimiento se agregan en las fases siguientes.
+    seguimiento se agregan en las fases siguientes. El MVP del cliente
+    (ADR 0006, ADR 0007, ADR 0008) agrega el signup público de CUSTOMER.
 servers:
-  - url: http://localhost:8080
-    description: Entorno local (docker compose)
+  - url: /
+    description: Este API Gateway
 tags:
   - name: health
     description: Liveness y readiness del Gateway
@@ -19,6 +20,22 @@ tags:
     description: Inicio de sesión e identidad actual
   - name: users
     description: Administración de usuarios y roles
+  - name: customers
+    description: Consulta de clientes (solo ADMIN)
+  - name: orders
+    description: Registro y consulta de pedidos
+  - name: surcharges
+    description: Recargos por no entrega del cliente y su verificacion por el operador
+  - name: zones
+    description: Zonas de reparto y clasificación de coordenadas
+  - name: coverage
+    description: Cobertura de reparto visible para cualquier rol autenticado (solo zonas activas, sin configuración operativa)
+  - name: products
+    description: Catálogo de productos y stock (ADR 0009)
+  - name: routes
+    description: Generación del plan de rutas de una fecha (solo ADMIN y OPERATOR)
+  - name: drivers
+    description: Rutas del repartidor (ADR 0007) y reporte de posición. Solo rol DRIVER. La ruta del repartidor y el resultado de parada responden 501 hasta que exista el Routing Service; el avance de parada (status) ya está implementado. The driver creation (POST /drivers) is ADMIN only.
 paths:
   /health:
     get:
@@ -82,7 +99,61 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/User" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/auth/signup:
+    post:
+      tags: [auth]
+      operationId: signupCustomer
+      summary: Registra un cliente y devuelve un token de acceso (rol CUSTOMER)
+      description: |
+        Endpoint público para que un cliente se registre de forma autónoma desde
+        la app móvil. No requiere JWT. Protegido por rate limit por IP
+        (SIGNUP_RATE_PER_MINUTE, default 10/min).
+
+        El token emitido sirve para `GET /api/v1/auth/me` y devuelve
+        `role: "CUSTOMER"`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, fullName, phone, city]
+              properties:
+                email: { type: string, format: email, maxLength: 254 }
+                password: { type: string, minLength: 8, maxLength: 72, description: Máximo 72 bytes (límite de bcrypt) }
+                fullName: { type: string, minLength: 1, maxLength: 120 }
+                phone: { type: string, example: "+593 99 123 4567", description: "Teléfono de contacto. Se quitan espacios, guiones, puntos y paréntesis; debe quedar de 7 a 15 dígitos con un + inicial opcional. Se guarda normalizado" }
+                city: { type: string, minLength: 2, maxLength: 80, description: Ciudad del cliente (se recorta antes de validar) }
+      responses:
+        "201":
+          description: Cliente registrado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /api/v1/users:
+    get:
+      tags: [users]
+      operationId: listUsers
+      summary: Lista todos los usuarios (solo ADMIN)
+      description: Sin filtros ni paginación; el filtrado por rol (p. ej. CUSTOMER) lo hace el cliente.
+      responses:
+        "200":
+          description: Usuarios
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [users]
+                properties:
+                  users:
+                    type: array
+                    items: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
     post:
       tags: [users]
       operationId: createUser
@@ -121,6 +192,1335 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [users]
+      operationId: updateUser
+      summary: Edita nombre y/o rol de un usuario (solo ADMIN)
+      description: |
+        Los campos ausentes no cambian. Reglas: el rol CUSTOMER es inmutable y no se asigna
+        por esta vía; el último ADMIN activo no puede dejar de serlo.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateUserRequest" }
+      responses:
+        "200":
+          description: Usuario actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: Regla de negocio incumplida (p. ej. dejar sin ADMIN activo o cambiar un CUSTOMER)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      tags: [users]
+      operationId: deactivateUser
+      summary: Desactiva un usuario (borrado lógico, solo ADMIN)
+      description: |
+        Marca active=false y devuelve el usuario. Idempotente. Un ADMIN no puede desactivarse
+        a sí mismo ni dejar el sistema sin ADMIN activo.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Usuario desactivado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: Regla de negocio incumplida (auto-desactivación o último ADMIN activo)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/customers:
+    get:
+      tags: [customers]
+      operationId: listCustomers
+      summary: Lista clientes paginados (solo ADMIN)
+      description: Orden estable por fecha de creación e id.
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 100, default: 50 }
+          description: Máximo de clientes a devolver. 0 o ausente usa 50; un valor mayor a 100 se limita a 100.
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/CustomerStatus" }
+          description: Filtro opcional por estado.
+      responses:
+        "200":
+          description: Página de clientes
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/customers/{id}:
+    get:
+      tags: [customers]
+      operationId: getCustomer
+      summary: Obtiene un cliente por id (solo ADMIN)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Cliente
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Customer" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/customers/{id}/status:
+    patch:
+      tags: [customers]
+      operationId: setCustomerStatus
+      summary: Cambia el estado de un cliente (solo ADMIN)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [ACTIVO, BLOQUEADO_POR_SALDO, BLOQUEADO_POR_INCIDENCIAS] }
+      responses:
+        "200":
+          description: Cliente con el nuevo estado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Customer" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/orders:
+    get:
+      tags: [orders]
+      operationId: listOrders
+      summary: Lista pedidos (ADMIN u OPERATOR)
+      description: |
+        Contrato de Sprint 1; transporte implementado en Sprint 2.
+        DRIVER no tiene acceso. El filtrado por alcance se define con el rol CUSTOMER.
+        Orden descendente por createdAt y ascendente por id en empates.
+        Sin resultados devuelve un arreglo vacío.
+      parameters:
+        - name: deliveryDate
+          in: query
+          schema: { type: string, format: date }
+          description: Filtra por fecha de entrega, independientemente de createdAt.
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/OrderStatus" }
+      responses:
+        "200":
+          description: Pedidos
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Order" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [orders]
+      operationId: createOrder
+      summary: Registra un pedido del cliente autenticado (solo CUSTOMER)
+      description: |
+        El servidor asigna id, createdAt y el estado. La validación automática (ADR 0007)
+        consulta la zona de la dirección y el estado del cliente. Si alguna regla no se
+        cumple, el pedido queda en PENDING_REVIEW con reviewReasons; si no, en PENDING.
+        Una dirección fuera de zona no es un error: el pedido entra a la cola de excepciones.
+        La fecha de entrega debe ser hoy o posterior en la zona horaria de operación.
+        La ventana no cruza medianoche: windowEnd debe ser posterior a windowStart.
+        Si Zone Service no responde, no se registra el pedido y se devuelve 503.
+        Una cuenta bloqueada por saldo pendiente (BLOQUEADO_POR_SALDO, ADR 0006 sección 5) no puede crear pedidos:
+        se rechaza con 403 antes de geocodificar, reservar stock o guardar nada. Una cuenta bloqueada por
+        incidencias sí registra el pedido, que entra a la cola de excepciones con CUSTOMER_BLOCKED.
+        ADMIN, OPERATOR y DRIVER reciben 403 antes de que se valide el cuerpo: el personal revisa
+        los pedidos de los clientes pero no los registra.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateOrderRequest" }
+      responses:
+        "201":
+          description: Pedido registrado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreatedOrder" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503":
+          description: Zone Service no disponible; el pedido no se registró
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/orders/mine:
+    get:
+      tags: [orders]
+      operationId: listMyOrders
+      summary: Lista los pedidos del cliente autenticado (solo CUSTOMER)
+      description: |
+        Solo devuelve pedidos del cliente de la sesión; nunca de otros clientes (BOLA, ADR 0007).
+        Orden descendente por createdAt y ascendente por id en empates. Sin pedidos devuelve un arreglo vacío.
+      responses:
+        "200":
+          description: Pedidos del cliente
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [orders]
+                properties:
+                  orders:
+                    type: array
+                    items: { $ref: "#/components/schemas/Order" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/orders/{id}:
+    get:
+      tags: [orders]
+      operationId: getOrder
+      summary: Obtiene un pedido (ADMIN u OPERATOR)
+      description: Contrato de Sprint 1; transporte implementado en Sprint 2.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Pedido encontrado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/notifications/mine:
+    get:
+      tags: [orders]
+      operationId: listMyNotifications
+      summary: Lista los avisos del cliente autenticado (solo CUSTOMER)
+      description: |
+        Avisos sobre la revisión de sus pedidos (ADR 0007, sección 3): pedido en revisión, confirmado,
+        corregido o rechazado. Del más reciente al más antiguo. Solo devuelve avisos de la sesión.
+      responses:
+        "200":
+          description: Avisos del cliente
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [notifications]
+                properties:
+                  notifications:
+                    type: array
+                    items: { $ref: "#/components/schemas/Notification" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/orders/exceptions:
+    get:
+      tags: [orders]
+      operationId: listOrderExceptions
+      summary: Cola de excepciones de pedidos pendientes de revisión (ADMIN u OPERATOR)
+      description: Pedidos cuya validación automática no se cumplió (ADR 0007, sección 3). El operador los confirma, corrige o rechaza.
+      responses:
+        "200":
+          description: Pedidos en revisión
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Order" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/orders/{id}/review:
+    post:
+      tags: [orders]
+      operationId: reviewOrder
+      summary: Confirma, corrige o rechaza un pedido en revisión (ADMIN u OPERATOR)
+      description: Solo aplica a pedidos en estado PENDING_REVIEW. Toda decisión queda registrada con motivo.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderReviewRequest" }
+      responses:
+        "200":
+          description: Pedido actualizado según la decisión
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/surcharges/pending-verification:
+    get:
+      tags: [surcharges]
+      operationId: listSurchargesPendingVerification
+      summary: Recargos por direccion incorrecta que esperan verificacion (ADMIN u OPERATOR)
+      description: Cola del operador, del mas antiguo al mas reciente (ADR 0006, enmienda). Un recargo WRONG_ADDRESS no se cobra hasta que el operador lo confirme.
+      responses:
+        "200":
+          description: Recargos en estado PENDING_VERIFICATION
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Surcharge" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/surcharges/{id}/verification:
+    post:
+      tags: [surcharges]
+      operationId: resolveSurchargeVerification
+      summary: Confirma o dispensa un recargo en verificacion (ADMIN u OPERATOR)
+      description: |
+        CONFIRM: el cliente es responsable y el recargo sigue el flujo normal (15 % del siguiente pedido).
+        WAIVE: el cliente no es responsable y no se cobra. La decision queda registrada con el operador, el motivo y la hora.
+        Solo aplica a recargos en PENDING_VERIFICATION; uno ya resuelto responde 409.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SurchargeVerificationRequest" }
+      responses:
+        "200":
+          description: Recargo con la decision registrada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Surcharge" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/customers/recidivists:
+    get:
+      tags: [surcharges]
+      operationId: listRecidivists
+      summary: Lista los clientes reincidentes (ADMIN u OPERATOR)
+      description: |
+        Los clientes con la marca de reincidente (ADR 0006), la marca mas antigua primero. Trae solo lo necesario para
+        decidir un recargo extra y ubicar al cliente: nombre, telefono de contacto (el del ultimo pedido, o el del
+        cliente si no tiene pedidos), la fecha de la marca, el saldo pendiente y si el recargo extra ya se aplico
+        (solo se aplica una vez por marca). No incluye correo ni direccion. CUSTOMER y DRIVER reciben 403.
+      responses:
+        "200":
+          description: Reincidentes, o un arreglo vacio
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Recidivist" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/customers/{id}/recidivism-charge:
+    post:
+      tags: [surcharges]
+      operationId: applyRecidivismCharge
+      summary: Aplica un recargo extra a un cliente reincidente (ADMIN u OPERATOR)
+      description: |
+        El monto y el motivo los decide el operador (ADR 0006, seccion 1). El monto se suma al saldo pendiente del
+        cliente en la misma operacion y la decision queda auditada con el operador y la hora.
+        Solo aplica a clientes marcados como reincidentes (tres no entregas del cliente en un plazo de 14 dias) y una
+        vez por reincidencia: un segundo intento responde 409; un cliente sin la marca responde 422.
+        El monto tiene un tope que fija el negocio (variable RECIDIVISM_CHARGE_MAX, 50.00 de inicio): un monto mayor
+        responde 400 con el tope en el mensaje y no toca el saldo.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecidivismChargeRequest" }
+      responses:
+        "201":
+          description: Recargo extra aplicado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecidivismCharge" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /api/v1/customers/me/balance:
+    get:
+      tags: [surcharges]
+      operationId: getMyBalance
+      summary: Muestra al cliente lo que debe, linea por linea (solo CUSTOMER)
+      description: |
+        Saldo pendiente, estado de la cuenta y cada linea con su motivo y la fecha limite de pago (ADR 0006,
+        secciones 4 y 5). Una cuenta bloqueada por saldo puede consultarlo: asi sabe cuanto pagar. Las lineas
+        van de la mas antigua a la mas reciente. El motivo del recargo extra es siempre RECIDIVISM; la
+        justificacion del operador es una nota interna y no se muestra. `simulated` es siempre true.
+      responses:
+        "200":
+          description: Saldo del cliente
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MyBalance" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/customers/me/balance/payment:
+    post:
+      tags: [surcharges]
+      operationId: payMyBalance
+      summary: Paga el saldo pendiente completo con el cobro simulado (solo CUSTOMER)
+      description: |
+        Cobra todo el saldo pendiente del cliente autenticado con la tarjeta simulada (ADR 0006, sección 5). No lleva
+        cuerpo: no se elige el monto, solo se paga el saldo completo. Si el cobro se aprueba, los recargos quedan
+        pagados y una cuenta BLOQUEADO_POR_SALDO vuelve a ACTIVO en ese momento (`unblocked: true`). Si la tarjeta
+        simulada rechaza, responde 200 con `SIMULATED_DECLINED` y nada cambia. No hay pasarela real: `simulated`
+        es siempre true y ningún dato de tarjeta se pide ni se guarda.
+        Sin saldo responde 422; si el saldo cambió mientras se pagaba, el cobro se devuelve y responde 409.
+      responses:
+        "200":
+          description: Resultado del cobro simulado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BalancePayment" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /api/v1/customers/{id}/recidivist/clear:
+    post:
+      tags: [surcharges]
+      operationId: clearRecidivist
+      summary: Quita la marca de reincidente a un cliente (solo ADMIN)
+      description: |
+        Solo un administrador puede quitar la marca (ADR 0006, F5); el motivo (5 a 300 caracteres) y quien lo hizo
+        quedan auditados. No borra los recargos extra ya cobrados ni cambia el saldo. Tras quitarla, una nueva
+        reincidencia vuelve a marcar al cliente y permite otro recargo extra. Un OPERATOR responde 403; un cliente
+        sin la marca responde 422.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClearRecidivistRequest" }
+      responses:
+        "200":
+          description: Marca quitada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecidivistClear" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /api/v1/settings/reassignment-fee:
+    put:
+      tags: [surcharges]
+      operationId: setReassignmentFee
+      summary: Define la tarifa fija de reasignación (solo ADMIN)
+      description: |
+        Monto fijo que se cobra cuando un pedido se reasigna a pedido del cliente con el repartidor en camino
+        (ADR 0006). Solo un administrador lo define o lo cambia; el monto y el motivo (5 a 300 caracteres) quedan
+        auditados y cada cambio es un registro nuevo. Un OPERATOR responde 403.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetReassignmentFeeRequest" }
+      responses:
+        "200":
+          description: Tarifa vigente
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReassignmentFee" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    get:
+      tags: [surcharges]
+      operationId: getReassignmentFee
+      summary: Consulta la tarifa fija de reasignación vigente (ADMIN u OPERATOR)
+      description: "Si nunca se definió una tarifa responde 422: el sistema no inventa un monto."
+      responses:
+        "200":
+          description: Tarifa vigente
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReassignmentFee" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /api/v1/orders/{id}/reassignment-charge:
+    post:
+      tags: [surcharges]
+      operationId: applyReassignmentCharge
+      summary: Cobra la tarifa fija de reasignación al cliente del pedido (ADMIN u OPERATOR)
+      description: |
+        Suma la tarifa vigente al saldo del cliente del pedido y deja el cobro auditado con el operador y el motivo
+        (5 a 300 caracteres). El monto nunca se envía: siempre es la tarifa vigente. Se cobra una sola vez por
+        pedido (un segundo intento responde 409) y, como cualquier saldo, se paga en 14 días o la cuenta se bloquea.
+        Sin tarifa definida responde 422.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApplyReassignmentChargeRequest" }
+      responses:
+        "201":
+          description: Cobro aplicado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReassignmentCharge" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /api/v1/surcharges/{id}/dispute:
+    post:
+      tags: [surcharges]
+      operationId: openDispute
+      summary: El cliente disputa uno de sus recargos (solo CUSTOMER)
+      description: |
+        Dentro de las 2 horas siguientes a que el recargo pasó a deberse (ADR 0007, sección 6) el cliente puede
+        disputarlo con un motivo de 5 a 300 caracteres. Una disputa por recargo. Mientras está abierta, el barrido no
+        bloquea la cuenta por ese recargo (ADR 0006, sección 5). Solo se disputa un recargo propio, pendiente y con
+        monto: uno ajeno o inexistente responde 404 (la misma respuesta para ambos); fuera del plazo o ya pagado
+        responde 422; una segunda disputa del mismo recargo responde 409.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OpenDisputeRequest" }
+      responses:
+        "201":
+          description: Disputa abierta
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dispute" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /api/v1/disputes:
+    get:
+      tags: [surcharges]
+      operationId: listOpenDisputes
+      summary: Cola de disputas abiertas, la más antigua primero (ADMIN u OPERATOR)
+      responses:
+        "200":
+          description: Disputas abiertas
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Dispute" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/disputes/{id}/resolution:
+    post:
+      tags: [surcharges]
+      operationId: resolveDispute
+      summary: Resuelve una disputa a favor o en contra del cliente (ADMIN u OPERATOR)
+      description: |
+        Una sola vez y con un motivo auditado de 5 a 300 caracteres. `IN_FAVOR` dispensa el recargo y lo quita del saldo
+        en la misma operación; `AGAINST` no cambia nada y el plazo de pago sigue donde estaba. Ya resuelta responde 409;
+        si el recargo se pagó mientras tanto, responde 422 y la disputa sigue abierta.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResolveDisputeRequest" }
+      responses:
+        "200":
+          description: Disputa resuelta
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dispute" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /api/v1/orders/{id}/cancel:
+    post:
+      tags: [orders]
+      operationId: cancelMyOrder
+      summary: Cancela un pedido propio del cliente (solo CUSTOMER)
+      description: |
+        Solo aplica a pedidos en PENDING o ROUTE_ASSIGNED (ADR 0007, sección 8). Una cuenta bloqueada por saldo
+        pendiente (BLOQUEADO_POR_SALDO, ADR 0006 sección 5) no puede cancelar y responde 403. El stock de sus productos
+        vuelve al catálogo en la misma operación. Un pedido de otro cliente responde 404.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Pedido cancelado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/orders/{id}/tracking:
+    get:
+      tags: [orders]
+      operationId: getOrderTracking
+      summary: Snapshot of the authenticated customer's order (CUSTOMER only)
+      description: |
+        Order status and, when the assigned driver has a fresh position, the ETA to the delivery point.
+        A foreign or unknown order responds 404 with the same body. The snapshot never includes driver
+        identity, route, other orders or coordinates.
+
+        `eta` is null when there is no ETA. `eta_unavailable_reason` says why: `no_route` (the order has no
+        route yet), `no_position` (the driver has not reported a position), `stale_position` (the last position
+        is too old) or `unavailable` (Tracking Service did not answer). A stale ETA is never shown.
+
+        `stops_before` is the number of open stops ahead of this order on its route. It is null when the order
+        has no route or the count fails. A failure in the stop count or in the ETA does not fail the snapshot.
+
+        For live updates, see `GET /api/v1/orders/{id}/tracking/ws`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Order snapshot
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrackingSnapshot" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503":
+          description: Order Service unavailable. Code UPSTREAM_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/orders/{id}/tracking/ws:
+    get:
+      tags: [orders]
+      operationId: watchOrderTracking
+      summary: WebSocket for the authenticated customer's order tracking (CUSTOMER only)
+      x-websocket: true
+      description: |
+        This is a WebSocket. OpenAPI 3.x cannot describe sockets natively, so it is documented as a GET.
+        The client sends `Upgrade: websocket` and the handshake headers of RFC 6455.
+
+        **Authentication.** Browsers cannot send an `Authorization` header on a WebSocket, so the JWT travels
+        as the second subprotocol: `Sec-WebSocket-Protocol: pikka.v1, <jwt>`. The server accepts `pikka.v1` and
+        validates the JWT with the same verifier as the HTTP routes. The token never appears in the URL or in logs.
+        This route does not read the `Authorization` header, so `security` is empty.
+
+        **Rejections before the upgrade.** Authentication and ownership are checked before the socket opens:
+        - 401: subprotocol missing or malformed, or token invalid or expired (JSON error body).
+        - 403: role other than CUSTOMER (JSON error body). An Origin not allowed by the CORS list is also 403,
+          with a plain-text body from the WebSocket library.
+        - 404: foreign or unknown order, same body in both cases (JSON error body).
+        - 400 or 426: invalid WebSocket handshake (version, key or Upgrade headers). Plain-text body from the library.
+
+        **Messages.** Each message is a text frame with a JSON object of the `TrackingSnapshot` schema.
+        - On connect, the server sends the current snapshot.
+        - Then it polls every 5 s (`TRACKING_POLL_INTERVAL`) and sends a message only when the snapshot changed.
+          `updated_at` is ignored when comparing.
+        - A failed poll is skipped and retried on the next tick; the socket stays open.
+        - The client should not send data messages. A data message closes the socket with code 1008 (policy violation).
+        - When the client goes away, the connection ends.
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: Sec-WebSocket-Protocol
+          in: header
+          required: true
+          description: "Must be `pikka.v1, <jwt>`. The first item is the protocol name; the second is the access token."
+          schema: { type: string, example: "pikka.v1, <jwt>" }
+      responses:
+        "101":
+          description: Switching Protocols. The server sends the snapshot on connect and then each change
+        "400":
+          description: Invalid WebSocket handshake (plain-text body from the library)
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Role other than CUSTOMER (JSON error body), or Origin not allowed (plain-text body)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "426":
+          description: Missing Upgrade or Connection header (plain-text body from the library)
+  /api/v1/coverage/zones:
+    get:
+      tags: [coverage]
+      operationId: listCoverageZones
+      summary: Lista las zonas activas de cobertura (cualquier rol autenticado)
+      description: |
+        Devuelve solo las zonas `ACTIVE` y únicamente su contorno, para dibujar la cobertura en el
+        mapa. No incluye depósito, capacidad ni configuración operativa. El listado completo sigue
+        siendo `GET /api/v1/zones` (ADMIN y OPERATOR).
+      responses:
+        "200":
+          description: Zonas activas
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [zones]
+                properties:
+                  zones:
+                    type: array
+                    items: { $ref: "#/components/schemas/CoverageZone" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/zones:
+    get:
+      tags: [zones]
+      operationId: listZones
+      summary: Lista todas las zonas (ADMIN u OPERATOR)
+      responses:
+        "200":
+          description: Zonas registradas
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Zone" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [zones]
+      operationId: createZone
+      summary: Registra una zona (solo ADMIN)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateZoneRequest" }
+      responses:
+        "201":
+          description: Zona creada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Zone" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/zones/classify:
+    get:
+      tags: [zones]
+      operationId: classifyPoint
+      summary: Devuelve la zona que contiene una coordenada (ADMIN u OPERATOR)
+      description: Si varias zonas la contienen, devuelve la de menor área.
+      parameters:
+        - name: latitude
+          in: query
+          required: true
+          schema: { type: number, minimum: -90, maximum: 90 }
+        - name: longitude
+          in: query
+          required: true
+          schema: { type: number, minimum: -180, maximum: 180 }
+      responses:
+        "200":
+          description: Zona que contiene el punto
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Zone" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/zones/{id}:
+    get:
+      tags: [zones]
+      operationId: getZone
+      summary: Obtiene una zona (ADMIN u OPERATOR)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Zona
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Zone" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [zones]
+      operationId: updateZone
+      summary: Redibuja una zona existente (solo ADMIN). Valida las mismas reglas que la creación.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateZoneRequest" }
+      responses:
+        "200":
+          description: Zona actualizada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Zone" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [zones]
+      operationId: deleteZone
+      summary: Borra físicamente una zona inactiva (solo ADMIN). Requiere motivo y queda en la bitácora.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 5, maxLength: 300 }
+      responses:
+        "204": { description: Zona borrada }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /api/v1/zones/{id}/status:
+    patch:
+      tags: [zones]
+      operationId: setZoneStatus
+      summary: Activa o desactiva una zona (solo ADMIN). El motivo es obligatorio y queda en la bitácora.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status, reason]
+              properties:
+                status: { type: string, enum: [ACTIVE, INACTIVE] }
+                reason: { type: string, minLength: 5, maxLength: 300 }
+      responses:
+        "200":
+          description: Zona actualizada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Zone" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /api/v1/catalog/products:
+    get:
+      tags: [products]
+      operationId: listPublicProducts
+      summary: Catálogo público de la landing (sin autenticación)
+      description: |
+        Público y de solo lectura. Devuelve solo productos activos, ordenados por nombre, sin stock ni campos internos.
+        Límite de exposición: como máximo 50 productos, sin paginación por ahora.
+      security: []
+      responses:
+        "200":
+          description: Productos activos; arreglo vacío si no hay ninguno
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [products]
+                properties:
+                  products:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name, description, unitPrice]
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+                        description: { type: string }
+                        unitPrice: { type: string, example: "2.50" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /api/v1/products:
+    get:
+      tags: [products]
+      operationId: listProducts
+      summary: Lista el catálogo. CUSTOMER ve solo los productos activos
+      description: |
+        Para ADMIN y OPERATOR, includeInactive=true incluye también los productos retirados.
+        Pedir includeInactive como CUSTOMER responde 403.
+      parameters:
+        - name: includeInactive
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: Productos
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [products]
+                properties:
+                  products: { type: array, items: { $ref: "#/components/schemas/Product" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [products]
+      operationId: createProduct
+      summary: Crea un producto (ADMIN u OPERATOR)
+      description: |
+        El precio es texto decimal con como máximo dos decimales, por ejemplo "2.50".
+        Sin initialStock el producto no controla stock. Con initialStock, queda registrado como entrada.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateProductRequest" }
+      responses:
+        "201":
+          description: Producto creado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/products/{id}:
+    get:
+      tags: [products]
+      operationId: getProduct
+      summary: Devuelve un producto. Para CUSTOMER, un producto inactivo es no encontrado
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Producto
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/products/{id}/active:
+    patch:
+      tags: [products]
+      operationId: setProductActive
+      summary: Oferta o retira un producto (ADMIN u OPERATOR). No cambia pedidos anteriores
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetProductActiveRequest" }
+      responses:
+        "200":
+          description: Producto actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/products/{id}/stock-adjustments:
+    post:
+      tags: [products]
+      operationId: adjustProductStock
+      summary: Registra una entrada (RESTOCK) o un ajuste manual con motivo (ADJUSTMENT)
+      description: |
+        Un ajuste puede sumar o restar, pero no puede dejar el stock en negativo (422).
+        Las ventas y devoluciones las registra el servicio al pedir o cancelar; no se envían aquí.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdjustStockRequest" }
+      responses:
+        "201":
+          description: Movimiento registrado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StockMovement" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+  /api/v1/products/{id}/stock-movements:
+    get:
+      tags: [products]
+      operationId: listProductStockMovements
+      summary: Historial de stock de un producto, del más reciente al más antiguo (ADMIN u OPERATOR)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Movimientos
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [movements]
+                properties:
+                  movements: { type: array, items: { $ref: "#/components/schemas/StockMovement" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/routes/plan:
+    post:
+      tags: [routes]
+      operationId: generateRoutePlan
+      summary: Generate the route plan for a delivery date (ADMIN or OPERATOR)
+      description: |
+        Plans the PENDING orders of the date, reserves one driver per route and assigns each route's orders.
+        Routes are processed in order and the run is not atomic: routes created before a failure stay
+        assigned, and the error message says how many. The orders of the failing route are not changed.
+        The Routing Service validates the role and the date; other roles get 403 before any work is done.
+        Failures in Order, Zone or Driver Service come back as 500 with code INTERNAL.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GeneratePlanRequest" }
+      responses:
+        "200":
+          description: Plan generated. routes is empty when the date has no pending orders
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GeneratePlanResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "415":
+          description: Content-Type is not application/json. Code UNSUPPORTED_MEDIA_TYPE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: No driver is available for a route, or Driver Service rejected a reservation. Code FAILED_PRECONDITION
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: Routing Service unavailable. Code UPSTREAM_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/drivers:
+    get:
+      tags: [drivers]
+      operationId: listDrivers
+      summary: Lista la flota de repartidores (ADMIN y OPERATOR)
+      description: |
+        Devuelve todos los repartidores, activos e inactivos y en cualquier estado, ordenados por
+        apellido y nombre, hasta un m├íximo de 500. No incluye fecha de nacimiento ni documento de
+        identidad. Sin repartidores devuelve un arreglo vac├¡o.
+      responses:
+        "200":
+          description: Flota de repartidores
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DriverListItem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503":
+          description: Driver Service no disponible. C├│digo UPSTREAM_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    post:
+      tags: [drivers]
+      operationId: createDriver
+      summary: Da de alta un repartidor (solo ADMIN)
+      description: |
+        Crea el usuario con rol DRIVER en Auth Service y su perfil en Driver Service. Son dos
+        servicios con base de datos propia, sin transacci├│n com├║n: si el perfil falla (datos
+        inv├ílidos, identificador o placa repetidos), el Gateway desactiva el usuario reci├⌐n creado
+        y responde con el error del perfil. Auth Service no borra usuarios, as├¡ que el correo de un
+        alta fallida queda reservado y hay que usar otro. Las formas inv├ílidas de `birthDate` y
+        `vehicleType` se rechazan con 400 antes de crear nada. El repartidor nace activo y AVAILABLE.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateDriverRequest" }
+      responses:
+        "201":
+          description: Repartidor creado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreateDriverResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: Correo, identificador o placa ya registrados. C├│digo CONFLICT
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: Auth Service o Driver Service no disponible. C├│digo UPSTREAM_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/drivers/me/route:
+    get:
+      tags: [drivers]
+      operationId: getMyDriverRoute
+      summary: Ruta asignada al repartidor autenticado (solo DRIVER)
+      description: |
+        NO IMPLEMENTADO. Responde 501 hasta que exista el Routing Service, que es quien posee la
+        ruta. Ninguna respuesta 200 contiene datos inventados. La app móvil trata 501 como
+        "servicio no disponible".
+      responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "501": { $ref: "#/components/responses/NotImplemented" }
+  /api/v1/drivers/me/routes/{routeId}/stops/{stopId}/status:
+    patch:
+      tags: [drivers]
+      operationId: setMyStopStatus
+      summary: Advances a stop of the authenticated driver's route to PICKED_UP or IN_TRANSIT (DRIVER only)
+      description: |
+        The route must be reserved for the authenticated driver. A route that belongs to another driver, a route
+        that does not exist and a route with no driver all respond 404 with the same message.
+        The `stopId` is the order id of the stop. Order Service validates the step against the order's current
+        status: an illegal step responds 422 (FAILED_PRECONDITION).
+        DELIVERED and NOT_DELIVERED are not accepted here (400); the final result of a stop goes through the result endpoint.
+      parameters:
+        - name: routeId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: stopId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [PICKED_UP, IN_TRANSIT] }
+      responses:
+        "200":
+          description: Stop advanced. Returns the new order status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StopStatusResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "415":
+          description: Content-Type is not application/json. Code UNSUPPORTED_MEDIA_TYPE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: The step is not allowed from the order's current status. Code FAILED_PRECONDITION
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: Order Service or Driver Service unavailable. Code UPSTREAM_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/drivers/me/routes/{routeId}/stops/{stopId}/result:
+    post:
+      tags: [drivers]
+      operationId: registerMyStopResult
+      summary: Registra el resultado de una parada (solo DRIVER)
+      description: |
+        NO IMPLEMENTADO. Responde 501 porque la dirección y la ventana de la parada las aporta el
+        Routing Service, que aún no existe. El cliente nunca envía la ubicación de la parada: el
+        sistema comprueba la llegada (ADR 0007, sección 5). Cuando exista la fuente, el cuerpo
+        será el de este contrato.
+      parameters:
+        - name: routeId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: stopId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome, location]
+              properties:
+                outcome: { type: string, enum: [DELIVERED, NOT_DELIVERED] }
+                reason:
+                  type: string
+                  description: Obligatorio con NOT_DELIVERED y ausente con DELIVERED
+                  enum: [CLIENT_REFUSED, CLIENT_ABSENT, OUT_OF_WINDOW, PRODUCT_DAMAGED, WRONG_ADDRESS, DUPLICATE_ORDER]
+                location:
+                  type: object
+                  required: [latitude, longitude]
+                  description: Posición GPS del repartidor al registrar (ADR 0007, sección 4)
+                  properties:
+                    latitude: { type: number, minimum: -90, maximum: 90 }
+                    longitude: { type: number, minimum: -180, maximum: 180 }
+      responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "501": { $ref: "#/components/responses/NotImplemented" }
+  /api/v1/drivers/me/location:
+    put:
+      tags: [drivers]
+      operationId: reportMyLocation
+      summary: Reporta la posición GPS del repartidor autenticado (solo DRIVER)
+      description: |
+        Guarda la última posición del repartidor en el Tracking Service. Un reporte más antiguo que el
+        guardado se descarta en silencio y también responde 204. La posición no se devuelve a ningún
+        cliente ni se registra en logs. Cualquier repartidor con token válido puede reportar; la
+        verificación de ruta activa llega con el Routing Service.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DriverLocationRequest" }
+      responses:
+        "204": { description: Posición recibida. Sin cuerpo }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503":
+          description: Tracking Service no disponible. Código UPSTREAM_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 security:
   - bearerAuth: []
 components:
@@ -148,6 +1548,34 @@ components:
         role: { $ref: "#/components/schemas/Role" }
         active: { type: boolean }
         createdAt: { type: string, format: date-time }
+    CustomerStatus:
+      type: string
+      enum: [ACTIVO, BLOQUEADO_POR_SALDO, BLOQUEADO_POR_INCIDENCIAS]
+    Customer:
+      type: object
+      required: [id, userId, fullName, email, status, pendingSurcharge, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        fullName: { type: string }
+        email: { type: string, format: email }
+        phone: { type: string, description: Teléfono normalizado. Vacío u omitido en clientes anteriores a este dato }
+        city: { type: string, description: Ciudad del cliente. Vacío u omitido en clientes anteriores a este dato }
+        status: { $ref: "#/components/schemas/CustomerStatus" }
+        pendingSurcharge: { type: string, example: "0.00", description: "Decimal con 2 decimales, como string" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        recidivistAt: { type: string, format: date-time, description: "Cuando se marco al cliente como reincidente (tres no entregas suyas en 14 dias, ADR 0006). Ausente si no lo es" }
+    CustomerList:
+      type: object
+      required: [customers, total, limit, offset]
+      properties:
+        customers:
+          type: array
+          items: { $ref: "#/components/schemas/Customer" }
+        total: { type: integer, description: "Total que cumple el filtro, independiente de limit/offset" }
+        limit: { type: integer, description: Valor solicitado (0 = default del servicio) }
+        offset: { type: integer }
     LoginRequest:
       type: object
       required: [email, password]
@@ -160,7 +1588,7 @@ components:
       properties:
         accessToken: { type: string }
         tokenType: { type: string, example: Bearer }
-        expiresIn: { type: integer, description: Segundos hasta que expira el token, example: 3600 }
+        expiresIn: { type: integer, description: "Segundos hasta que expira el token", example: 3600 }
         user: { $ref: "#/components/schemas/User" }
     CreateUserRequest:
       type: object
@@ -170,6 +1598,552 @@ components:
         password: { type: string, format: password, minLength: 8, maxLength: 72 }
         fullName: { type: string, maxLength: 120 }
         role: { $ref: "#/components/schemas/Role" }
+    UpdateUserRequest:
+      type: object
+      description: Campos opcionales; ausente significa no cambiar.
+      properties:
+        fullName: { type: string, minLength: 1, maxLength: 120 }
+        role: { type: string, enum: [ADMIN, OPERATOR, DRIVER] }
+    OrderStatus:
+      type: string
+      enum: [PENDING, PENDING_REVIEW, ROUTE_ASSIGNED, PICKED_UP, IN_TRANSIT, DELIVERED, NOT_DELIVERED, CANCELLED]
+    ReviewReason:
+      type: string
+      description: Regla de la validación automática que no se cumplió (ADR 0007, sección 3).
+      enum: [ZONE_NOT_COVERED, INVALID_WINDOW, CAPACITY_EXCEEDED, CUSTOMER_BLOCKED, ADDRESS_NOT_LOCATED]
+    OrderReviewAction:
+      type: string
+      enum: [CONFIRM, CORRECT, REJECT]
+    RecidivismChargeRequest:
+      type: object
+      required: [amount, reason]
+      properties:
+        amount: { type: string, example: "12.50", description: "Decimal mayor que cero, como string. Se redondea a centavos" }
+        reason: { type: string, minLength: 5, maxLength: 300, description: "Justificacion de la decision, se guarda como auditoria" }
+    Recidivist:
+      type: object
+      required: [customerId, fullName, contactPhone, recidivistAt, pendingSurcharge, chargeApplied]
+      properties:
+        customerId: { type: string, format: uuid }
+        fullName: { type: string, description: "Nombre del cliente, quien recibe las entregas" }
+        contactPhone: { type: string, description: Telefono del ultimo pedido o del cliente. Vacio si no hay ninguno. }
+        recidivistAt: { type: string, format: date-time, description: Cuando se marco al cliente }
+        pendingSurcharge: { type: string, example: "4.50", description: Saldo pendiente actual como decimal con dos digitos }
+        chargeApplied: { type: boolean, description: true si el recargo extra de esta marca ya se aplico }
+    SetReassignmentFeeRequest:
+      type: object
+      required: [amount, reason]
+      properties:
+        amount: { type: string, pattern: '^[0-9]+(\.[0-9]{1,2})?$', description: Monto decimal mayor que cero }
+        reason: { type: string, minLength: 5, maxLength: 300, description: "Justificación del administrador, auditada" }
+    ReassignmentFee:
+      type: object
+      required: [id, amount, reason, setBy, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        amount: { type: string, description: Decimal con dos dígitos }
+        reason: { type: string }
+        setBy: { type: string, format: uuid, description: Administrador que la definió }
+        createdAt: { type: string, format: date-time }
+    ApplyReassignmentChargeRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 5, maxLength: 300, description: "Justificación del operador, auditada" }
+    ReassignmentCharge:
+      type: object
+      required: [id, customerId, orderId, amount, reason, appliedBy, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        customerId: { type: string, format: uuid }
+        orderId: { type: string, format: uuid }
+        amount: { type: string, description: La tarifa vigente al momento del cobro }
+        reason: { type: string }
+        appliedBy: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+    OpenDisputeRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 5, maxLength: 300, description: "Explicación del cliente, auditada" }
+    ResolveDisputeRequest:
+      type: object
+      required: [decision, reason]
+      properties:
+        decision: { type: string, enum: [IN_FAVOR, AGAINST] }
+        reason: { type: string, minLength: 5, maxLength: 300, description: "Justificación del personal, auditada" }
+    Dispute:
+      type: object
+      required: [id, surchargeId, customerId, reason, status, openedAt]
+      properties:
+        id: { type: string, format: uuid }
+        surchargeId: { type: string, format: uuid }
+        customerId: { type: string, format: uuid }
+        reason: { type: string }
+        status: { type: string, enum: [OPEN, IN_FAVOR, AGAINST] }
+        openedAt: { type: string, format: date-time }
+        resolvedBy: { type: string, format: uuid, description: Ausente mientras está abierta }
+        resolutionReason: { type: string }
+        resolvedAt: { type: string, format: date-time }
+    ClearRecidivistRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 5, maxLength: 300, description: "Justificación del administrador, auditada" }
+    RecidivistClear:
+      type: object
+      required: [id, customerId, recidivistAt, reason, clearedBy, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        customerId: { type: string, format: uuid }
+        recidivistAt: { type: string, format: date-time, description: Marca que se quitó }
+        reason: { type: string }
+        clearedBy: { type: string, format: uuid, description: Administrador que la quitó }
+        createdAt: { type: string, format: date-time }
+    RecidivismCharge:
+      type: object
+      required: [id, customerId, recidivistAt, amount, reason, appliedBy, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        customerId: { type: string, format: uuid }
+        recidivistAt: { type: string, format: date-time, description: Marca de reincidencia a la que responde este recargo }
+        amount: { type: string, example: "12.50" }
+        reason: { type: string }
+        appliedBy: { type: string, format: uuid, description: Operador que lo aplico }
+        createdAt: { type: string, format: date-time }
+    BalanceLine:
+      type: object
+      required: [kind, id, reason, amount, startedAt, dueAt]
+      properties:
+        kind: { type: string, enum: [SURCHARGE, RECIDIVISM, REASSIGNMENT] }
+        id: { type: string, format: uuid }
+        orderId: { type: string, format: uuid, description: Pedido que no se entrego. Ausente en RECIDIVISM }
+        reason: { type: string, description: "Codigo que la app puede traducir, por ejemplo CLIENT_REFUSED. RECIDIVISM para el recargo extra" }
+        amount: { type: string, example: "3.00" }
+        startedAt: { type: string, format: date-time, description: Cuando empezo el plazo de 2 semanas }
+        dueAt: { type: string, format: date-time, description: Ultimo momento para pagar antes del bloqueo }
+        disputeStatus: { type: string, enum: [OPEN, IN_FAVOR, AGAINST], description: Estado de la disputa del cliente sobre esta linea. Ausente si no hay }
+        disputableUntil: { type: string, format: date-time, description: "Ultimo momento para disputar esta linea. Ausente si ya no se puede (o nunca: solo los recargos SURCHARGE sin disputa, en las 2 horas siguientes a que pasaron a deberse)" }
+    MyBalance:
+      type: object
+      required: [pendingSurcharge, accountStatus, blocked, simulated, lines]
+      properties:
+        pendingSurcharge: { type: string, example: "7.50", description: Total que debe }
+        accountStatus: { $ref: "#/components/schemas/CustomerStatus" }
+        blocked: { type: boolean, description: true mientras la cuenta esta BLOQUEADO_POR_SALDO }
+        simulated: { type: boolean, description: Siempre true. Los pagos son simulados }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/BalanceLine" }
+    BalancePayment:
+      type: object
+      required: [status, simulated, amount, reference, unblocked, createdAt]
+      properties:
+        status: { type: string, enum: [SIMULATED_APPROVED, SIMULATED_DECLINED] }
+        simulated: { type: boolean, description: Siempre true. El cobro nunca es real en el MVP }
+        amount: { type: string, example: "7.50", description: Saldo que se cobro }
+        reference: { type: string, description: Referencia interna del intento de cobro }
+        unblocked: { type: boolean, description: true si este pago devolvio la cuenta de BLOQUEADO_POR_SALDO a ACTIVO }
+        createdAt: { type: string, format: date-time }
+    Surcharge:
+      type: object
+      required: [id, customerId, orderId, reason, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        customerId: { type: string, format: uuid }
+        orderId: { type: string, format: uuid, description: Pedido que no se entrego. Hay un recargo por pedido. }
+        reason: { type: string, description: "Motivo cerrado de la no entrega, por ejemplo WRONG_ADDRESS" }
+        status: { type: string, enum: [PENDING, PENDING_VERIFICATION, APPLIED, PAID, WAIVED] }
+        amount: { type: string, description: Decimal con dos digitos. Ausente hasta que exista el siguiente pedido sobre el que se calcula el 15 %. }
+        createdAt: { type: string, format: date-time }
+        resolvedBy: { type: string, format: uuid, description: Operador que decidio la verificacion }
+        resolutionReason: { type: string }
+        resolvedAt: { type: string, format: date-time }
+    SurchargeVerificationRequest:
+      type: object
+      required: [decision, reason]
+      properties:
+        decision: { type: string, enum: [CONFIRM, WAIVE] }
+        reason: { type: string, minLength: 5, maxLength: 300, description: "Motivo de la decision, se guarda como auditoria" }
+    Order:
+      type: object
+      required: [id, address, latitude, longitude, deliveryDate, windowStart, windowEnd, status, reviewReasons, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        address: { type: string, minLength: 5, maxLength: 300 }
+        latitude: { type: number, minimum: -90, maximum: 90, description: Latitud WGS 84 del punto de entrega }
+        longitude: { type: number, minimum: -180, maximum: 180, description: Longitud WGS 84 del punto de entrega }
+        deliveryDate: { type: string, format: date, description: Fecha civil de entrega YYYY-MM-DD en la zona horaria de operación; independiente de createdAt }
+        windowStart: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$", description: Hora de inicio HH:mm }
+        windowEnd: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$", description: Hora de fin HH:mm }
+        status: { $ref: "#/components/schemas/OrderStatus" }
+        reviewReasons:
+          type: array
+          description: Motivos por los que el pedido quedó en revisión. Vacío si no aplica.
+          items: { $ref: "#/components/schemas/ReviewReason" }
+        queuePosition: { type: integer, minimum: 0, description: Lugar en la cola de espera de la zona (1 es el siguiente). 0 cuando el pedido no espera. Solo lo calculan los endpoints de pedidos del cliente }
+        createdAt: { type: string, format: date-time, description: Instante de registro asignado por el servidor en RFC 3339 UTC }
+        addressReference: { type: string, minLength: 3, maxLength: 200, description: Referencia para ubicar el punto de entrega. Omitida en pedidos anteriores a este dato }
+        postalCode: { type: string, minLength: 4, maxLength: 10, description: Código postal si el cliente lo indicó }
+        contactPhone: { type: string, description: "Teléfono de contacto de la entrega, normalizado. Omitido en pedidos anteriores a este dato" }
+    CreateOrderRequest:
+      type: object
+      required: [address, deliveryDate, windowStart, windowEnd, addressReference, contactPhone, items]
+      properties:
+        address: { type: string, minLength: 5, maxLength: 300, description: "Dirección escrita por el cliente. El backend la localiza y valida la zona" }
+        latitude: { type: number, minimum: -90, maximum: 90, description: "Opcional. Punto WGS 84 elegido en el mapa; si falta, el backend geocodifica la dirección" }
+        longitude: { type: number, minimum: -180, maximum: 180, description: "Opcional. Punto WGS 84 elegido en el mapa; debe enviarse junto con latitude" }
+        deliveryDate: { type: string, format: date }
+        windowStart: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$" }
+        windowEnd: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$", description: Debe ser posterior a windowStart }
+        addressReference: { type: string, minLength: 3, maxLength: 200, description: Referencia para ubicar el punto de entrega (se recorta antes de validar) }
+        postalCode: { type: string, minLength: 4, maxLength: 10, pattern: "^[A-Za-z0-9-]+$", description: "Opcional. Letras, dígitos o guion" }
+        contactPhone: { type: string, example: "0991234567", description: "Teléfono de contacto de la entrega. Mismas reglas que phone en el registro: 7 a 15 dígitos con + inicial opcional tras quitar espacios, guiones, puntos y paréntesis" }
+        items:
+          type: array
+          minItems: 1
+          description: "Productos del pedido (ADR 0009). Al menos uno, sin repetir producto. El precio lo fija el servidor."
+          items: { $ref: "#/components/schemas/OrderItemRequest" }
+    OrderCorrection:
+      type: object
+      description: Campos que el operador puede corregir. Los omitidos conservan su valor.
+      properties:
+        address: { type: string, minLength: 5, maxLength: 300 }
+        deliveryDate: { type: string, format: date }
+        windowStart: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$" }
+        windowEnd: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$" }
+    Notification:
+      type: object
+      required: [id, orderId, kind, detail, createdAt, read]
+      properties:
+        id: { type: string, format: uuid }
+        orderId: { type: string, description: "Pedido al que se refiere el aviso. Vacío en ACCOUNT_BLOCKED_BY_BALANCE: ese aviso es de la cuenta, no de un pedido" }
+        kind: { type: string, enum: [ORDER_IN_REVIEW, ORDER_CONFIRMED, ORDER_CORRECTED, ORDER_REJECTED, SURCHARGE_APPLIED, ACCOUNT_BLOCKED_BY_BALANCE] }
+        detail: { type: string, maxLength: 300, description: "Motivos del aviso (ORDER_IN_REVIEW), motivo de auditoría del operador (ORDER_CONFIRMED, ORDER_CORRECTED y ORDER_REJECTED), MOTIVO,MONTO,FECHA_LIMITE en SURCHARGE_APPLIED (código cerrado, decimal con dos dígitos y fecha RFC 3339) o vacío en ACCOUNT_BLOCKED_BY_BALANCE" }
+        createdAt: { type: string, format: date-time }
+        read: { type: boolean }
+    OrderReviewRequest:
+      type: object
+      required: [action, reason]
+      properties:
+        action: { $ref: "#/components/schemas/OrderReviewAction" }
+        reason: { type: string, minLength: 5, maxLength: 300, description: Motivo registrado en la auditoría }
+        correction: { $ref: "#/components/schemas/OrderCorrection" }
+    Coordinate:
+      type: object
+      required: [latitude, longitude]
+      properties:
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+    CoverageZone:
+      type: object
+      description: Contorno de una zona activa. No lleva estado, versión ni configuración operativa.
+      required: [id, code, name, ring, holes]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        ring:
+          type: array
+          minItems: 5
+          items: { $ref: "#/components/schemas/Coordinate" }
+          description: Anillo cerrado; el primer punto coincide con el último.
+        holes:
+          type: array
+          description: Huecos de la zona (dona), cada uno un anillo cerrado. Vacío si no hay huecos.
+          items:
+            type: array
+            minItems: 5
+            items: { $ref: "#/components/schemas/Coordinate" }
+    Zone:
+      type: object
+      required: [id, code, name, ring, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        ring:
+          type: array
+          minItems: 5
+          items: { $ref: "#/components/schemas/Coordinate" }
+          description: Anillo cerrado; el primer punto coincide con el último. Son 4 vértices como mínimo, formando un polígono convexo y simple (trapecio, cuadrado o similar).
+        holes:
+          type: array
+          description: Huecos de la zona (dona). Cada hueco es un anillo cerrado estrictamente dentro del exterior y sin tocarlo ni superponerse con otros. Vacío si no hay huecos.
+          items:
+            type: array
+            minItems: 5
+            items: { $ref: "#/components/schemas/Coordinate" }
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
+          description: Una zona inactiva no clasifica puntos ni valida pedidos, pero se conserva para el historial.
+        statusReason:
+          type: string
+          description: Motivo del último cambio de estado. Vacío si nunca se ha desactivado.
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, minimum: 1, description: "Sube en cada cambio. Envíala como expectedVersion al editar la zona." }
+        createdBy: { type: string, description: "Usuario que creó la zona, tomado del token." }
+        updatedBy: { type: string, description: "Usuario del último cambio, tomado del token." }
+        settings: { $ref: "#/components/schemas/ZoneSettings" }
+    ZoneSettings:
+      type: object
+      description: Configuración operativa de la zona. Solo ADMIN la define.
+      required: [depotName, depotLatitude, depotLongitude, maxOrdersPerRoute, routeCapacityKg, serviceDays, deliveryWindowFrom, deliveryWindowTo, cutoffTime, dispatchTime, priority, dailyOrderLimit]
+      properties:
+        description: { type: string, maxLength: 500 }
+        depotName: { type: string, maxLength: 120, description: Bodega o almacén de salida de los repartidores. Vacío en zonas anteriores a la configuración. }
+        depotLatitude: { type: number, minimum: -5, maximum: 2, description: "Latitud de la bodega. Dentro de Ecuador (-5 a 2)." }
+        depotLongitude: { type: number, minimum: -92, maximum: -75, description: "Longitud de la bodega. Dentro de Ecuador (-92 a -75)." }
+        maxOrdersPerRoute: { type: integer, minimum: 1, maximum: 50, description: "Máximo de pedidos por ruta (1 a 50)." }
+        routeCapacityKg: { type: number, minimum: 1, maximum: 1000, description: "Capacidad de carga por ruta en kilogramos (1 a 1000)." }
+        timezone: { type: string, example: "America/Guayaquil", description: "Zona horaria IANA. Por defecto America/Guayaquil." }
+        serviceDays:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, enum: [MON, TUE, WED, THU, FRI, SAT, SUN] }
+        deliveryWindowFrom: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$", description: "Inicio de la ventana de entrega, HH:MM local." }
+        deliveryWindowTo: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$", description: "Fin de la ventana de entrega, HH:MM local. Debe ser posterior al inicio." }
+        cutoffTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$", description: "Hora de corte para pedidos de la fecha, HH:MM local." }
+        dispatchTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$", description: "Hora en que salen las rutas, HH:MM local." }
+        priority: { type: string, enum: [NORMAL, HIGH, LOW] }
+        dailyOrderLimit: { type: integer, minimum: 1, maximum: 10000, description: "Límite de pedidos por fecha de entrega (1 a 10000)." }
+    CreateZoneRequest:
+      type: object
+      required: [name, ring]
+      properties:
+        code: { type: string, maxLength: 32, description: "Opcional. Si se omite, el servidor genera el código a partir del nombre (NORTE-001)." }
+        name: { type: string, maxLength: 120 }
+        ring:
+          type: array
+          minItems: 5
+          items: { $ref: "#/components/schemas/Coordinate" }
+          description: Anillo cerrado con al menos 4 vértices. Debe ser un polígono convexo y simple; el servicio responde INVALID_ARGUMENT si no lo es.
+        holes:
+          type: array
+          description: Huecos opcionales (dona). Cada uno debe quedar estrictamente dentro del anillo exterior y no superponerse con otro hueco; si no, INVALID_ARGUMENT.
+          items:
+            type: array
+            minItems: 5
+            items: { $ref: "#/components/schemas/Coordinate" }
+        settings: { $ref: "#/components/schemas/ZoneSettings" }
+    UpdateZoneRequest:
+      allOf:
+        - $ref: "#/components/schemas/CreateZoneRequest"
+        - type: object
+          properties:
+            expectedVersion: { type: integer, minimum: 0, description: "Versión que viste por última vez. 0 o ausente = sin control. Si no coincide, responde CONFLICT (409)." }
+    Product:
+      type: object
+      required: [id, name, unitPrice, active, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, maxLength: 500 }
+        unitPrice: { type: string, pattern: "^[0-9]+(\\.[0-9]{1,2})?$", description: "Precio unitario en USD con como máximo dos decimales, como texto para no perder centavos" }
+        active: { type: boolean, description: "Falso: no se ofrece al cliente; los pedidos anteriores no cambian" }
+        stockQuantity: { type: integer, format: int64, minimum: 0, description: "Ausente cuando el producto no controla stock" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CreateProductRequest:
+      type: object
+      required: [name, unitPrice]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, maxLength: 500 }
+        unitPrice: { type: string, pattern: "^[0-9]+(\\.[0-9]{1,2})?$" }
+        initialStock: { type: integer, format: int64, minimum: 0, description: "Opcional. Ausente: el producto no controla stock" }
+    SetProductActiveRequest:
+      type: object
+      required: [active]
+      properties:
+        active: { type: boolean }
+    AdjustStockRequest:
+      type: object
+      required: [type, delta]
+      properties:
+        type: { type: string, enum: [RESTOCK, ADJUSTMENT] }
+        delta: { type: integer, format: int64, description: "RESTOCK exige positivo. ADJUSTMENT admite positivo o negativo, distinto de cero" }
+        reason: { type: string, maxLength: 300, description: "Obligatorio para ADJUSTMENT" }
+    StockMovement:
+      type: object
+      required: [id, productId, type, delta, resultingStock, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        type: { type: string, enum: [RESTOCK, ADJUSTMENT, SALE, RETURN] }
+        delta: { type: integer, format: int64 }
+        resultingStock: { type: integer, format: int64, minimum: 0 }
+        reason: { type: string }
+        orderId: { type: string, format: uuid, description: "Solo en movimientos SALE y RETURN" }
+        createdAt: { type: string, format: date-time }
+    OrderItemRequest:
+      type: object
+      required: [productId, quantity]
+      properties:
+        productId: { type: string, format: uuid }
+        quantity: { type: integer, format: int64, minimum: 1, maximum: 50 }
+    OrderLine:
+      type: object
+      required: [productId, name, unitPrice, quantity]
+      properties:
+        productId: { type: string, format: uuid }
+        name: { type: string }
+        unitPrice: { type: string, description: "Precio del momento del pedido, con dos decimales" }
+        quantity: { type: integer, format: int64, minimum: 1, maximum: 50 }
+    CreatedOrder:
+      allOf:
+        - $ref: "#/components/schemas/Order"
+        - type: object
+          required: [items, total, pendingSurcharge]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/OrderLine" }
+            total: { type: string, description: "Suma de los subtotales, con dos decimales" }
+            pendingSurcharge: { type: string, example: "7.50", description: "Lo que el cliente debe al confirmar el pedido, como linea aparte; no esta incluido en total (ADR 0006, seccion 4). 0.00 si no debe nada" }
+    DriverLocationRequest:
+      type: object
+      required: [latitude, longitude, recordedAt]
+      properties:
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        recordedAt:
+          type: string
+          format: date-time
+          description: Momento del fix en el dispositivo, RFC 3339 en UTC. Más de 30 s en el futuro responde 400
+    GeneratePlanRequest:
+      type: object
+      required: [deliveryDate]
+      properties:
+        deliveryDate: { type: string, format: date, example: "2026-10-16", description: "Delivery date, YYYY-MM-DD" }
+    PlannedRoute:
+      type: object
+      required: [routeId, driverId, orderCount]
+      properties:
+        routeId: { type: string, description: Route identifier shared by Order Service and Driver Service }
+        driverId: { type: string, format: uuid, description: Driver reserved for the route }
+        orderCount: { type: integer, minimum: 0, description: Number of stops (orders) in the route }
+        driverName: { type: string, description: Full name of the reserved driver }
+        stops: { type: array, description: Stops ordered by sequence starting at 1, items: { $ref: "#/components/schemas/PlannedStop" } }
+    PlannedStop:
+      type: object
+      required: [orderId, address, sequence]
+      properties:
+        orderId: { type: string, description: Order served at this stop }
+        address: { type: string, description: Delivery address as stored by Order Service }
+        sequence: { type: integer, minimum: 1, description: Visit order within the route }
+    GeneratePlanResponse:
+      type: object
+      required: [planId, routes, unassignedOrderIds]
+      properties:
+        planId: { type: string, description: "Phase 1: derived as plan-<deliveryDate>; not persisted" }
+        routes: { type: array, items: { $ref: "#/components/schemas/PlannedRoute" } }
+        unassignedOrderIds: { type: array, items: { type: string }, description: "Phase 1: always empty; the planner assigns every order or fails" }
+    CreateDriverRequest:
+      type: object
+      required: [email, password, firstName, lastName, birthDate, phone, vehicleType, identifier, plate, city]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8, maxLength: 72 }
+        firstName: { type: string, maxLength: 50 }
+        lastName: { type: string, maxLength: 50 }
+        birthDate: { type: string, format: date, description: "YYYY-MM-DD. M├¡nimo 18 a├▒os cumplidos" }
+        phone: { type: string, description: "N├║mero de contacto, 7 a 15 d├¡gitos y un + opcional al inicio" }
+        vehicleType: { $ref: "#/components/schemas/VehicleType" }
+        identifier: { type: string, description: "Documento de identidad, 5 a 20 letras o d├¡gitos, ├║nico" }
+        plate: { type: string, description: "Placa del veh├¡culo, 5 a 8 letras o d├¡gitos (se aceptan guiones), ├║nica" }
+        city: { type: string, maxLength: 80 }
+    VehicleType:
+      type: string
+      enum: [MOTORIZADO, AUTOMOVIL, SUV]
+    DriverProfile:
+      type: object
+      required: [id, userId, firstName, lastName, birthDate, phone, vehicleType, identifier, plate, city, active, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        firstName: { type: string }
+        lastName: { type: string }
+        birthDate: { type: string, format: date }
+        phone: { type: string }
+        vehicleType: { $ref: "#/components/schemas/VehicleType" }
+        identifier: { type: string }
+        plate: { type: string }
+        city: { type: string }
+        active: { type: boolean }
+        status: { type: string, enum: [AVAILABLE, ASSIGNED, ON_ROUTE, OFFLINE] }
+        createdAt: { type: string, format: date-time }
+    DriverListItem:
+      type: object
+      required: [id, userId, fullName, firstName, lastName, phone, city, vehicleType, plate, active, status]
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        fullName: { type: string }
+        firstName: { type: string }
+        lastName: { type: string }
+        phone: { type: string }
+        city: { type: string }
+        vehicleType: { $ref: "#/components/schemas/VehicleType" }
+        plate: { type: string }
+        active: { type: boolean }
+        status: { type: string, enum: [AVAILABLE, ASSIGNED, ON_ROUTE, OFFLINE] }
+    CreateDriverResponse:
+      type: object
+      required: [user, driver]
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        driver: { $ref: "#/components/schemas/DriverProfile" }
+    TrackingSnapshot:
+      type: object
+      description: Customer view of one order. Field names are snake_case, as the Gateway emits them. Never includes driver identity, route, other orders or coordinates.
+      required: [order_id, status, delivery_address, delivery_window, eta, eta_unavailable_reason, stops_before, updated_at]
+      properties:
+        order_id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/OrderStatus" }
+        delivery_address: { type: string }
+        delivery_window:
+          type: object
+          required: [start, end]
+          properties:
+            start: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$", description: "Start of the delivery window, HH:mm" }
+            end: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$", description: "End of the delivery window, HH:mm" }
+        eta:
+          type: object
+          nullable: true
+          description: ETA from the driver's latest fresh position. Null when there is no ETA; see eta_unavailable_reason.
+          required: [distance_meters, duration_seconds]
+          properties:
+            distance_meters: { type: number }
+            duration_seconds: { type: number }
+        eta_unavailable_reason:
+          type: string
+          nullable: true
+          enum: [null, no_route, no_position, stale_position, unavailable]
+          description: Why eta is null. Null when eta is present.
+        stops_before:
+          type: integer
+          nullable: true
+          description: Open stops ahead of this order on its route. Null when the order has no route or the count is unavailable.
+        road:
+          type: array
+          nullable: true
+          description: Road path from the driver's latest fresh position to this order's delivery point, as [lat, lon] pairs. Never goes through other orders. Null when there is no fresh position or route planning is unavailable.
+          items:
+            type: array
+            minItems: 2
+            maxItems: 2
+            items: { type: number }
+        updated_at: { type: string, format: date-time, description: Server time when the snapshot was built }
+    StopStatusResponse:
+      type: object
+      required: [stopId, status]
+      properties:
+        stopId: { type: string, description: Same value as the stopId path parameter }
+        status: { $ref: "#/components/schemas/OrderStatus" }
     Error:
       type: object
       required: [error]
@@ -184,7 +2158,7 @@ components:
               description: |
                 INVALID_ARGUMENT, UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, CONFLICT,
                 FAILED_PRECONDITION, RATE_LIMITED, PAYLOAD_TOO_LARGE,
-                UNSUPPORTED_MEDIA_TYPE, UPSTREAM_TIMEOUT, UPSTREAM_UNAVAILABLE, INTERNAL
+                UNSUPPORTED_MEDIA_TYPE, UPSTREAM_TIMEOUT, UPSTREAM_UNAVAILABLE, NOT_IMPLEMENTED, INTERNAL
             message: { type: string }
             requestId: { type: string, description: Igual a la cabecera X-Request-Id }
   responses:
@@ -203,6 +2177,11 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    NotImplemented:
+      description: Ruta reservada, sin backend todavía. Código NOT_IMPLEMENTED
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
     NotFound:
       description: No existe
       content:
@@ -210,6 +2189,11 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     Conflict:
       description: Conflicto con el estado actual
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    UnprocessableEntity:
+      description: La operación no se puede hacer en el estado actual de la zona
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

@@ -13,4 +13,10 @@ var (
 	ErrUserInactive       = errors.New("user is inactive")
 	ErrInvalidToken       = errors.New("invalid token")
 	ErrForbidden          = errors.New("forbidden")
+
+	ErrNothingToUpdate           = errors.New("update must change at least one field")
+	ErrCustomerRoleLocked        = errors.New("customer role cannot be changed")
+	ErrCustomerRoleNotAssignable = errors.New("customer role cannot be assigned")
+	ErrLastActiveAdmin           = errors.New("at least one active admin must remain")
+	ErrSelfDeactivation          = errors.New("cannot deactivate your own user")
 )

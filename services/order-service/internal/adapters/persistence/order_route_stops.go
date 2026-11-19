@@ -1,0 +1,55 @@
+package persistence
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+
+	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/application/ports"
+	"github.com/ErickGuerron/Backend-Pikka/services/order-service/internal/domain"
+)
+
+var (
+	_ ports.RouteStopRepository       = (*OrderRepository)(nil)
+	_ ports.DriverRouteStopRepository = (*OrderRepository)(nil)
+)
+
+// ListDriverRouteStops devuelve los pedidos de la ruta con secuencia, ordenados por ella. Excluye CANCELLED:
+// un pedido cancelado conserva su stop_sequence y no es una parada que el conductor deba atender.
+func (r *OrderRepository) ListDriverRouteStops(ctx context.Context, routeID string) ([]domain.Order, error) {
+	return r.queryOrders(ctx,
+		`SELECT `+orderColumns+` FROM orders
+		  WHERE deleted_at IS NULL AND route_id = $1 AND stop_sequence IS NOT NULL AND status <> 'CANCELLED'
+		  ORDER BY stop_sequence ASC`,
+		routeID)
+}
+
+// CountStopsBefore cuenta en una sola consulta las paradas abiertas de la misma ruta con secuencia menor.
+// La fila del pedido propio filtra por cliente en el FROM: un pedido ajeno no tiene fila y responde
+// domain.ErrOrderNotFound. Si el pedido no tiene ruta o secuencia, la comparación es NULL y el conteo es 0.
+func (r *OrderRepository) CountStopsBefore(ctx context.Context, orderID string, customerID uuid.UUID) (int, error) {
+	id, err := uuid.Parse(orderID)
+	if err != nil {
+		return 0, domain.ErrOrderNotFound
+	}
+	var count int64
+	err = r.pool.QueryRow(ctx,
+		`SELECT (SELECT count(*) FROM orders o
+		          WHERE o.deleted_at IS NULL AND o.route_id = me.route_id
+		            AND o.stop_sequence < me.stop_sequence
+		            AND o.status NOT IN ('DELIVERED', 'NOT_DELIVERED', 'CANCELLED'))
+		   FROM orders me
+		  WHERE me.deleted_at IS NULL AND me.id = $1 AND me.customer_id = $2`,
+		id, customerID,
+	).Scan(&count)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, domain.ErrOrderNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("count stops before: %w", err)
+	}
+	return int(count), nil
+}

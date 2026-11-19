@@ -3,31 +3,36 @@ package http
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"time"
-
-	"github.com/labstack/echo/v4"
 )
 
 // ReadinessCheck verifica una dependencia (por ejemplo, PostgreSQL).
 type ReadinessCheck func(ctx context.Context) error
 
-// NewHealthServer crea un Echo con /health (proceso vivo) y /ready (dependencias listas).
-func NewHealthServer(ready ReadinessCheck) *echo.Echo {
-	e := echo.New()
-	e.HideBanner = true
-	e.HidePort = true
-
-	e.GET("/health", func(c echo.Context) error {
-		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+// NewHealthServer devuelve un servidor HTTP con /health (proceso vivo) y /ready (dependencias listas).
+// La direccion de escucha la fija quien lo arranca.
+func NewHealthServer(ready ReadinessCheck) *http.Server {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, "ok")
 	})
-	e.GET("/ready", func(c echo.Context) error {
-		ctx, cancel := context.WithTimeout(c.Request().Context(), 2*time.Second)
+	mux.HandleFunc("GET /ready", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
 		if err := ready(ctx); err != nil {
-			return c.JSON(http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+			writeJSON(w, http.StatusServiceUnavailable, "unavailable")
+			return
 		}
-		return c.JSON(http.StatusOK, map[string]string{"status": "ready"})
+		writeJSON(w, http.StatusOK, "ready")
 	})
-	return e
+	return &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+}
+
+// writeJSON responde {"status": s} con el mismo formato que el servicio usaba antes.
+func writeJSON(w http.ResponseWriter, code int, status string) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": status})
 }

@@ -56,7 +56,7 @@ func TestNewUserInputValidate(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrInvalidFullName)
 
 	badRole := valid
-	badRole.Role = "CUSTOMER"
+	badRole.Role = "ROOT"
 	_, err = badRole.Validate()
 	assert.ErrorIs(t, err, domain.ErrInvalidRole)
 }

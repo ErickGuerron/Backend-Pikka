@@ -29,6 +29,10 @@ make up                   # postgres, redis, auth-service, api-gateway
 curl localhost:8080/ready
 ```
 
+Documentación interactiva de la API (Scalar): `http://localhost:8080/docs`.
+El contrato está en `http://localhost:8080/openapi.yaml`. Se desactiva con
+`ENABLE_API_DOCS=false`.
+
 Iniciar sesión con el administrador inicial (definido en `.env`):
 
 ```bash
