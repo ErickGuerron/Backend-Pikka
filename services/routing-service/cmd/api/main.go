@@ -6,12 +6,13 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/ErickGuerron/Backend-Pikka/libs/grpcx"
 	"log/slog"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/ErickGuerron/Backend-Pikka/libs/grpcx"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"

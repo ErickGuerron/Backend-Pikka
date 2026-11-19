@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/ErickGuerron/Backend-Pikka/libs/grpcx"
 	"log/slog"
 	"net"
 	"net/http"
@@ -13,6 +12,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/ErickGuerron/Backend-Pikka/libs/grpcx"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
