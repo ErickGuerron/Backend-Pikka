@@ -24,11 +24,40 @@ service RoutingService {
   // En un error el mensaje indica cuántas rutas quedaron asignadas antes del fallo. Las rutas
   // ya asignadas no se revierten: el plan se genera en partes y no es atómico en conjunto.
   rpc GeneratePlan(GeneratePlanRequest) returns (GeneratePlanResponse);
+
+  // AddOrderToRoute suma un pedido PENDING al final de una ruta que sigue en ejecución (con alguna
+  // parada abierta). No cambia el repartidor ni las demás paradas: la nueva parada toma la
+  // secuencia siguiente.
+  //
+  //   - UNAUTHENTICATED / PERMISSION_DENIED: igual que GeneratePlan.
+  //   - INVALID_ARGUMENT: route_id u order_id en blanco.
+  //   - NOT_FOUND: la ruta no tiene pedidos en la fecha de entrega del pedido (no existe, o es de
+  //     otra fecha).
+  //   - FAILED_PRECONDITION: el pedido no existe o no está PENDING, es de otra zona que la ruta,
+  //     la ruta ya terminó todas sus paradas, o ya está en su capacidad máxima.
+  rpc AddOrderToRoute(AddOrderToRouteRequest) returns (AddOrderToRouteResponse);
 }
 
 message GeneratePlanRequest {
   // Fecha de entrega, YYYY-MM-DD. Obligatoria.
   string delivery_date = 1;
+  // Si es true solo propone el plan: no reserva repartidores ni asigna pedidos, no cambia nada.
+  // Una ruta sin repartidor disponible se devuelve con driver_id vacío. Confirmar es llamar de
+  // nuevo con dry_run en false, que vuelve a planificar con el estado de ese momento.
+  bool dry_run = 2;
+}
+
+message AddOrderToRouteRequest {
+  // Ruta en ejecución. Obligatoria.
+  string route_id = 1;
+  // Pedido PENDING que se suma. Obligatorio.
+  string order_id = 2;
+}
+
+message AddOrderToRouteResponse {
+  string route_id = 1;
+  // La parada creada, con su secuencia dentro de la ruta.
+  PlannedStop stop = 2;
 }
 
 message GeneratePlanResponse {

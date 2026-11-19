@@ -136,9 +136,10 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 
 	// Route plan generation: ADMIN and OPERATOR (ADR 0008). The Routing Service validates role and date.
 	if opts.Routing != nil {
-		rp := &routePlanHandlers{routing: opts.Routing}
+		rp := &routePlanHandlers{routing: opts.Routing, drivers: opts.Drivers}
 		routeStaff := authed.Group("", StaffOnly())
 		routeStaff.POST("/routes/plan", rp.generate)
+		routeStaff.POST("/routes/:routeId/orders", rp.addOrder)
 	}
 
 	// Pedidos del cliente (ADR 0007). La autorización por rol la aplica Order Service.
@@ -242,6 +243,12 @@ func NewRouter(log *slog.Logger, opts Options, verifier TokenVerifier, auth Auth
 		customerOnly := authed.Group("", CustomerOnly())
 		customerOnly.GET("/orders/:id/tracking", ct.snapshot)
 		api.GET("/orders/:id/tracking/ws", ct.ws)
+	}
+
+	// Operator tracking screen: routes in progress with their stops. Needs orders and drivers only.
+	if opts.Orders != nil && opts.Drivers != nil {
+		tr := &trackingRoutesHandlers{orders: opts.Orders, drivers: opts.Drivers, tracking: opts.Tracking}
+		authed.GET("/tracking/routes/active", tr.active, StaffOnly())
 	}
 
 	z := &zonesHandlers{zones: zones}

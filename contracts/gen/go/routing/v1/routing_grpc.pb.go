@@ -19,7 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	RoutingService_GeneratePlan_FullMethodName = "/routing.v1.RoutingService/GeneratePlan"
+	RoutingService_GeneratePlan_FullMethodName    = "/routing.v1.RoutingService/GeneratePlan"
+	RoutingService_AddOrderToRoute_FullMethodName = "/routing.v1.RoutingService/AddOrderToRoute"
 )
 
 // RoutingServiceClient is the client API for RoutingService service.
@@ -46,6 +47,17 @@ type RoutingServiceClient interface {
 	// En un error el mensaje indica cuántas rutas quedaron asignadas antes del fallo. Las rutas
 	// ya asignadas no se revierten: el plan se genera en partes y no es atómico en conjunto.
 	GeneratePlan(ctx context.Context, in *GeneratePlanRequest, opts ...grpc.CallOption) (*GeneratePlanResponse, error)
+	// AddOrderToRoute suma un pedido PENDING al final de una ruta que sigue en ejecución (con alguna
+	// parada abierta). No cambia el repartidor ni las demás paradas: la nueva parada toma la
+	// secuencia siguiente.
+	//
+	//   - UNAUTHENTICATED / PERMISSION_DENIED: igual que GeneratePlan.
+	//   - INVALID_ARGUMENT: route_id u order_id en blanco.
+	//   - NOT_FOUND: la ruta no tiene pedidos en la fecha de entrega del pedido (no existe, o es de
+	//     otra fecha).
+	//   - FAILED_PRECONDITION: el pedido no existe o no está PENDING, es de otra zona que la ruta,
+	//     la ruta ya terminó todas sus paradas, o ya está en su capacidad máxima.
+	AddOrderToRoute(ctx context.Context, in *AddOrderToRouteRequest, opts ...grpc.CallOption) (*AddOrderToRouteResponse, error)
 }
 
 type routingServiceClient struct {
@@ -60,6 +72,16 @@ func (c *routingServiceClient) GeneratePlan(ctx context.Context, in *GeneratePla
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GeneratePlanResponse)
 	err := c.cc.Invoke(ctx, RoutingService_GeneratePlan_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *routingServiceClient) AddOrderToRoute(ctx context.Context, in *AddOrderToRouteRequest, opts ...grpc.CallOption) (*AddOrderToRouteResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AddOrderToRouteResponse)
+	err := c.cc.Invoke(ctx, RoutingService_AddOrderToRoute_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -90,6 +112,17 @@ type RoutingServiceServer interface {
 	// En un error el mensaje indica cuántas rutas quedaron asignadas antes del fallo. Las rutas
 	// ya asignadas no se revierten: el plan se genera en partes y no es atómico en conjunto.
 	GeneratePlan(context.Context, *GeneratePlanRequest) (*GeneratePlanResponse, error)
+	// AddOrderToRoute suma un pedido PENDING al final de una ruta que sigue en ejecución (con alguna
+	// parada abierta). No cambia el repartidor ni las demás paradas: la nueva parada toma la
+	// secuencia siguiente.
+	//
+	//   - UNAUTHENTICATED / PERMISSION_DENIED: igual que GeneratePlan.
+	//   - INVALID_ARGUMENT: route_id u order_id en blanco.
+	//   - NOT_FOUND: la ruta no tiene pedidos en la fecha de entrega del pedido (no existe, o es de
+	//     otra fecha).
+	//   - FAILED_PRECONDITION: el pedido no existe o no está PENDING, es de otra zona que la ruta,
+	//     la ruta ya terminó todas sus paradas, o ya está en su capacidad máxima.
+	AddOrderToRoute(context.Context, *AddOrderToRouteRequest) (*AddOrderToRouteResponse, error)
 	mustEmbedUnimplementedRoutingServiceServer()
 }
 
@@ -102,6 +135,9 @@ type UnimplementedRoutingServiceServer struct{}
 
 func (UnimplementedRoutingServiceServer) GeneratePlan(context.Context, *GeneratePlanRequest) (*GeneratePlanResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GeneratePlan not implemented")
+}
+func (UnimplementedRoutingServiceServer) AddOrderToRoute(context.Context, *AddOrderToRouteRequest) (*AddOrderToRouteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddOrderToRoute not implemented")
 }
 func (UnimplementedRoutingServiceServer) mustEmbedUnimplementedRoutingServiceServer() {}
 func (UnimplementedRoutingServiceServer) testEmbeddedByValue()                        {}
@@ -142,6 +178,24 @@ func _RoutingService_GeneratePlan_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _RoutingService_AddOrderToRoute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddOrderToRouteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RoutingServiceServer).AddOrderToRoute(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RoutingService_AddOrderToRoute_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RoutingServiceServer).AddOrderToRoute(ctx, req.(*AddOrderToRouteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // RoutingService_ServiceDesc is the grpc.ServiceDesc for RoutingService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -152,6 +206,10 @@ var RoutingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GeneratePlan",
 			Handler:    _RoutingService_GeneratePlan_Handler,
+		},
+		{
+			MethodName: "AddOrderToRoute",
+			Handler:    _RoutingService_AddOrderToRoute_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

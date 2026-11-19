@@ -29,6 +29,25 @@ type fakeOrders struct {
 	failAt    int // index of the AssignToRoute call that fails; -1 for none
 	assignErr error
 	trace     *trace
+	// For AddToRoute: the PENDING orders FindPending can see and the orders RouteOrders returns.
+	findable   []domain.PendingOrder
+	onRoute    []domain.RouteOrder
+	lookupErr  error
+	routeAsked string
+}
+
+func (f *fakeOrders) FindPending(_ context.Context, orderID string) (domain.PendingOrder, bool, error) {
+	for _, o := range f.findable {
+		if o.OrderID == orderID {
+			return o, true, f.lookupErr
+		}
+	}
+	return domain.PendingOrder{}, false, f.lookupErr
+}
+
+func (f *fakeOrders) RouteOrders(_ context.Context, _, routeID string) ([]domain.RouteOrder, error) {
+	f.routeAsked = routeID
+	return f.onRoute, f.lookupErr
 }
 
 type assignCall struct {

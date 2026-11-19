@@ -24,6 +24,7 @@ type fakeRouting struct {
 	calls    int
 	lastMeta grpcclient.CallMeta
 	lastReq  *routingv1.GeneratePlanRequest
+	lastAdd  *routingv1.AddOrderToRouteRequest
 	resp     *routingv1.GeneratePlanResponse
 	err      error
 }
@@ -192,4 +193,14 @@ func TestRoutePlan_RouteAbsentWithoutRoutingClient(t *testing.T) {
 	rec := do(h, http.MethodPost, routePlanPath, `{"deliveryDate":"2026-10-16"}`, authHeaderFor(t, "ADMIN"))
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func (f *fakeRouting) AddOrderToRoute(_ context.Context, m grpcclient.CallMeta, req *routingv1.AddOrderToRouteRequest) (*routingv1.AddOrderToRouteResponse, error) {
+	f.calls++
+	f.lastMeta = m
+	f.lastAdd = req
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &routingv1.AddOrderToRouteResponse{RouteId: req.GetRouteId(), Stop: &routingv1.PlannedStop{OrderId: req.GetOrderId(), Address: "Calle Nueva 1", Sequence: 4}}, nil
 }
