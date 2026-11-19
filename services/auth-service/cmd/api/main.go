@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ErickGuerron/Backend-Pikka/libs/grpcx"
 	"log/slog"
 	"net"
 	"net/http"
@@ -78,7 +79,7 @@ func run(log *slog.Logger) error {
 	}
 
 	grpcServer := grpc.NewServer(
-		grpcadapter.UnaryInterceptors(log),
+		grpcx.UnaryInterceptors(log),
 		grpc.KeepaliveParams(keepalive.ServerParameters{MaxConnectionIdle: 5 * time.Minute}),
 	)
 	authv1.RegisterAuthServiceServer(grpcServer, grpcadapter.NewServer(grpcadapter.UseCases{

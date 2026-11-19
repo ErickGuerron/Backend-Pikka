@@ -5,10 +5,12 @@ WORKDIR /src
 ENV CGO_ENABLED=0 GOWORK=off
 
 COPY contracts/go.mod contracts/go.sum ./contracts/
+COPY libs/grpcx/go.mod libs/grpcx/go.sum ./libs/grpcx/
 COPY services/auth-service/go.mod services/auth-service/go.sum ./services/auth-service/
 RUN cd services/auth-service && go mod download
 
 COPY contracts/ ./contracts/
+COPY libs/grpcx/ ./libs/grpcx/
 COPY services/auth-service/ ./services/auth-service/
 RUN cd services/auth-service && go build -trimpath -ldflags="-s -w" -o /out/service ./cmd/api
 

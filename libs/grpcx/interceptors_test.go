@@ -1,4 +1,4 @@
-package grpc
+package grpcx
 
 import (
 	"bytes"
@@ -18,7 +18,7 @@ var planInfo = &grpc.UnaryServerInfo{FullMethod: "/routing.v1.RoutingService/Gen
 func TestLoggerRecordsTheCauseOfAFailedCall(t *testing.T) {
 	var buf bytes.Buffer
 	log := slog.New(slog.NewJSONHandler(&buf, nil))
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(metadataRequestID, "req-1"))
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(MetadataRequestID, "req-1"))
 	failing := func(context.Context, any) (any, error) {
 		return nil, status.Error(codes.Internal, "assign route 2026-11-19-z-1: stop sequences must be unique within a route")
 	}

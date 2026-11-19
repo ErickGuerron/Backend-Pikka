@@ -72,6 +72,13 @@ func (d *Drivers) StartRoute(ctx context.Context, m CallMeta, req *driversv1.Sta
 	return d.client.StartRoute(ctx, req)
 }
 
+// ReleaseDriver libera la reserva del repartidor para la ruta (lo deja AVAILABLE). Es idempotente.
+func (d *Drivers) ReleaseDriver(ctx context.Context, m CallMeta, req *driversv1.ReleaseDriverRequest) (*driversv1.ReleaseDriverResponse, error) {
+	ctx, cancel := d.outgoing(ctx, m)
+	defer cancel()
+	return d.client.ReleaseDriver(ctx, req)
+}
+
 // ListDrivers devuelve la flota para el personal.
 func (d *Drivers) ListDrivers(ctx context.Context, m CallMeta, req *driversv1.ListDriversRequest) (*driversv1.ListDriversResponse, error) {
 	ctx, cancel := d.outgoing(ctx, m)

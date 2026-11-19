@@ -1,6 +1,8 @@
 package http
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -8,6 +10,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/grpcclient"
 	"github.com/ErickGuerron/Backend-Pikka/services/api-gateway/internal/adapters/httpx"
 
 	driversv1 "github.com/ErickGuerron/Backend-Pikka/contracts/gen/go/drivers/v1"
@@ -124,6 +127,7 @@ func (h *driverStopHandlers) result(c *httpx.Context) error {
 	if err != nil {
 		return err
 	}
+	h.releaseDriverIfRouteDone(ctx, m, me.GetDriver().GetId(), routeID)
 	return c.JSON(http.StatusOK, stopStatusResponse{
 		StopID: stopID,
 		Status: strings.TrimPrefix(res.GetOrder().GetStatus().String(), "ORDER_STATUS_"),
@@ -144,6 +148,47 @@ func stopOutcomeFromRequest(s string) (ordersv1.OrderStatus, bool) {
 }
 
 // stopStatus busca la parada en la ruta del repartidor y devuelve su estado.
+// driverReleaser libera la reserva del repartidor (Driver Service ReleaseDriver). El cliente gRPC real lo
+// implementa; es opcional para no obligar a cada doble de prueba de DriverClient.
+type driverReleaser interface {
+	ReleaseDriver(ctx context.Context, m grpcclient.CallMeta, req *driversv1.ReleaseDriverRequest) (*driversv1.ReleaseDriverResponse, error)
+}
+
+// releaseDriverIfRouteDone deja al repartidor AVAILABLE cuando la ruta ya no tiene paradas abiertas.
+// Antes nadie lo hacía: al cerrar la última parada el repartidor quedaba ON_ROUTE para siempre y la
+// planificación nunca encontraba repartidores libres. Es de mejor esfuerzo: la entrega ya quedó
+// registrada, así que un fallo aquí se registra en el log y no cambia la respuesta.
+func (h *driverStopHandlers) releaseDriverIfRouteDone(ctx context.Context, m grpcclient.CallMeta, driverID, routeID string) {
+	releaser, ok := h.drivers.(driverReleaser)
+	if !ok || driverID == "" {
+		return
+	}
+	stops, err := h.orders.ListDriverRouteStops(ctx, m, &ordersv1.ListDriverRouteStopsRequest{RouteId: routeID})
+	if err != nil {
+		slog.Warn("release driver: list route stops failed", "request_id", m.RequestID, "route_id", routeID, "err", err)
+		return
+	}
+	if !routeFinished(stops.GetStops()) {
+		return
+	}
+	if _, err := releaser.ReleaseDriver(ctx, m, &driversv1.ReleaseDriverRequest{DriverId: driverID, RouteId: routeID}); err != nil {
+		slog.Warn("release driver: route finished but release failed", "request_id", m.RequestID, "route_id", routeID, "driver_id", driverID, "err", err)
+	}
+}
+
+// routeFinished es verdadero si todas las paradas tienen un estado final (entregado, no entregado o cancelado).
+func routeFinished(stops []*ordersv1.DriverRouteStop) bool {
+	for _, s := range stops {
+		switch s.GetStatus() {
+		case ordersv1.OrderStatus_ORDER_STATUS_DELIVERED, ordersv1.OrderStatus_ORDER_STATUS_NOT_DELIVERED,
+			ordersv1.OrderStatus_ORDER_STATUS_CANCELLED:
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func stopStatus(stops []*ordersv1.DriverRouteStop, stopID string) (ordersv1.OrderStatus, bool) {
 	for _, s := range stops {
 		if s.GetOrderId() == stopID {

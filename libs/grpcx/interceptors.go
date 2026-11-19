@@ -1,4 +1,6 @@
-package grpc
+// Package grpcx agrupa los interceptores gRPC comunes de los servicios de Pikka: recuperación de
+// pánicos y log estructurado por llamada (con la causa cuando falla).
+package grpcx
 
 import (
 	"context"
@@ -12,15 +14,15 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Metadata that the Gateway propagates and that the log carries to correlate a call with its HTTP request.
+// Metadata que propaga el API Gateway; el log la incluye para relacionar la llamada con su petición HTTP.
 const (
-	metadataRequestID = "x-request-id"
-	metadataUserID    = "x-user-id"
+	MetadataRequestID = "x-request-id"
+	MetadataUserID    = "x-user-id"
 )
 
-// UnaryInterceptors recovers from panics and logs every call. A failed call also logs the error
-// message, so a 500 seen by the web can be traced to its cause (for example a route rejected by
-// Order Service). Request bodies are never logged.
+// UnaryInterceptors recupera pánicos y registra cada llamada. Una llamada fallida registra además el
+// mensaje del error, para rastrear la causa de un 500 que ve la web. Nunca registra el cuerpo de la
+// petición: puede contener contraseñas o tokens.
 func UnaryInterceptors(log *slog.Logger) grpc.ServerOption {
 	return grpc.ChainUnaryInterceptor(recoverer(log), logger(log))
 }
@@ -35,8 +37,8 @@ func logger(log *slog.Logger) grpc.UnaryServerInterceptor {
 			"method", info.FullMethod,
 			"code", code.String(),
 			"durationMs", time.Since(start).Milliseconds(),
-			"traceId", firstValue(md, metadataRequestID),
-			"userId", firstValue(md, metadataUserID),
+			"traceId", firstValue(md, MetadataRequestID),
+			"userId", firstValue(md, MetadataUserID),
 		}
 		switch code {
 		case codes.OK:

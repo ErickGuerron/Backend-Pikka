@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/ErickGuerron/Backend-Pikka/libs/grpcx"
 	"log/slog"
 	"net"
 	"os"
@@ -97,7 +98,7 @@ func serveGRPC(ctx context.Context, log *slog.Logger, port int, server routingv1
 	if err != nil {
 		return fmt.Errorf("grpc listen: %w", err)
 	}
-	srv := grpc.NewServer(grpcadapter.UnaryInterceptors(log))
+	srv := grpc.NewServer(grpcx.UnaryInterceptors(log))
 	routingv1.RegisterRoutingServiceServer(srv, server)
 	log.Info("grpc listening", "port", port)
 

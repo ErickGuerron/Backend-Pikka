@@ -6,11 +6,13 @@ WORKDIR /src
 ENV CGO_ENABLED=0 GOWORK=off
 
 COPY contracts/go.mod contracts/go.sum ./contracts/
+COPY libs/grpcx/go.mod libs/grpcx/go.sum ./libs/grpcx/
 COPY libs/osrm/go.mod ./libs/osrm/
 COPY services/routing-service/go.mod services/routing-service/go.sum ./services/routing-service/
 RUN cd services/routing-service && go mod download
 
 COPY contracts/ ./contracts/
+COPY libs/grpcx/ ./libs/grpcx/
 COPY libs/osrm/ ./libs/osrm/
 COPY services/routing-service/ ./services/routing-service/
 RUN cd services/routing-service && go build -trimpath -ldflags="-s -w" -o /out/service ./cmd/api

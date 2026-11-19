@@ -3,6 +3,7 @@ package grpc_test
 import (
 	"context"
 	"fmt"
+	"github.com/ErickGuerron/Backend-Pikka/libs/grpcx"
 	"io"
 	"log/slog"
 	"net"
@@ -114,7 +115,7 @@ func newClient(t *testing.T) authv1.AuthServiceClient {
 	require.NoError(t, err)
 
 	lis := bufconn.Listen(1 << 20)
-	srv := grpc.NewServer(grpcadapter.UnaryInterceptors(slog.New(slog.NewTextHandler(io.Discard, nil))))
+	srv := grpc.NewServer(grpcx.UnaryInterceptors(slog.New(slog.NewTextHandler(io.Discard, nil))))
 	authv1.RegisterAuthServiceServer(srv, grpcadapter.NewServer(grpcadapter.UseCases{
 		Login:          login,
 		CreateUser:     application.NewCreateUser(repo, hasher),
