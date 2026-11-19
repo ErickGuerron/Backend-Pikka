@@ -16,11 +16,32 @@ import (
 
 // stopResultRequest es el resultado que el repartidor registra al cerrar una parada. La ubicación GPS
 // es obligatoria: Driver Service la compara con la dirección de la parada (ADR 0007, decisión D1).
+//
+// El OpenAPI declara la posición anidada en "location" ({"location":{"latitude","longitude"}}), que es lo
+// que envía la app del repartidor. Antes el Gateway solo leía latitude/longitude en la raíz y rechazaba
+// toda entrega con 400; se acepta también ese formato plano por compatibilidad.
 type stopResultRequest struct {
-	Outcome   string   `json:"outcome"`
-	Reason    string   `json:"reason"`
+	Outcome   string        `json:"outcome"`
+	Reason    string        `json:"reason"`
+	Location  *stopLocation `json:"location"`
+	Latitude  *float64      `json:"latitude"`
+	Longitude *float64      `json:"longitude"`
+}
+
+type stopLocation struct {
 	Latitude  *float64 `json:"latitude"`
 	Longitude *float64 `json:"longitude"`
+}
+
+// position devuelve la ubicación del registro: la de "location" (contrato) o, si falta, la plana.
+func (r stopResultRequest) position() (lat, lon float64, ok bool) {
+	if r.Location != nil && r.Location.Latitude != nil && r.Location.Longitude != nil {
+		return *r.Location.Latitude, *r.Location.Longitude, true
+	}
+	if r.Latitude != nil && r.Longitude != nil {
+		return *r.Latitude, *r.Longitude, true
+	}
+	return 0, 0, false
 }
 
 // result cierra una parada de la ruta del repartidor autenticado como DELIVERED o NOT_DELIVERED.
@@ -39,8 +60,9 @@ func (h *driverStopHandlers) result(c *httpx.Context) error {
 	if !ok {
 		return httpx.NewHTTPError(http.StatusBadRequest, "outcome must be DELIVERED or NOT_DELIVERED")
 	}
-	if req.Latitude == nil || req.Longitude == nil {
-		return httpx.NewHTTPError(http.StatusBadRequest, "latitude and longitude are required")
+	lat, lon, ok := req.position()
+	if !ok {
+		return httpx.NewHTTPError(http.StatusBadRequest, "location.latitude and location.longitude are required")
 	}
 
 	ctx := c.Request().Context()
@@ -79,8 +101,8 @@ func (h *driverStopHandlers) result(c *httpx.Context) error {
 		Outcome:    req.Outcome,
 		Reason:     req.Reason,
 		RecordedAt: time.Now().UTC().Format(time.RFC3339),
-		Latitude:   *req.Latitude,
-		Longitude:  *req.Longitude,
+		Latitude:   lat,
+		Longitude:  lon,
 	}); err != nil {
 		if status.Code(err) == codes.Unimplemented {
 			// Driver Service no tiene aún el origen de paradas: el resultado no se registra ni se cierra el pedido.
