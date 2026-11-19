@@ -448,6 +448,7 @@ func orderToProto(o domain.Order) *ordersv1.Order {
 		ZoneId:        o.ZoneID,
 		RouteId:       o.RouteID,
 		QueuePosition: int32(o.QueuePosition),
+		StopSequence:  int32(o.StopSequence),
 
 		AddressReference: o.AddressReference,
 		PostalCode:       o.PostalCode,
